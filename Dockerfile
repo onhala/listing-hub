@@ -1,9 +1,10 @@
-# ==========================================
-# Bazoš Automat & AI Editor - Dockerfile
+# ==========================================================
+# Bazoš Automat & AI Editor - Dockerfile (Lightweight)
 # Brand: TERMS a.s. / Roboton Custom Platform
-# ==========================================
+# Base: Debian Bookworm Slim with Chromium only
+# ==========================================================
 
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+FROM python:3.11-slim-bookworm
 
 # Nastavení neinteraktivního režimu instalace
 ENV DEBIAN_FRONTEND=noninteractive
@@ -24,6 +25,9 @@ WORKDIR /app
 # Kopírování requirements.txt a instalace python knihoven
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Instalace POUZE Chromium prohlížeče a jeho systémových závislostí v Playwrightu
+RUN playwright install --with-deps chromium
 
 # Kopírování celého kódu aplikace do kontejneru
 COPY . /app/
