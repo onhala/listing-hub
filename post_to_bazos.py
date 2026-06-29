@@ -96,10 +96,10 @@ def sync_to_onedrive(data):
     # Druhý list: Historie prodejů
     ws_sold = wb.create_sheet(title="Historie prodejů")
     
-    # Styly pro prémiový TERMS / Roboton vzhled
+    # Styly pro prémiový TERMS vzhled
     font_family = "Segoe UI"
     header_font = Font(name=font_family, size=11, bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="4B2C82", end_color="4B2C82", fill_type="solid") # Roboton tmavě fialová
+    header_fill = PatternFill(start_color="4B2C82", end_color="4B2C82", fill_type="solid") # TERMS tmavě fialová
     title_font = Font(name=font_family, size=16, bold=True, color="4B2C82")
     data_font = Font(name=font_family, size=11)
     
@@ -958,8 +958,8 @@ def cli_repost_listing(data, user_config):
 
 # --- Hlavní spouštěcí funkce a menu ---
 def main():
-    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Roboton Bazoš Automat v1.2{Colors.ENDC}")
-    print(f"{Colors.BLUE}Komplexní správa inzerce, historie prodejů a synchronizace na OneDrive TERMS/Roboton.{Colors.ENDC}\n")
+    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Bazoš Automat v1.2{Colors.ENDC}")
+    print(f"{Colors.BLUE}Komplexní správa inzerce, historie prodejů a synchronizace na OneDrive TERMS.{Colors.ENDC}\n")
 
     while True:
         data, user_config = load_data()
