@@ -24,6 +24,8 @@ class Colors:
 SCRIPT_DIR = Path(__file__).parent.resolve()
 LISTINGS_PATH = SCRIPT_DIR / "bazos_active_listings.json"
 CONFIG_PATH = SCRIPT_DIR / "bazos_config.json"
+SESSION_STATE_PATH = SCRIPT_DIR / "bazos_session.json"
+
 
 def load_data():
     try:
