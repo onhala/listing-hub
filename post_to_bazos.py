@@ -27,6 +27,77 @@ CONFIG_PATH = SCRIPT_DIR / "bazos_config.json"
 SESSION_STATE_PATH = SCRIPT_DIR / "bazos_session.json"
 
 
+import atexit
+
+class PlaywrightSessionManager:
+    def __init__(self):
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+
+    def get_session(self):
+        is_active = False
+        if self.browser and self.browser.is_connected() and self.page and not self.page.is_closed():
+            is_active = True
+            
+        if not is_active:
+            self.close()
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError:
+                print(f"\n{Colors.WARNING}Instaluji knihovnu Playwright...{Colors.ENDC}")
+                os.system(".venv/bin/pip install playwright")
+                os.system(".venv/bin/playwright install chromium")
+                from playwright.sync_api import sync_playwright
+                
+            self.playwright = sync_playwright().start()
+            try:
+                self.browser = self.playwright.chromium.launch(channel="chrome", headless=False)
+            except Exception:
+                self.browser = self.playwright.chromium.launch(headless=False)
+            
+            if SESSION_STATE_PATH.exists():
+                print(f"  {Colors.BLUE}Načítám uloženou relaci (cookies)...{Colors.ENDC}")
+                self.context = self.browser.new_context(storage_state=str(SESSION_STATE_PATH))
+            else:
+                self.context = self.browser.new_context()
+            
+            self.context.set_default_timeout(0)
+            self.page = self.context.new_page()
+            
+        return self.playwright, self.browser, self.context, self.page
+
+    def save_state(self):
+        if self.context:
+            try:
+                self.context.storage_state(path=str(SESSION_STATE_PATH))
+            except Exception as e:
+                print(f"  {Colors.WARNING}Nepodařilo se uložit stav relace: {e}{Colors.ENDC}")
+
+    def close(self):
+        if self.context:
+            self.save_state()
+        if self.browser:
+            try:
+                self.browser.close()
+            except Exception:
+                pass
+        if self.playwright:
+            try:
+                self.playwright.stop()
+            except Exception:
+                pass
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+
+session_manager = PlaywrightSessionManager()
+atexit.register(session_manager.close)
+
+
+
 def load_data():
     try:
         if not LISTINGS_PATH.exists():
@@ -444,23 +515,17 @@ def cli_update_listings_from_bazos(data):
         from playwright.sync_api import sync_playwright
         
     print(f"\n{Colors.HEADER}{Colors.BOLD}🔄 AKTUALIZACE STAVŮ INZERÁTŮ Z BAZOŠE (Moje inzeráty){Colors.ENDC}")
-    print(f"{Colors.BLUE}Spouštím prohlížeč pro přihlášení a stažení inzerátů...{Colors.ENDC}\n")
+    print(f"{Colors.BLUE}Spouštím/připojuji prohlížeč pro přihlášení a stažení inzerátů...{Colors.ENDC}\n")
     
     html_content = ""
-    with sync_playwright() as p:
+    from contextlib import nullcontext
+    with nullcontext():
         try:
-            browser = p.chromium.launch(channel="chrome", headless=False)
-        except Exception:
-            browser = p.chromium.launch(headless=False)
+            p, browser, context, page = session_manager.get_session()
+        except Exception as e:
+            print(f"{Colors.FAIL}Chyba při inicializaci prohlížeče: {e}{Colors.ENDC}")
+            return
             
-        # Načteme uloženou relaci, pokud existuje, pro přihlášení bez SMS
-        if SESSION_STATE_PATH.exists():
-            print(f"  {Colors.BLUE}Načítám uloženou relaci (cookies)...{Colors.ENDC}")
-            context = browser.new_context(storage_state=str(SESSION_STATE_PATH))
-        else:
-            context = browser.new_context()
-        page = context.new_page()
-        
         # Přejdeme na Moje inzeráty
         page.goto("https://www.bazos.cz/moje-inzeraty.php")
         
@@ -493,7 +558,7 @@ def cli_update_listings_from_bazos(data):
                 
                 if not sms_code:
                     print(f"{Colors.FAIL}SMS kód nebyl zadán. Ruším synchronizaci.{Colors.ENDC}")
-                    browser.close()
+                    session_manager.close()
                     return
                     
                 code_input.fill(sms_code)
@@ -517,13 +582,14 @@ def cli_update_listings_from_bazos(data):
         # Uložíme/aktualizujeme platnou relaci, pokud jsme přihlášeni
         try:
             if not page.locator("input[name='mail']").is_visible(timeout=2000):
-                context.storage_state(path=str(SESSION_STATE_PATH))
+                session_manager.save_state()
                 print(f"  {Colors.GREEN}✓ Relace uložena/aktualizována pro příště.{Colors.ENDC}")
         except Exception as state_err:
             print(f"  {Colors.WARNING}Nepodařilo se uložit stav relace: {state_err}{Colors.ENDC}")
             
         html_content = page.content()
-        browser.close()
+        pass
+
 
         
     if not html_content:
@@ -896,19 +962,13 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
         jpg_files = sorted(jpg_files, key=lambda x: (not x.startswith("foto_"), x))
         photos = [os.path.join(photos_dir, f) for f in jpg_files]
 
-    with sync_playwright() as p:
+    from contextlib import nullcontext
+    with nullcontext():
         try:
-            browser = p.chromium.launch(channel="chrome", headless=False)
-        except Exception:
-            browser = p.chromium.launch(headless=False)
-            
-        # Načteme uloženou relaci, pokud existuje, pro sdílení přihlášení
-        if SESSION_STATE_PATH.exists():
-            print(f"  {Colors.BLUE}Načítám uloženou relaci (cookies)...{Colors.ENDC}")
-            context = browser.new_context(storage_state=str(SESSION_STATE_PATH))
-        else:
-            context = browser.new_context()
-        page = context.new_page()
+            p, browser, context, page = session_manager.get_session()
+        except Exception as e:
+            print(f"{Colors.FAIL}Chyba při inicializaci prohlížeče: {e}{Colors.ENDC}")
+            return False
         
         # --- AKCE: SMAZÁNÍ (DELETE) ---
         if action == "delete":
@@ -938,11 +998,19 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                 print(f"\n{Colors.GREEN}✓ Formulář odeslán.{Colors.ENDC}")
                 print(f"{Colors.BOLD}👉 Dokonči smazání v prohlížeči (např. výběr důvodu) a stiskni [Enter] v terminálu...{Colors.ENDC}")
                 input()
+                try:
+                    context.storage_state(path=str(SESSION_STATE_PATH))
+                except Exception:
+                    pass
                 return True
             except Exception as delete_err:
                 print(f"{Colors.FAIL}Chyba při mazání inzerátu: {delete_err}{Colors.ENDC}")
                 print("Dokonči prosím smazání ručně v otevřeném prohlížeči a stiskni [Enter]...")
                 input()
+                try:
+                    context.storage_state(path=str(SESSION_STATE_PATH))
+                except Exception:
+                    pass
                 return True
 
         # --- AKCE: EDITACE CENY (EDIT PRICE) ---
@@ -978,11 +1046,19 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                 print(f"{Colors.BOLD}👉 Zkontroluj inzerát v prohlížeči a klikni dole na 'Upravit' pro uložení změn.{Colors.ENDC}")
                 print("Po dokončení stiskni [Enter] zde v terminálu...")
                 input()
+                try:
+                    context.storage_state(path=str(SESSION_STATE_PATH))
+                except Exception:
+                    pass
                 return True
             except Exception as edit_err:
                 print(f"{Colors.FAIL}Nepodařilo se plně automatizovat změnu ceny: {edit_err}{Colors.ENDC}")
                 print("Uprav prosím cenu ručně v otevřeném prohlížeči a ulož ji. Poté stiskni [Enter]...")
                 input()
+                try:
+                    context.storage_state(path=str(SESSION_STATE_PATH))
+                except Exception:
+                    pass
                 return True
 
         # --- AKCE: POST / VYSTAVENÍ (DEFAULT) ---
@@ -1200,6 +1276,10 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                     ad["url"] = new_url
                     ad["date_created"] = datetime.today().strftime('%Y-%m-%d')
                     print(f"{Colors.GREEN}✓ URL inzerátu uložena!{Colors.ENDC}")
+                try:
+                    context.storage_state(path=str(SESSION_STATE_PATH))
+                except Exception:
+                    pass
                 return True
     return False
 
