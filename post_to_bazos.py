@@ -45,7 +45,10 @@ def load_data():
                     "email": "tuj_email@example.com",
                     "phone": "777123456",
                     "phone_verified": "+420777123456",
-                    "default_ad_password_b64": "aGVzbG8xMjM="
+                    "default_ad_password_b64": "aGVzbG8xMjM=",
+                    "name": "Tvoje Jméno",
+                    "zip_code": "10000",
+                    "location": "Praha 100 00"
                 }
             }
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -80,9 +83,9 @@ def sync_to_onedrive(data):
         from openpyxl.utils import get_column_letter
 
     # Detekce OneDrive cesty
-    onedrive_dir = Path("/Users/user/Library/CloudStorage/OneDrive-Osobní")
+    onedrive_dir = Path.home() / "Library/CloudStorage/OneDrive-Osobní"
     if not onedrive_dir.exists():
-        onedrive_dir = Path("/Users/user/Desktop/Antigravity")
+        onedrive_dir = Path.home() / "Desktop/Antigravity"
         
     onedrive_dir.mkdir(parents=True, exist_ok=True)
     file_path = onedrive_dir / "Inzerce - bazos.xlsx"
@@ -653,7 +656,7 @@ def cli_update_listings_from_bazos(data):
             return text
             
         folder_name = simple_slugify(scraped_ad["title"])
-        photos_dir = f"/Users/user/Desktop/Antigravity/Bazos_Photos/{folder_name}"
+        photos_dir = str(Path.home() / "Desktop" / "Antigravity" / "Bazos_Photos" / folder_name)
         os.makedirs(photos_dir, exist_ok=True)
         
         days_old_val = 0
@@ -669,7 +672,7 @@ def cli_update_listings_from_bazos(data):
             "ad_password_b64": default_pwd_b64,
             "date_created": scraped_ad["date_created"],
             "days_old": days_old_val,
-            "location": "Český Krumlov 381 01",
+            "location": user_config.get("location", "Praha 100 00"),
             "views": scraped_ad["views"],
             "url": scraped_ad["url"],
             "local_photos_dir": photos_dir,
@@ -724,7 +727,7 @@ def cli_add_listing(data, user_config):
         
     default_dir_name = re.sub(r'[^a-z0-9]', '_', title.lower())
     default_dir_name = re.sub(r'_+', '_', default_dir_name).strip('_')
-    suggested_photos_dir = f"/Users/user/Desktop/Antigravity/Bazos_Photos/{default_dir_name}"
+    suggested_photos_dir = str(Path.home() / "Desktop" / "Antigravity" / "Bazos_Photos" / default_dir_name)
     
     photos_dir = input(f"{Colors.BOLD}Složka s fotkami [výchozí: {suggested_photos_dir}]: {Colors.ENDC}").strip()
     if not photos_dir:
@@ -744,7 +747,7 @@ def cli_add_listing(data, user_config):
         "ad_password_b64": password_b64,
         "date_created": datetime.today().strftime('%Y-%m-%d'),
         "days_old": 0,
-        "location": "Český Krumlov 381 01",
+        "location": user_config.get("location", "Praha 100 00"),
         "views": 0,
         "url": "",
         "local_photos_dir": photos_dir,
@@ -1133,10 +1136,10 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                         find_and_fill("Nadpis", ["input[name='nadpis']", "#nadpis"], title)
                         find_and_fill("Popis", ["textarea[name='popis']", "#popis"], description)
                         find_and_fill("Cena", ["input[name='cena']", "#cena"], price)
-                        find_and_fill("Jméno", ["input[name='jmeno']", "#jmeno"], "Tvoje Jméno")
+                        find_and_fill("Jméno", ["input[name='jmeno']", "#jmeno"], user_config.get("name", "Tvoje Jméno"))
                         find_and_fill("Telefon", ["input[name='telefoni']", "#telefoni"], user_config.get("phone", "777123456"))
                         find_and_fill("E-mail", ["input[name='mail']", "input[name='email']", "input[type='email']", "#mail"], user_config.get("email", "tuj_email@example.com"))
-                        find_and_fill("PSČ", ["input[name='lokalita']", "#lokalita", "input[name='psc']"], "38101")
+                        find_and_fill("PSČ", ["input[name='lokalita']", "#lokalita", "input[name='psc']"], user_config.get("zip_code", "10000"))
                         find_and_fill("Heslo", ["input[name='heslo']", "#heslo"], password)
                         
                         # 4. Nahrání fotek

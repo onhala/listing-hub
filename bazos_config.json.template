@@ -1,0 +1,10 @@
+{
+  "user": {
+    "email": "tuj_email@example.com",
+    "phone": "777123456",
+    "phone_verified": "+420777123456",
+    "default_ad_password_b64": "aGVzbG8xMjM=",
+    "name": "Tvoje Jméno",
+    "zip_code": "10000"
+  }
+}

@@ -18,3 +18,11 @@ Thumbs.db
 
 # Playwright browser cache
 .playwright/
+
+# Bazos configuration and database (prevent PII leaks)
+bazos_config.json
+bazos_active_listings.json
+bazos_active_listings.json.tmp
+bazos_session.json
+
+

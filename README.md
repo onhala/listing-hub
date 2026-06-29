@@ -60,17 +60,28 @@ python3 -m venv .venv
 ```
 
 ### 2. Konfigurace profilu (`bazos_config.json`)
-Před prvním spuštěním uprav soubor `bazos_config.json` podle svých kontaktních údajů (výchozí e-mail, telefon, výchozí heslo v Base64 pro inzeráty):
+Před prvním spuštěním zkopíruj šablonu `bazos_config.json.template` na `bazos_config.json` a uprav ji podle svých kontaktních údajů (výchozí e-mail, telefon, výchozí heslo v Base64 pro inzeráty):
+```bash
+cp bazos_config.json.template bazos_config.json
+```
+
+Obsah souboru `bazos_config.json`:
 ```json
 {
   "user": {
     "email": "tuj_email@example.com",
     "phone": "777123456",
     "phone_verified": "+420777123456",
-    "default_ad_password_b64": "aGVzbG8xMjM="
+    "default_ad_password_b64": "aGVzbG8xMjM=",
+    "name": "Tvoje Jméno",
+    "zip_code": "10000"
   }
 }
 ```
+
+> [!NOTE]
+> Heslo v konfiguraci je uloženo v kódování Base64 (`aGVzbG8xMjM=` -> `heslo123`). Slouží to jako základní obfuskace proti náhodným pohledům přes rameno, nejedná se o bezpečné kryptografické šifrování.
+
 
 ### 3. Spuštění CLI Dashboardu
 Hlavní řídicí panel spustíš jednoduše příkazem:
