@@ -143,12 +143,24 @@ def sync_to_onedrive(data):
             row_fill = PatternFill(start_color="F8F6FC" if idx % 2 == 0 else "FFFFFF", end_color="F8F6FC" if idx % 2 == 0 else "FFFFFF", fill_type="solid")
             
             if not is_sold:
-                # ["ID", "Název věci", "Inzerovaná cena (Kč)", "Datum vystavení", "Stav věci", "Stav", "Odkaz na Bazoš", "Složka s fotkami"]
+                # Výpočet stáří
+                days_old = ad.get("days_old", 0)
+                date_created = ad.get("date_created", "")
+                if date_created and days_old == 0:
+                    try:
+                        dt = datetime.strptime(date_created, "%Y-%m-%d")
+                        days_old = (datetime.today() - dt).days
+                    except Exception:
+                        pass
+                
+                # ["ID", "Název věci", "Inzerovaná cena (Kč)", "Datum vystavení", "Stáří (dní)", "Zhlédnutí", "Stav věci", "Stav", "Odkaz na Bazoš", "Složka s fotkami"]
                 values = [
                     idx,
                     ad.get("title", ""),
                     ad.get("price", 0),
                     ad.get("date_created", ""),
+                    days_old,
+                    ad.get("views", 0),
                     ad.get("condition", "Nezadáno"),
                     ad.get("status", "Aktivní"),
                     ad.get("url", ""),
@@ -187,20 +199,28 @@ def sync_to_onedrive(data):
                 elif is_sold and col_idx in [3, 4, 5]: # Ceny sold
                     cell.alignment = align_right
                     cell.number_format = '#,##0" Kč"'
-                elif not is_sold and col_idx in [4, 6]: # Datum, Stav active
+                elif not is_sold and col_idx in [4, 5, 6, 8]: # Datum, Stáří, Zhlédnutí, Stav active
                     cell.alignment = align_center
                 elif is_sold and col_idx in [6, 7]: # Datumy sold
                     cell.alignment = align_center
                 else:
                     cell.alignment = align_left
                     
-                # Zelený badge pro aktivní inzeráty
-                if not is_sold and col_idx == 6:
-                    cell.fill = PatternFill(start_color="D1E7DD", end_color="D1E7DD", fill_type="solid")
-                    cell.font = Font(name=font_family, size=11, color="0F5132", bold=True)
+                # Zelený nebo červený badge pro stav aktivních inzerátů
+                if not is_sold and col_idx == 8:
+                    status_val = ad.get("status", "Aktivní")
+                    if status_val == "Aktivní":
+                        cell.fill = PatternFill(start_color="D1E7DD", end_color="D1E7DD", fill_type="solid")
+                        cell.font = Font(name=font_family, size=11, color="0F5132", bold=True)
+                    elif status_val == "Expirováno":
+                        cell.fill = PatternFill(start_color="F8D7DA", end_color="F8D7DA", fill_type="solid")
+                        cell.font = Font(name=font_family, size=11, color="842029", bold=True)
+                    else:
+                        cell.fill = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
+                        cell.font = Font(name=font_family, size=11, color="664D03", bold=True)
                     
                 # Klikatelný hyperlink pro odkaz
-                if not is_sold and col_idx == 7 and val:
+                if not is_sold and col_idx == 9 and val:
                     cell.hyperlink = val
                     cell.font = Font(name=font_family, size=11, color="0D6EFD", underline="single")
                     
@@ -251,7 +271,7 @@ def sync_to_onedrive(data):
                         max_len = len(val_str)
             ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
-    setup_sheet(ws_active, "Aktivní inzerce na Bazoši", data.get("active_listings", []), ["ID", "Název věci", "Inzerovaná cena (Kč)", "Datum vystavení", "Stav věci", "Stav", "Odkaz na Bazoš", "Složka s fotkami"], is_sold=False)
+    setup_sheet(ws_active, "Aktivní inzerce na Bazoši", data.get("active_listings", []), ["ID", "Název věci", "Inzerovaná cena (Kč)", "Datum vystavení", "Stáří (dní)", "Zhlédnutí", "Stav věci", "Stav", "Odkaz na Bazoš", "Složka s fotkami"], is_sold=False)
     setup_sheet(ws_sold, "Historie prodejů", data.get("sold_listings", []), ["ID", "Název věci", "Původní cena (Kč)", "Prodejní cena (Kč)", "Rozdíl (Kč)", "Datum vystavení", "Datum prodeje", "Stav věci", "Poznámky"], is_sold=True)
     
     wb.save(file_path)
@@ -302,17 +322,43 @@ def display_listings_summary(data):
         table_active = []
         for idx, ad in enumerate(active, 1):
             price_str = f"{ad['price']:,} Kč".replace(',', ' ') if ad['price'] > 0 else "Zdarma"
-            url_short = ad.get("url", "")[:45] + "..." if len(ad.get("url", "")) > 45 else ad.get("url", "Není odkaz")
+            url_short = ad.get("url", "")[:35] + "..." if len(ad.get("url", "")) > 35 else ad.get("url", "Není odkaz")
+            
+            # Formátování stavu
+            status = ad.get('status', 'Aktivní')
+            if status == "Expirováno":
+                status_formatted = f"{Colors.FAIL}Expirováno{Colors.ENDC}"
+            elif status == "Aktivní":
+                status_formatted = f"{Colors.GREEN}Aktivní{Colors.ENDC}"
+            else:
+                status_formatted = f"{Colors.BLUE}{status}{Colors.ENDC}"
+                
+            # Výpočet stáří
+            days_old = ad.get("days_old", 0)
+            date_created = ad.get("date_created", "")
+            if date_created and days_old == 0:
+                try:
+                    dt = datetime.strptime(date_created, "%Y-%m-%d")
+                    days_old = (datetime.today() - dt).days
+                except Exception:
+                    pass
+            days_old_str = f"{days_old} dní" if days_old >= 0 else "Nezadáno"
+            
+            views = ad.get("views", 0)
+            views_str = f"{views}x"
+            
             table_active.append([
                 idx,
-                ad['title'][:40],
+                ad['title'][:35],
                 price_str,
                 ad.get('date_created', 'Nezadáno'),
-                ad.get('condition', 'Nezadáno')[:30],
-                f"{Colors.GREEN}{ad.get('status', 'Aktivní')}{Colors.ENDC}",
+                days_old_str,
+                views_str,
+                ad.get('condition', 'Nezadáno')[:20],
+                status_formatted,
                 url_short
             ])
-        print(tabulate(table_active, headers=["ID", "Název věci", "Cena", "Datum", "Stav věci", "Stav", "Odkaz"], tablefmt="fancy_grid"))
+        print(tabulate(table_active, headers=["ID", "Název věci", "Cena", "Datum", "Stáří", "Zhlédnutí", "Stav věci", "Stav", "Odkaz"], tablefmt="fancy_grid"))
 
     print(f"\n{Colors.BLUE}{Colors.BOLD}📜 HISTORIE PRODANÝCH VĚCÍ{Colors.ENDC}")
     if not sold:
@@ -339,6 +385,94 @@ def display_listings_summary(data):
             ])
         print(tabulate(table_sold, headers=["ID", "Název věci", "Pův. cena", "Prodejní", "Rozdíl", "Datum prodeje", "Poznámka"], tablefmt="fancy_grid"))
         print(f"💰 {Colors.BOLD}Celková hodnota prodaných věcí:{Colors.ENDC} {Colors.GREEN}{total_profit:,} Kč{Colors.ENDC}".replace(',', ' '))
+
+# --- Aktualizace stavů z Bazoše na pozadí ---
+def cli_update_listings_from_bazos(data):
+    import requests
+    from bs4 import BeautifulSoup
+    
+    active = data.get("active_listings", [])
+    if not active:
+        print(f"{Colors.WARNING}Nemáš žádné aktivní inzeráty pro aktualizaci.{Colors.ENDC}")
+        return
+        
+    print(f"\n{Colors.HEADER}{Colors.BOLD}🔄 AKTUALIZACE STAVŮ INZERÁTŮ Z BAZOŠE{Colors.ENDC}")
+    print(f"{Colors.BLUE}Stahuji data na pozadí, to může chvíli trvat...{Colors.ENDC}\n")
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8"
+    }
+    
+    updated_count = 0
+    expired_count = 0
+    
+    for idx, ad in enumerate(active, 1):
+        url = ad.get("url")
+        if not url:
+            print(f"  [{idx}/{len(active)}] {Colors.WARNING}Přeskakuji '{ad['title']}': nemá uloženou URL adresu.{Colors.ENDC}")
+            continue
+            
+        print(f"  [{idx}/{len(active)}] Kontroluji '{ad['title']}'...", end="", flush=True)
+        
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            
+            # Check if deleted or redirected to category
+            is_deleted = False
+            if "/inzerat/" not in r.url:
+                is_deleted = True
+            else:
+                soup = BeautifulSoup(r.content, 'html.parser')
+                text_content = soup.get_text()
+                if any(phrase in text_content for phrase in ["Inzerát byl vymazán", "Inzerát již neexistuje", "Hledaný inzerát neexistuje"]):
+                    is_deleted = True
+                    
+            if is_deleted:
+                # Update status
+                ad["status"] = "Expirováno"
+                print(f" -> {Colors.FAIL}EXPIROVÁNO / SMAZÁNO{Colors.ENDC}")
+                expired_count += 1
+            else:
+                # Active! Parse view count and date
+                # Views
+                views_match = re.search(r'Vidělo:\s*(\d+)', text_content)
+                if views_match:
+                    ad["views"] = int(views_match.group(1))
+                    
+                # Date
+                det_nadpis = soup.find(class_='inzeratydetnadpis')
+                if det_nadpis:
+                    det_text = det_nadpis.get_text()
+                    date_match = re.search(r'\[(\d+\.\d+\.\s*\d{4})\]', det_text)
+                    if date_match:
+                        date_str = date_match.group(1).replace(' ', '')
+                        try:
+                            parsed_date = datetime.strptime(date_str, "%d.%m.%Y")
+                            ad["date_created"] = parsed_date.strftime("%Y-%m-%d")
+                        except Exception:
+                            pass
+                            
+                # Recalculate days_old
+                date_created = ad.get("date_created", "")
+                if date_created:
+                    try:
+                        dt = datetime.strptime(date_created, "%Y-%m-%d")
+                        ad["days_old"] = (datetime.today() - dt).days
+                    except Exception:
+                        ad["days_old"] = 0
+                
+                ad["status"] = "Aktivní"
+                print(f" -> {Colors.GREEN}AKTIVNÍ (Zhlédnutí: {ad.get('views', 0)}, Stáří: {ad.get('days_old', 0)} dní){Colors.ENDC}")
+                updated_count += 1
+                
+        except Exception as e:
+            print(f" -> {Colors.FAIL}CHYBA: {e}{Colors.ENDC}")
+            
+    # Save listings
+    save_listings(data)
+    print(f"\n{Colors.GREEN}✓ Aktualizace dokončena! Aktivní: {updated_count}, Expirováno: {expired_count}.{Colors.ENDC}")
+    sync_to_onedrive(data)
 
 # --- CLI Průvodce pro přidání nové věci ---
 def cli_add_listing(data, user_config):
@@ -837,10 +971,11 @@ def main():
         print(f"  [{Colors.GREEN}4{Colors.ENDC}] Znovuvystavit inzerát (Topovat zdarma)")
         print(f"  [{Colors.GREEN}5{Colors.ENDC}] Zaznamenat prodej věci (Přesunout do historie)")
         print(f"  [{Colors.GREEN}6{Colors.ENDC}] Zobrazit přehled inzerce v terminálu")
-        print(f"  [{Colors.GREEN}7{Colors.ENDC}] Vynutit synchronizaci s OneDrivem (Excel)")
+        print(f"  [{Colors.GREEN}7{Colors.ENDC}] Aktualizovat stavy a zobrazení inzerátů z Bazoše")
+        print(f"  [{Colors.GREEN}8{Colors.ENDC}] Vynutit synchronizaci s OneDrivem (Excel)")
         print(f"  [{Colors.FAIL}q{Colors.ENDC}] Konec")
         
-        choice = input(f"\n{Colors.BOLD}Zadej volbu (1-7, q): {Colors.ENDC}").strip()
+        choice = input(f"\n{Colors.BOLD}Zadej volbu (1-8, q): {Colors.ENDC}").strip()
         
         if choice.lower() == 'q':
             print("Nashledanou!")
@@ -879,6 +1014,8 @@ def main():
         elif choice == '6':
             display_listings_summary(data)
         elif choice == '7':
+            cli_update_listings_from_bazos(data)
+        elif choice == '8':
             sync_to_onedrive(data)
         else:
             print(f"{Colors.FAIL}Neplatná volba!{Colors.ENDC}")
