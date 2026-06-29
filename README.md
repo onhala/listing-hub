@@ -31,7 +31,12 @@ Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování
 6. **Přehledná tabulka v terminálu (`[6]`)**:
    - Vykreslí barevné, perfektně naformátované tabulky aktivních inzerátů a historie prodejů (včetně celkového zisku a cenových rozdílů) přímo v konzoli.
 
-7. **Synchronizace s OneDrive (`[7]`)**:
+7. **Aktualizace stavů z Bazoše (`[7]`)**:
+   - Spustí rychlou synchronizaci reálného stavu inzerátů přímo z Bazoše (na pozadí, bez nutnosti otevírat prohlížeč).
+   - Aktualizuje počet zhlédnutí (views), reálné datum vystavení a automaticky detekuje, zda inzerát nebyl vymazán nebo nevypršela jeho platnost (v tom případě změní stav na **Expirováno** a zvýrazní jej červeně).
+   - Po dokončení automaticky uloží aktualizovaná data a promítne změny na OneDrive.
+
+8. **Synchronizace s OneDrive (`[8]`)**:
    - Automaticky (po každé změně) i manuálně synchronizuje celou databázi s Excel tabulkou `Inzerce - bazos.xlsx` na OneDrive.
    - Tabulka používá prémiový **TERMS/Roboton vizuální styl** (tmavě fialové záhlaví `#4B2C82`, zapnutá mřížka, zelené/oranžové stavové štítky, automatická šířka sloupců a Excel vzorce pro součty prodejů).
 
