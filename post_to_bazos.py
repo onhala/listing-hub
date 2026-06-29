@@ -387,91 +387,311 @@ def display_listings_summary(data):
         print(f"💰 {Colors.BOLD}Celková hodnota prodaných věcí:{Colors.ENDC} {Colors.GREEN}{total_profit:,} Kč{Colors.ENDC}".replace(',', ' '))
 
 # --- Aktualizace stavů z Bazoše na pozadí ---
+def parse_bazos_date(date_text):
+    """
+    Převede české relativní nebo absolutní datum z Bazoše do formátu YYYY-MM-DD.
+    Příklady vstupů: '[29.6. 2026]', '[Dnes - 12:34]', '[Včera]', '29.6. 2026'
+    """
+    from datetime import datetime, timedelta
+    try:
+        # Odstraníme hranaté závorky
+        cleaned = date_text.replace("[", "").replace("]", "").strip()
+        cleaned_lower = cleaned.lower()
+        
+        if "dnes" in cleaned_lower:
+            return datetime.today().strftime("%Y-%m-%d")
+        elif "včera" in cleaned_lower:
+            return (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+        elif "předevčírem" in cleaned_lower:
+            return (datetime.today() - timedelta(days=2)).strftime("%Y-%m-%d")
+            
+        # Standardní české datum, např. "29.6. 2026" nebo "29. 6. 2026"
+        # Odstraníme mezery za tečkami
+        cleaned = re.sub(r'\s+', '', cleaned) # "29.6.2026"
+        
+        # Extrahujeme pouze "den.měsíc.rok"
+        match = re.search(r'(\d+)\.(\d+)\.(\d+)', cleaned)
+        if match:
+            day = int(match.group(1))
+            month = int(match.group(2))
+            year = int(match.group(3))
+            parsed_date = datetime(year, month, day)
+            return parsed_date.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    # Fallback na dnešní datum, pokud se nepodaří parsovat
+    return datetime.today().strftime("%Y-%m-%d")
+
+# --- Aktualizace stavů z Bazoše na pozadí ---
 def cli_update_listings_from_bazos(data):
-    import requests
     from bs4 import BeautifulSoup
+    import re
     
-    active = data.get("active_listings", [])
-    if not active:
-        print(f"{Colors.WARNING}Nemáš žádné aktivní inzeráty pro aktualizaci.{Colors.ENDC}")
+    # Načteme uživatelský config pro e-mail a telefon
+    _, user_config = load_data()
+    
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print(f"\n{Colors.WARNING}Instaluji knihovnu Playwright...{Colors.ENDC}")
+        os.system(".venv/bin/pip install playwright")
+        os.system(".venv/bin/playwright install chromium")
+        from playwright.sync_api import sync_playwright
+        
+    print(f"\n{Colors.HEADER}{Colors.BOLD}🔄 AKTUALIZACE STAVŮ INZERÁTŮ Z BAZOŠE (Moje inzeráty){Colors.ENDC}")
+    print(f"{Colors.BLUE}Spouštím prohlížeč pro přihlášení a stažení inzerátů...{Colors.ENDC}\n")
+    
+    html_content = ""
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(channel="chrome", headless=False)
+        except Exception:
+            browser = p.chromium.launch(headless=False)
+            
+        context = browser.new_context()
+        page = context.new_page()
+        
+        # Přejdeme na Moje inzeráty
+        page.goto("https://www.bazos.cz/moje-inzeraty.php")
+        
+        # Zkontrolujeme, zda je zobrazen formulář pro přihlášení
+        try:
+            email_input = page.locator("input[name='mail']")
+            phone_input = page.locator("input[name='telefon']")
+            
+            if email_input.is_visible(timeout=3000):
+                email_val = user_config.get("email", "tuj_email@example.com")
+                phone_val = user_config.get("phone", "777123456")
+                
+                print(f"  {Colors.BLUE}Vyplňuji přihlašovací údaje...{Colors.ENDC}")
+                email_input.fill(email_val)
+                phone_input.fill(phone_val)
+                
+                # Klikneme na Ověřit
+                submit_btn = page.locator("input[type='submit'][value='Ověřit']")
+                submit_btn.click()
+                print(f"  {Colors.GREEN}✓ Odeslán požadavek na SMS kód.{Colors.ENDC}")
+                
+                # Nyní čekáme, až se objeví pole pro SMS kód kodd
+                code_input = page.locator("input[name='kodd']")
+                code_input.wait_for(timeout=10000)
+                
+                # Požádáme uživatele v CLI o zadání SMS kódu
+                print(f"\n{Colors.BOLD}{Colors.HEADER}💬 SMS OVĚŘENÍ BAZOŠE:{Colors.ENDC}")
+                print(f"{Colors.BOLD}Na tvůj mobilní telefon ({phone_val}) byl odeslán SMS kód.{Colors.ENDC}")
+                sms_code = input(f"{Colors.BOLD}Zadej 6místný SMS kód: {Colors.ENDC}").strip()
+                
+                if not sms_code:
+                    print(f"{Colors.FAIL}SMS kód nebyl zadán. Ruším synchronizaci.{Colors.ENDC}")
+                    browser.close()
+                    return
+                    
+                code_input.fill(sms_code)
+                
+                # Klikneme na odeslat - Vypsat inzeráty
+                list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
+                list_btn.click()
+                time.sleep(2)
+        except Exception as login_err:
+            print(f"  {Colors.WARNING}Přihlašovací formulář se neobjevil nebo nastala chyba: {login_err}{Colors.ENDC}")
+            print(f"  {Colors.BLUE}Zkouším rovnou načíst přehled inzerátů...{Colors.ENDC}")
+            
+        try:
+            # Počkáme chvíli na vykreslení stránky
+            page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
+            
+        html_content = page.content()
+        browser.close()
+        
+    if not html_content:
+        print(f"{Colors.FAIL}Nepodařilo se stáhnout obsah stránky Bazoše!{Colors.ENDC}")
         return
         
-    print(f"\n{Colors.HEADER}{Colors.BOLD}🔄 AKTUALIZACE STAVŮ INZERÁTŮ Z BAZOŠE{Colors.ENDC}")
-    print(f"{Colors.BLUE}Stahuji data na pozadí, to může chvíli trvat...{Colors.ENDC}\n")
+    soup = BeautifulSoup(html_content, "html.parser")
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8"
-    }
+    # Hledáme všechny inzeráty
+    ad_elements = soup.find_all(class_=re.compile(r"\binzeraty\b"))
     
-    updated_count = 0
-    expired_count = 0
+    scraped_listings = []
+    print(f"\n{Colors.BLUE}Nalezeno {len(ad_elements)} inzerátů na Bazoši k vyparsování...{Colors.ENDC}")
     
-    for idx, ad in enumerate(active, 1):
-        url = ad.get("url")
-        if not url:
-            print(f"  [{idx}/{len(active)}] {Colors.WARNING}Přeskakuji '{ad['title']}': nemá uloženou URL adresu.{Colors.ENDC}")
+    for el in ad_elements:
+        try:
+            # Nadpis a URL
+            nadpis_el = el.find(class_="nadpis")
+            if not nadpis_el:
+                continue
+            a_tag = nadpis_el.find("a")
+            if not a_tag:
+                continue
+                
+            title_text = a_tag.get_text().strip()
+            ad_url = a_tag.get("href", "")
+            
+            # Pokud je URL relativní, doplníme doménu
+            if ad_url.startswith("/"):
+                ad_url = "https://www.bazos.cz" + ad_url
+            elif not ad_url.startswith("http"):
+                ad_url = "https://" + ad_url
+                
+            # Cena
+            cena_el = el.find(class_="inzeratycena")
+            price_val = 0
+            if cena_el:
+                cena_text = cena_el.get_text().replace(" ", "").replace("\xa0", "")
+                price_match = re.search(r"(\d+)", cena_text)
+                if price_match:
+                    price_val = int(price_match.group(1))
+                    
+            # Zhlédnutí
+            views_el = el.find(class_="inzeratyview")
+            views_val = 0
+            if views_el:
+                views_text = views_el.get_text().replace(" ", "").replace("\xa0", "")
+                views_match = re.search(r"(\d+)", views_text)
+                if views_match:
+                    views_val = int(views_match.group(1))
+                    
+            # Stáří / Datum vytvoření
+            date_el = el.find(class_="velikost10")
+            date_str = ""
+            if date_el:
+                date_text = date_el.get_text().strip()
+                date_str = parse_bazos_date(date_text)
+                
+            scraped_listings.append({
+                "title": title_text,
+                "url": ad_url,
+                "price": price_val,
+                "views": views_val,
+                "date_created": date_str
+            })
+        except Exception:
             continue
             
-        print(f"  [{idx}/{len(active)}] Kontroluji '{ad['title']}'...", end="", flush=True)
+    # Synchronizace s lokální databází
+    local_active = data.get("active_listings", [])
+    
+    updated_count = 0
+    imported_count = 0
+    expired_count = 0
+    
+    new_active_listings = []
+    matched_scraped_indices = set()
+    
+    # 1. Nejprve spárujeme stávající lokální inzeráty
+    for local_ad in local_active:
+        best_scraped_match = None
+        best_scraped_idx = -1
         
+        local_title_50 = local_ad["title"][:50].lower().strip()
+        local_url = local_ad.get("url", "").strip()
+        
+        # Zkusíme přesný match podle URL
+        if local_url:
+            for s_idx, scraped_ad in enumerate(scraped_listings):
+                if s_idx in matched_scraped_indices:
+                    continue
+                if scraped_ad["url"].strip() == local_url:
+                    best_scraped_match = scraped_ad
+                    best_scraped_idx = s_idx
+                    break
+                    
+        # Pokud nenašel, zkusíme match podle oříznutého Nadpisu (50 znaků)
+        if not best_scraped_match:
+            for s_idx, scraped_ad in enumerate(scraped_listings):
+                if s_idx in matched_scraped_indices:
+                    continue
+                scraped_title_50 = scraped_ad["title"][:50].lower().strip()
+                if scraped_title_50 == local_title_50:
+                    best_scraped_match = scraped_ad
+                    best_scraped_idx = s_idx
+                    break
+                    
+        if best_scraped_match:
+            matched_scraped_indices.add(best_scraped_idx)
+            # Aktualizujeme lokální inzerát
+            local_ad["url"] = best_scraped_match["url"]
+            local_ad["price"] = best_scraped_match["price"]
+            local_ad["views"] = best_scraped_match["views"]
+            local_ad["date_created"] = best_scraped_match["date_created"]
+            local_ad["status"] = "Aktivní"
+            
+            # Přepočet stáří
+            try:
+                dt = datetime.strptime(best_scraped_match["date_created"], "%Y-%m-%d")
+                local_ad["days_old"] = (datetime.today() - dt).days
+            except Exception:
+                local_ad["days_old"] = 0
+                
+            print(f"  {Colors.GREEN}✓ Aktualizováno:{Colors.ENDC} '{local_ad['title']}' -> Zhlédnutí: {local_ad['views']}, Cena: {local_ad['price']} Kč, Stáří: {local_ad['days_old']} dní")
+            updated_count += 1
+            new_active_listings.append(local_ad)
+        else:
+            # Inzerát na Bazoši chybí -> Expiroval
+            local_ad["status"] = "Expirováno"
+            print(f"  {Colors.FAIL}✗ Expirováno / Smazáno na Bazoši:{Colors.ENDC} '{local_ad['title']}'")
+            expired_count += 1
+            new_active_listings.append(local_ad)
+            
+    # 2. Automaticky importujeme nově nalezené inzeráty z Bazoše, které v JSONu nemáme
+    for s_idx, scraped_ad in enumerate(scraped_listings):
+        if s_idx in matched_scraped_indices:
+            continue
+            
+        default_pwd_b64 = user_config.get("default_ad_password_b64", "aGVzbG8xMjM=")
+        
+        # Generování cesty pro fotky bez závislostí
+        import unicodedata
+        def simple_slugify(text):
+            text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
+            text = text.lower()
+            text = re.sub(r'[^a-z0-9\s_]', '', text)
+            text = re.sub(r'[\s_]+', '_', text).strip('_')
+            return text
+            
+        folder_name = simple_slugify(scraped_ad["title"])
+        photos_dir = f"/Users/user/Desktop/Antigravity/Bazos_Photos/{folder_name}"
+        os.makedirs(photos_dir, exist_ok=True)
+        
+        days_old_val = 0
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            dt = datetime.strptime(scraped_ad["date_created"], "%Y-%m-%d")
+            days_old_val = (datetime.today() - dt).days
+        except Exception:
+            pass
             
-            # Check if deleted or redirected to category
-            is_deleted = False
-            if "/inzerat/" not in r.url:
-                is_deleted = True
-            else:
-                soup = BeautifulSoup(r.content, 'html.parser')
-                text_content = soup.get_text()
-                if any(phrase in text_content for phrase in ["Inzerát byl vymazán", "Inzerát již neexistuje", "Hledaný inzerát neexistuje"]):
-                    is_deleted = True
-                    
-            if is_deleted:
-                # Update status
-                ad["status"] = "Expirováno"
-                print(f" -> {Colors.FAIL}EXPIROVÁNO / SMAZÁNO{Colors.ENDC}")
-                expired_count += 1
-            else:
-                # Active! Parse view count and date
-                # Views
-                views_match = re.search(r'Vidělo:\s*(\d+)', text_content)
-                if views_match:
-                    ad["views"] = int(views_match.group(1))
-                    
-                # Date
-                det_nadpis = soup.find(class_='inzeratydetnadpis')
-                if det_nadpis:
-                    det_text = det_nadpis.get_text()
-                    date_match = re.search(r'\[(\d+\.\d+\.\s*\d{4})\]', det_text)
-                    if date_match:
-                        date_str = date_match.group(1).replace(' ', '')
-                        try:
-                            parsed_date = datetime.strptime(date_str, "%d.%m.%Y")
-                            ad["date_created"] = parsed_date.strftime("%Y-%m-%d")
-                        except Exception:
-                            pass
-                            
-                # Recalculate days_old
-                date_created = ad.get("date_created", "")
-                if date_created:
-                    try:
-                        dt = datetime.strptime(date_created, "%Y-%m-%d")
-                        ad["days_old"] = (datetime.today() - dt).days
-                    except Exception:
-                        ad["days_old"] = 0
-                
-                ad["status"] = "Aktivní"
-                print(f" -> {Colors.GREEN}AKTIVNÍ (Zhlédnutí: {ad.get('views', 0)}, Stáří: {ad.get('days_old', 0)} dní){Colors.ENDC}")
-                updated_count += 1
-                
-        except Exception as e:
-            print(f" -> {Colors.FAIL}CHYBA: {e}{Colors.ENDC}")
-            
-    # Save listings
+        new_ad = {
+            "title": scraped_ad["title"],
+            "price": scraped_ad["price"],
+            "ad_password_b64": default_pwd_b64,
+            "date_created": scraped_ad["date_created"],
+            "days_old": days_old_val,
+            "location": "Český Krumlov 381 01",
+            "views": scraped_ad["views"],
+            "url": scraped_ad["url"],
+            "local_photos_dir": photos_dir,
+            "description": "Automaticky importovaný inzerát z Bazoše. Doplňte prosím popis.",
+            "bookmarklet_uri": "",
+            "condition": "Aktivní",
+            "status": "Aktivní",
+            "notes": "Automatický import"
+        }
+        
+        print(f"  {Colors.HEADER}➕ Nově importováno z Bazoše:{Colors.ENDC} '{new_ad['title']}' (Cena: {new_ad['price']} Kč, URL: {new_ad['url']})")
+        imported_count += 1
+        new_active_listings.append(new_ad)
+        
+    data["active_listings"] = new_active_listings
     save_listings(data)
-    print(f"\n{Colors.GREEN}✓ Aktualizace dokončena! Aktivní: {updated_count}, Expirováno: {expired_count}.{Colors.ENDC}")
+    
+    print(f"\n{Colors.GREEN}✓ Synchronizace s Bazošem úspěšně dokončena!{Colors.ENDC}")
+    print(f"  Aktualizováno: {Colors.BOLD}{updated_count}{Colors.ENDC}")
+    print(f"  Expirováno: {Colors.BOLD}{expired_count}{Colors.ENDC}")
+    print(f"  Nově importováno: {Colors.BOLD}{imported_count}{Colors.ENDC}")
+    
     sync_to_onedrive(data)
 
 # --- CLI Průvodce pro přidání nové věci ---
@@ -757,55 +977,107 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                         continue
                 return False
 
-            def select_category():
-                for sel_name, selector in [("Rubrika", "select[name='rubrikyvybrat']"), ("Kategorie", "select[name='category'], select#category")]:
-                    try:
-                        select_loc = page.locator(selector)
-                        if select_loc.count() > 0:
-                            options_elements = select_loc.locator("option").all()
-                            best_value = None
-                            best_score = -1
-                            best_label = ""
+            def select_rubrika_first():
+                try:
+                    selector = "select[name='rubrikyvybrat']"
+                    select_loc = page.locator(selector)
+                    if select_loc.count() > 0 and select_loc.is_visible(timeout=500):
+                        options_elements = select_loc.locator("option").all()
+                        best_value = None
+                        best_score = -1
+                        best_label = ""
+                        
+                        title_lower = title.lower()
+                        description_lower = description.lower()
+                        
+                        for opt in options_elements:
+                            val = opt.get_attribute("value")
+                            if not val or val == "" or val == "0":
+                                continue
+                            label = opt.inner_text().strip().lower()
                             
-                            title_lower = title.lower()
-                            description_lower = description.lower()
+                            score = 0
+                            if label in title_lower:
+                                score += 10
+                            if label in description_lower:
+                                score += 2
                             
-                            for opt in options_elements:
-                                val = opt.get_attribute("value")
-                                if not val or val == "" or val == "0":
-                                    continue
-                                label = opt.inner_text().strip().lower()
-                                
-                                score = 0
-                                if label in title_lower:
-                                    score += 10
-                                if label in description_lower:
-                                    score += 2
-                                
-                                # Specifické Bazoš podkategorie
-                                if "sekack" in val or "sekačk" in label:
-                                    if "sekačk" in title_lower or "vyžínač" in title_lower or "strunov" in title_lower:
-                                        score += 20
-                                if "drtic" in val or "drtič" in label:
-                                    if "drtič" in title_lower or "štěpkovač" in title_lower:
-                                        score += 20
-                                if "stol" in val or "stůl" in label:
-                                    if "stůl" in title_lower or "stoly" in title_lower:
-                                        score += 20
-                                if "židl" in label or "zidl" in val:
-                                    if "židl" in title_lower or "židle" in title_lower:
-                                        score += 20
-                                        
-                                if score > best_score:
-                                    best_score = score
-                                    best_value = val
-                                    best_label = opt.inner_text().strip()
-                            
-                            if best_value and best_score > 0:
+                            if score > best_score:
+                                best_score = score
+                                best_value = val
+                                best_label = opt.inner_text().strip()
+                        
+                        if best_value and best_score > 0:
+                            current_value = select_loc.evaluate("el => el.value")
+                            if current_value != best_value:
+                                print(f"  {Colors.BLUE}Změna rubriky na '{best_label}'...{Colors.ENDC}")
                                 select_loc.select_option(value=best_value)
-                                print(f"  {Colors.GREEN}✓ {sel_name}{Colors.ENDC} vybrána automaticky: '{best_label}'")
-                    except Exception as select_err:
-                        pass
+                                try:
+                                    page.wait_for_load_state("networkidle", timeout=3000)
+                                except Exception:
+                                    pass
+                                time.sleep(1.5)
+                                print(f"  {Colors.GREEN}✓ Rubrika změněna na: '{best_label}'{Colors.ENDC}")
+                                return True
+                except Exception:
+                    pass
+                return False
+
+            def select_kategorie_second():
+                try:
+                    selector = "select[name='category'], select#category"
+                    select_loc = page.locator(selector)
+                    if select_loc.count() > 0 and select_loc.is_visible(timeout=500):
+                        options_elements = select_loc.locator("option").all()
+                        best_value = None
+                        best_score = -1
+                        best_label = ""
+                        
+                        title_lower = title.lower()
+                        description_lower = description.lower()
+                        
+                        for opt in options_elements:
+                            val = opt.get_attribute("value")
+                            if not val or val == "" or val == "0":
+                                continue
+                            label = opt.inner_text().strip().lower()
+                            
+                            score = 0
+                            if label in title_lower:
+                                score += 10
+                            if label in description_lower:
+                                score += 2
+                            
+                            # Specifické Bazoš podkategorie
+                            if "sekack" in val or "sekačk" in label:
+                                if "sekačk" in title_lower or "vyžínač" in title_lower or "strunov" in title_lower:
+                                    score += 20
+                            if "drtic" in val or "drtič" in label:
+                                if "drtič" in title_lower or "štěpkovač" in title_lower:
+                                    score += 20
+                            if "stol" in val or "stůl" in label:
+                                if "stůl" in title_lower or "stoly" in title_lower:
+                                    score += 20
+                            if "židl" in label or "zidl" in val:
+                                if "židl" in title_lower or "židle" in title_lower:
+                                    score += 20
+                                    
+                            if score > best_score:
+                                best_score = score
+                                best_value = val
+                                best_label = opt.inner_text().strip()
+                        
+                        if best_value and best_score > 0:
+                            current_value = select_loc.evaluate("el => el.value")
+                            if current_value != best_value:
+                                print(f"  {Colors.BLUE}Volba kategorie '{best_label}'...{Colors.ENDC}")
+                                select_loc.select_option(value=best_value)
+                                time.sleep(0.5)
+                                print(f"  {Colors.GREEN}✓ Kategorie vybrána: '{best_label}'{Colors.ENDC}")
+                                return True
+                except Exception:
+                    pass
+                return False
 
             def autofill_step1():
                 try:
@@ -847,10 +1119,17 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                                 break
                         except Exception:
                             pass
-
+ 
                     if nadpis_found:
-                        print(f"\n{Colors.GREEN}🎉 Formulář detekován! Začínám automaticky vyplňovat...{Colors.ENDC}")
+                        # 1. Nejprve zkusíme navolit Rubriku. Pokud to vyvolalo reload, cyklus pokračuje novou iterací
+                        if select_rubrika_first():
+                            continue
+                            
+                        # 2. Poté zkusíme navolit Kategorii
+                        select_kategorie_second()
                         
+                        # 3. Teprve nyní vyplníme textová pole
+                        print(f"\n{Colors.GREEN}🎉 Formulář detekován! Začínám automaticky vyplňovat...{Colors.ENDC}")
                         find_and_fill("Nadpis", ["input[name='nadpis']", "#nadpis"], title)
                         find_and_fill("Popis", ["textarea[name='popis']", "#popis"], description)
                         find_and_fill("Cena", ["input[name='cena']", "#cena"], price)
@@ -860,9 +1139,7 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                         find_and_fill("PSČ", ["input[name='lokalita']", "#lokalita", "input[name='psc']"], "38101")
                         find_and_fill("Heslo", ["input[name='heslo']", "#heslo"], password)
                         
-                        select_category()
-                        
-                        # Nahrání fotek
+                        # 4. Nahrání fotek
                         if photos:
                             print(f"{Colors.BLUE}Nahrávám {len(photos)} fotek...{Colors.ENDC}")
                             file_input_selectors = ["input[type='file']", "input[name='pfile[]']", "input[name*='file']"]
@@ -876,7 +1153,7 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                                         file_input_found = True
                                         break
                                 except Exception:
-                                        continue
+                                    continue
                             if not file_input_found:
                                 print(f"{Colors.WARNING}⚠️  Fotky se nepodařilo nahrát automaticky. Nahraj je ručně.{Colors.ENDC}")
                         
