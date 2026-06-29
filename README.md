@@ -32,7 +32,7 @@ Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování
    - Vykreslí barevné, perfektně naformátované tabulky aktivních inzerátů a historie prodejů (včetně celkového zisku a cenových rozdílů) přímo v konzoli.
 
 7. **Aktualizace stavů z Bazoše (`[7]`)**:
-   - Spustí rychlou synchronizaci reálného stavu inzerátů přímo z Bazoše (na pozadí, bez nutnosti otevírat prohlížeč).
+   - Spustí synchronizaci reálného stavu inzerátů přímo z Bazoše (v otevřeném prohlížeči pro stabilní sdílení aktivní relace).
    - Aktualizuje počet zhlédnutí (views), reálné datum vystavení a automaticky detekuje, zda inzerát nebyl vymazán nebo nevypršela jeho platnost (v tom případě změní stav na **Expirováno** a zvýrazní jej červeně).
    - Po dokončení automaticky uloží aktualizovaná data a promítne změny na OneDrive.
 
@@ -88,6 +88,15 @@ Hlavní řídicí panel spustíš jednoduše příkazem:
 ```bash
 .venv/bin/python post_to_bazos.py
 ```
+
+---
+
+## 🔐 Trvalá relace a stabilita přihlášení
+
+Bazoš.cz tvrdě omezuje frekvenci přihlašování přes SMS kódy. Aby se předešlo zablokování tvého čísla, Bazoš Automat používá **persistentní správu relace**:
+- **Jediná aktivní relace**: Během celého chodu aplikace se využívá jedno společné okno prohlížeče a jedna přihlašovací relace. 
+- **Automatické uložení**: Úspěšné přihlášení se ukládá do lokálního souboru `bazos_session.json` (který je bezpečně ignorován v `.gitignore`, aby neunikl na GitHub).
+- **Bezproblémový restart**: Pokud okno prohlížeče omylem zavřeš, automaticky se při příští akci otevře nové a načte stávající přihlášení ze souboru, takže SMS ověření projde bez nutnosti opakovaného zadávání kódu.
 
 ---
 
