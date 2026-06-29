@@ -499,7 +499,7 @@ def parse_bazos_date(date_text):
     return datetime.today().strftime("%Y-%m-%d")
 
 # --- Aktualizace stavů z Bazoše na pozadí ---
-def cli_update_listings_from_bazos(data):
+def cli_update_listings_from_bazos(data, is_web=False):
     from bs4 import BeautifulSoup
     import re
     
@@ -551,22 +551,28 @@ def cli_update_listings_from_bazos(data):
                 code_input = page.locator("input[name='kodd']")
                 code_input.wait_for(timeout=10000)
                 
-                # Požádáme uživatele v CLI o zadání SMS kódu
-                print(f"\n{Colors.BOLD}{Colors.HEADER}💬 SMS OVĚŘENÍ BAZOŠE:{Colors.ENDC}")
-                print(f"{Colors.BOLD}Na tvůj mobilní telefon ({phone_val}) byl odeslán SMS kód.{Colors.ENDC}")
-                sms_code = input(f"{Colors.BOLD}Zadej 6místný SMS kód: {Colors.ENDC}").strip()
-                
-                if not sms_code:
-                    print(f"{Colors.FAIL}SMS kód nebyl zadán. Ruším synchronizaci.{Colors.ENDC}")
-                    session_manager.close()
-                    return
-                    
-                code_input.fill(sms_code)
-                
-                # Klikneme na odeslat - Vypsat inzeráty
-                list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
-                list_btn.click()
-                time.sleep(2)
+                if is_web:
+                    print(f"  {Colors.WARNING}💬 [WEB] Přihlášení vyžaduje SMS kód. Zadej ho prosím přímo v otevřeném okně prohlížeče a klikni na 'Vypsat inzeráty'...{Colors.ENDC}")
+                    try:
+                        # Čekáme na zmizení formuláře (tzn. úspěšné přihlášení a přesměrování) po dobu až 60 sekund
+                        page.wait_for_selector("input[name='kodd']", state="hidden", timeout=60000)
+                        time.sleep(2)
+                    except Exception:
+                        print(f"  {Colors.WARNING}Vypršel časový limit pro zadání SMS kódu v prohlížeči.{Colors.ENDC}")
+                else:
+                    # Požádáme uživatele v CLI o zadání SMS kódu
+                    print(f"\n{Colors.BOLD}{Colors.HEADER}💬 SMS OVĚŘENÍ BAZOŠE:{Colors.ENDC}")
+                    print(f"{Colors.BOLD}Na tvůj mobilní telefon ({phone_val}) byl odeslán SMS kód.{Colors.ENDC}")
+                    sms_code = input(f"{Colors.BOLD}Zadej 6místný SMS kód: {Colors.ENDC}").strip()
+                    if not sms_code:
+                        print(f"{Colors.FAIL}SMS kód nebyl zadán. Ruším synchronizaci.{Colors.ENDC}")
+                        session_manager.close()
+                        return
+                    code_input.fill(sms_code)
+                    # Klikneme na odeslat - Vypsat inzeráty
+                    list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
+                    list_btn.click()
+                    time.sleep(2)
             else:
                 print(f"  {Colors.GREEN}✓ Úspěšně přihlášeno pomocí uložené relace.{Colors.ENDC}")
         except Exception as login_err:
@@ -931,7 +937,7 @@ def cli_change_price(data, user_config, page_runner):
         page_runner(selected_ad, user_config, action="edit_price", extra_val=str(new_price))
 
 # --- Poloautomatická správa inzerátu přes Playwright (Vystavení, Smazání, Editace ceny) ---
-def run_playwright_action(ad, user_config, action="post", extra_val=None):
+def run_playwright_action(ad, user_config, action="post", extra_val=None, is_web=False):
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -996,8 +1002,10 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                 submit_btn = page.locator("input[type='submit'], button[type='submit']")
                 submit_btn.first.click()
                 print(f"\n{Colors.GREEN}✓ Formulář odeslán.{Colors.ENDC}")
-                print(f"{Colors.BOLD}👉 Dokonči smazání v prohlížeči (např. výběr důvodu) a stiskni [Enter] v terminálu...{Colors.ENDC}")
-                input()
+                print(f"{Colors.BOLD}👉 Dokonči smazání v prohlížeči (např. výběr důvodu)...{Colors.ENDC}")
+                if not is_web:
+                    print("stiskni [Enter] v terminálu pro pokračování...")
+                    input()
                 try:
                     context.storage_state(path=str(SESSION_STATE_PATH))
                 except Exception:
@@ -1005,8 +1013,10 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                 return True
             except Exception as delete_err:
                 print(f"{Colors.FAIL}Chyba při mazání inzerátu: {delete_err}{Colors.ENDC}")
-                print("Dokonči prosím smazání ručně v otevřeném prohlížeči a stiskni [Enter]...")
-                input()
+                print("Dokonči prosím smazání ručně v otevřeném prohlížeči...")
+                if not is_web:
+                    print("stiskni [Enter] v terminálu pro pokračování...")
+                    input()
                 try:
                     context.storage_state(path=str(SESSION_STATE_PATH))
                 except Exception:
@@ -1044,8 +1054,9 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                 
                 print(f"\n{Colors.GREEN}🎉 Nová cena {price} Kč byla úspěšně předvyplněna na Bazoši!{Colors.ENDC}")
                 print(f"{Colors.BOLD}👉 Zkontroluj inzerát v prohlížeči a klikni dole na 'Upravit' pro uložení změn.{Colors.ENDC}")
-                print("Po dokončení stiskni [Enter] zde v terminálu...")
-                input()
+                if not is_web:
+                    print("Po dokončení stiskni [Enter] zde v terminálu...")
+                    input()
                 try:
                     context.storage_state(path=str(SESSION_STATE_PATH))
                 except Exception:
@@ -1053,8 +1064,10 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                 return True
             except Exception as edit_err:
                 print(f"{Colors.FAIL}Nepodařilo se plně automatizovat změnu ceny: {edit_err}{Colors.ENDC}")
-                print("Uprav prosím cenu ručně v otevřeném prohlížeči a ulož ji. Poté stiskni [Enter]...")
-                input()
+                print("Uprav prosím cenu ručně v otevřeném prohlížeči a ulož ji.")
+                if not is_web:
+                    print("Poté stiskni [Enter] v terminálu...")
+                    input()
                 try:
                     context.storage_state(path=str(SESSION_STATE_PATH))
                 except Exception:
@@ -1271,7 +1284,10 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
                 return False
                 
             if form_filled:
-                new_url = input(f"\n{Colors.BOLD}Zadej novou URL adresu inzerátu na Bazoši (pokud ji máš, jinak stiskni Enter): {Colors.ENDC}").strip()
+                if is_web:
+                    new_url = ""
+                else:
+                    new_url = input(f"\n{Colors.BOLD}Zadej novou URL adresu inzerátu na Bazoši (pokud ji máš, jinak stiskni Enter): {Colors.ENDC}").strip()
                 if new_url:
                     ad["url"] = new_url
                     ad["date_created"] = datetime.today().strftime('%Y-%m-%d')

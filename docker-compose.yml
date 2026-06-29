@@ -1,0 +1,27 @@
+# ==========================================================
+# Bazoš Automat & AI Editor - Docker Compose Configuration
+# Brand: TERMS a.s. / Roboton Custom Platform
+# For: TrueNAS / Home Server Deployment behind Nginx Proxy
+# ==========================================================
+
+version: '3.8'
+
+services:
+  bazos-automat:
+    build: .
+    image: ghcr.io/onhala/bazos-automat:latest
+    container_name: bazos-automat
+    restart: unless-stopped
+    ports:
+      - "5001:5001" # Flask Web Interface
+      - "6080:6080" # noVNC Interface (WebSockets)
+    volumes:
+      # Persistent configuration and listings data
+      - ./bazos_config.json:/app/bazos_config.json
+      - ./bazos_active_listings.json:/app/bazos_active_listings.json
+      - ./bazos_session.json:/app/bazos_session.json
+      # Directory for listing photos (so they are persistent and accessible)
+      - ./photos:/app/photos
+    environment:
+      - DISPLAY=:99
+      - PYTHONUNBUFFERED=1

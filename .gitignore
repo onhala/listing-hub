@@ -25,4 +25,8 @@ bazos_active_listings.json
 bazos_active_listings.json.tmp
 bazos_session.json
 
+# Local listing photos
+photos/
+
+
 

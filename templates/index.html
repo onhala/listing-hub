@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bazoš Automat & AI Editor</title>
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Glassmorphic Styles -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Background glowing shapes -->
+    <div class="glow-orb" id="orb-1"></div>
+    <div class="glow-orb" id="orb-2"></div>
+    <div class="glow-orb" id="orb-3"></div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">
+                    <i class="fa-solid fa-robot"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>Roboton</h1>
+                    <span>Bazoš Automat</span>
+                </div>
+            </div>
+            
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="active-listings">
+                    <i class="fa-solid fa-rectangle-list"></i>
+                    <span>Aktivní inzeráty</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="sold-listings">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>Prodané věci</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="browser">
+                    <i class="fa-solid fa-compass"></i>
+                    <span>Živý prohlížeč</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="config">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Nastavení</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span>Lokální server aktivní</span>
+                </div>
+                <div class="version">v3.0.0 (Gen3 Core)</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header bar -->
+            <header class="top-header">
+                <div class="header-title">
+                    <h2 id="page-title">Aktivní inzeráty</h2>
+                    <p class="subtitle">Přehled a správa tvých inzerátů na Bazoši s AI podporou.</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="btn-sync-views">
+                        <i class="fa-solid fa-arrows-rotate"></i> Synchronizovat s Bazošem
+                    </button>
+                    <button class="btn btn-primary" id="btn-add-listing-modal">
+                        <i class="fa-solid fa-plus"></i> Nový inzerát
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard Stats -->
+            <section class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon purple">
+                        <i class="fa-solid fa-rectangle-list"></i>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-label">Aktivní inzeráty</span>
+                        <h3 class="stat-value" id="stat-active-count">0</h3>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon blue">
+                        <i class="fa-solid fa-eye"></i>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-label">Celkem zhlédnutí</span>
+                        <h3 class="stat-value" id="stat-total-views">0</h3>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon green">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-label">Prodané položky</span>
+                        <h3 class="stat-value" id="stat-sold-count">0</h3>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tabs content -->
+            <div class="tab-content active" id="tab-active-listings">
+                <div class="listings-grid" id="active-listings-list">
+                    <!-- Cards will be dynamically rendered here -->
+                    <div class="loading-state">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Načítám inzeráty...
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-browser">
+                <div class="browser-container" style="display: flex; flex-direction: column; gap: 1rem; height: calc(100vh - 140px);">
+                    <div class="browser-info-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.2rem; background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; font-size: 0.9rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-color);">
+                            <i class="fa-solid fa-circle-info" style="color: var(--primary-color);"></i>
+                            <span>Zde můžeš v reálném čase sledovat a ovládat prohlížeč Playwright. Pokud Bazoš vyžaduje SMS kód, zadej jej přímo v tomto okně.</span>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-reload-vnc" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+                            <i class="fa-solid fa-arrows-rotate"></i> Znovu připojit
+                        </button>
+                    </div>
+                    <div class="browser-frame-wrapper" style="flex: 1; border-radius: 16px; overflow: hidden; background: #07050e; border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);">
+                        <iframe id="vnc-iframe" style="width: 100%; height: 100%; border: none;" src=""></iframe>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-config">
+                <div class="config-card">
+                    <h3>Nastavení Bazoš Automatu</h3>
+                    <p class="config-desc">Nakonfiguruj své kontaktní údaje a Gemini API klíč pro správnou funkčnost automatizace a AI vylepšení.</p>
+                    
+                    <form id="config-form" class="config-form-grid">
+                        <div class="form-group">
+                            <label for="config-name">Tvoje jméno</label>
+                            <input type="text" id="config-name" required placeholder="Např. Ondřej Hála">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-email">E-mail</label>
+                            <input type="email" id="config-email" required placeholder="Např. ondrej.hala@roboton.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-phone">Telefonní číslo</label>
+                            <input type="text" id="config-phone" required placeholder="Např. 777123456">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-zip">PSČ</label>
+                            <input type="text" id="config-zip" required placeholder="Např. 10000">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="config-gemini-key">Gemini API Klíč (Google AI)</label>
+                            <div class="input-password-wrapper">
+                                <input type="password" id="config-gemini-key" placeholder="AI za-p-f... (ponech prázdné pro beze změny)">
+                                <button type="button" class="btn-toggle-password" id="toggle-gemini-key">
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                            <span class="input-hint">Klíč slouží pro inteligentní korekci a optimalizaci prodejních textů. Data jsou uložena pouze lokálně v `bazos_config.json`.</span>
+                        </div>
+                        <div class="form-actions full-width">
+                            <button type="submit" class="btn btn-primary" id="btn-save-config">
+                                <i class="fa-solid fa-floppy-disk"></i> Uložit nastavení
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ADD LISTING MODAL -->
+    <div class="modal-overlay" id="add-listing-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Vytvořit nový inzerát</h3>
+                <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="add-listing-form">
+                    <div class="form-group">
+                        <label for="new-title">Název věci (Nadpis)</label>
+                        <input type="text" id="new-title" maxlength="50" required placeholder="Zadej stručný a jasný název (max 50 znaků)">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-price">Inzerovaná cena (Kč)</label>
+                        <input type="number" id="new-price" min="0" required placeholder="Např. 1500">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-description">Popis věci</label>
+                        <textarea id="new-description" rows="6" required placeholder="Popiš věc, její stav, důvod prodeje a podrobnosti..."></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-close-modal">Zrušit</button>
+                        <button type="submit" class="btn btn-primary">Vytvořit inzerát</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDIT LISTING MODAL (DETAIL EDITOR) -->
+    <div class="modal-overlay" id="edit-listing-modal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3>Editor inzerátu</h3>
+                <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body editor-layout">
+                <div class="editor-fields">
+                    <form id="edit-listing-form">
+                        <input type="hidden" id="edit-photos-dir">
+                        <div class="form-group">
+                            <label for="edit-title">
+                                Nadpis (max 50 znaků)
+                                <button type="button" class="btn-ai-sparkle" id="ai-improve-title" title="Vylepšit nadpis pomocí AI">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> AI Vylepšit
+                                </button>
+                            </label>
+                            <input type="text" id="edit-title" maxlength="50" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-price">Cena (Kč)</label>
+                            <input type="number" id="edit-price" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-description">
+                                Popis inzerátu
+                                <div class="ai-actions-group">
+                                    <button type="button" class="btn-ai-sparkle" id="ai-improve-desc" title="Vylepšit tón a styl pomocí AI">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i> AI Vylepšit
+                                    </button>
+                                    <button type="button" class="btn-ai-sparkle" id="ai-fix-desc" title="Opravit překlepy a gramatiku">
+                                        <i class="fa-solid fa-spell-check"></i> Opravit chyby
+                                    </button>
+                                    <button type="button" class="btn-ai-sparkle" id="ai-shorten-desc" title="Zkrátit popis">
+                                        <i class="fa-solid fa-compress"></i> Zkrátit
+                                    </button>
+                                </div>
+                            </label>
+                            <textarea id="edit-description" rows="10" required></textarea>
+                            <span class="input-hint">Tip: Označ konkrétní větu v popisu a nechej ji přepsat pomocí plovoucího AI tlačítka!</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-notes">Poznámky k inzerátu (interní)</label>
+                            <textarea id="edit-notes" rows="3" placeholder="Sem si můžeš napsat poznámky k věci, kde je skladem, apod. (neodesílá se na Bazoš)"></textarea>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Ad Info & Control Panel -->
+                <div class="editor-sidebar">
+                    <div class="info-widget">
+                        <h4>Stav inzerátu</h4>
+                        <div class="widget-row">
+                            <span class="lbl">URL Bazoš:</span>
+                            <span class="val" id="info-url-container">-</span>
+                        </div>
+                        <div class="widget-row">
+                            <span class="lbl">Zhlédnutí:</span>
+                            <span class="val" id="info-views">0</span>
+                        </div>
+                        <div class="widget-row">
+                            <span class="lbl">Složka s fotkami:</span>
+                            <span class="val font-mono" id="info-photos-dir">photos/</span>
+                        </div>
+                    </div>
+
+                    <div class="control-widget">
+                        <h4>Bazoš Automatizace</h4>
+                        <p class="widget-desc">Spustí poloautomatické skripty přes Playwright. Sleduj otevřené okno prohlížeče Chrome.</p>
+                        
+                        <div class="automation-actions">
+                            <button class="btn btn-primary btn-block" id="action-post">
+                                <i class="fa-solid fa-rocket"></i> Vystavit / Obnovit inzerát
+                            </button>
+                            <button class="btn btn-secondary btn-block" id="action-edit-price">
+                                <i class="fa-solid fa-tag"></i> Synchronizovat cenu online
+                            </button>
+                            <button class="btn btn-danger btn-block" id="action-delete">
+                                <i class="fa-solid fa-trash-can"></i> Smazat z Bazoše
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-close-modal">Zavřít</button>
+                <button type="button" class="btn btn-primary" id="btn-save-listing-changes">
+                    <i class="fa-solid fa-floppy-disk"></i> Uložit změny
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI PROPOSAL MODAL -->
+    <div class="modal-overlay" id="ai-proposal-modal">
+        <div class="modal modal-md">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Návrh Vylepšení</h3>
+                <button class="btn-close-ai-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body ai-diff-view">
+                <div class="diff-block">
+                    <h5>Původní text:</h5>
+                    <div class="text-preview original-text" id="ai-original-text-preview"></div>
+                </div>
+                <div class="diff-block">
+                    <h5>Navržený AI text:</h5>
+                    <div class="text-preview improved-text" id="ai-improved-text-preview"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-close-ai-modal">Odmítnout</button>
+                <button type="button" class="btn btn-primary" id="btn-accept-ai-proposal">
+                    <i class="fa-solid fa-check"></i> Použít tento text
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PLAYWRIGHT FLOATING RUNNING BAR -->
+    <div class="playwright-status-bar" id="playwright-status">
+        <div class="playwright-status-inner">
+            <span class="spinner-small"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+            <span class="status-text">Playwright automatizace běží. Sleduj otevřené Chrome okno a případně zadej SMS...</span>
+        </div>
+    </div>
+
+    <!-- INLINE SELECTION AI TOOLTIP -->
+    <button class="inline-ai-tooltip" id="inline-ai-btn">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Přepsat s AI
+    </button>
+</body>
+</html>
