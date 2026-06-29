@@ -453,7 +453,12 @@ def cli_update_listings_from_bazos(data):
         except Exception:
             browser = p.chromium.launch(headless=False)
             
-        context = browser.new_context()
+        # Načteme uloženou relaci, pokud existuje, pro přihlášení bez SMS
+        if SESSION_STATE_PATH.exists():
+            print(f"  {Colors.BLUE}Načítám uloženou relaci (cookies)...{Colors.ENDC}")
+            context = browser.new_context(storage_state=str(SESSION_STATE_PATH))
+        else:
+            context = browser.new_context()
         page = context.new_page()
         
         # Přejdeme na Moje inzeráty
@@ -468,7 +473,7 @@ def cli_update_listings_from_bazos(data):
                 email_val = user_config.get("email", "tuj_email@example.com")
                 phone_val = user_config.get("phone", "777123456")
                 
-                print(f"  {Colors.BLUE}Vyplňuji přihlašovací údaje...{Colors.ENDC}")
+                print(f"  {Colors.BLUE}Relace neexistuje nebo vypršela. Vyplňuji přihlašovací údaje...{Colors.ENDC}")
                 email_input.fill(email_val)
                 phone_input.fill(phone_val)
                 
@@ -497,6 +502,8 @@ def cli_update_listings_from_bazos(data):
                 list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
                 list_btn.click()
                 time.sleep(2)
+            else:
+                print(f"  {Colors.GREEN}✓ Úspěšně přihlášeno pomocí uložené relace.{Colors.ENDC}")
         except Exception as login_err:
             print(f"  {Colors.WARNING}Přihlašovací formulář se neobjevil nebo nastala chyba: {login_err}{Colors.ENDC}")
             print(f"  {Colors.BLUE}Zkouším rovnou načíst přehled inzerátů...{Colors.ENDC}")
@@ -507,8 +514,17 @@ def cli_update_listings_from_bazos(data):
         except Exception:
             pass
             
+        # Uložíme/aktualizujeme platnou relaci, pokud jsme přihlášeni
+        try:
+            if not page.locator("input[name='mail']").is_visible(timeout=2000):
+                context.storage_state(path=str(SESSION_STATE_PATH))
+                print(f"  {Colors.GREEN}✓ Relace uložena/aktualizována pro příště.{Colors.ENDC}")
+        except Exception as state_err:
+            print(f"  {Colors.WARNING}Nepodařilo se uložit stav relace: {state_err}{Colors.ENDC}")
+            
         html_content = page.content()
         browser.close()
+
         
     if not html_content:
         print(f"{Colors.FAIL}Nepodařilo se stáhnout obsah stránky Bazoše!{Colors.ENDC}")
@@ -886,7 +902,12 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None):
         except Exception:
             browser = p.chromium.launch(headless=False)
             
-        context = browser.new_context()
+        # Načteme uloženou relaci, pokud existuje, pro sdílení přihlášení
+        if SESSION_STATE_PATH.exists():
+            print(f"  {Colors.BLUE}Načítám uloženou relaci (cookies)...{Colors.ENDC}")
+            context = browser.new_context(storage_state=str(SESSION_STATE_PATH))
+        else:
+            context = browser.new_context()
         page = context.new_page()
         
         # --- AKCE: SMAZÁNÍ (DELETE) ---
