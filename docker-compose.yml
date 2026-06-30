@@ -22,6 +22,9 @@ services:
       - ./bazos_session.json:/app/bazos_session.json
       # Directory for listing photos (so they are persistent and accessible)
       - ./photos:/app/photos
+      # Host folder mounts to access photos and export Excel directly to macOS Desktop
+      - /Users/ondre/Desktop/Antigravity:/Users/ondre/Desktop/Antigravity
+      - /Users/ondre/Desktop/Antigravity:/root/Desktop/Antigravity
     environment:
       - DISPLAY=:99
       - PYTHONUNBUFFERED=1
