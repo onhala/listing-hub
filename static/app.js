@@ -65,6 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
         saveAd: "/api/listings/save",
         addAd: "/api/listings/add",
         action: "/api/action",
+        cancel: "/api/action/cancel",
         aiImprove: "/api/ai/improve"
     };
 
@@ -333,15 +334,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await res.json();
             if (res.ok) {
-                showNotification(data.message || "Akce úspěšně dokončena", "success");
-                editListingModal.classList.remove("active");
-                loadListings();
+                // Začneme periodicky kontrolovat stav akce na pozadí
+                const statusInterval = setInterval(async () => {
+                    try {
+                        const statusRes = await fetch("/api/action/status");
+                        if (statusRes.ok) {
+                            const statusData = await statusRes.json();
+                            if (!statusData.running) {
+                                clearInterval(statusInterval);
+                                setPlaywrightActive(false);
+                                if (statusData.error) {
+                                    showNotification(statusData.error, "error");
+                                } else {
+                                    showNotification("Akce byla úspěšně dokončena.", "success");
+                                    editListingModal.classList.remove("active");
+                                    loadListings();
+                                }
+                            }
+                        }
+                    } catch (statusErr) {
+                        console.error("Chyba při dotazování na stav operace:", statusErr);
+                    }
+                }, 1000);
             } else {
-                showNotification(data.message || "Chyba při běhu automatizace", "error");
+                showNotification(data.message || "Chyba při spouštění automatizace", "error");
+                setPlaywrightActive(false);
             }
         } catch (err) {
-            showNotification("Spojení se serverem selhalo při automatizaci.", "error");
-        } finally {
+            showNotification("Spojení se serverem selhalo při spouštění.", "error");
             setPlaywrightActive(false);
         }
     };
@@ -369,6 +389,22 @@ document.addEventListener("DOMContentLoaded", () => {
     // Globální synchronizace views
     document.getElementById("btn-sync-views").addEventListener("click", () => {
         triggerPlaywrightAction({ local_photos_dir: "all" }, "sync_views");
+    });
+
+    // Přerušení běžící akce
+    document.getElementById("btn-cancel-action").addEventListener("click", async () => {
+        showNotification("Odesílám požadavek na přerušení...", "info");
+        try {
+            const res = await fetch(API.cancel, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                showNotification(data.message || "Operace byla přerušena.", "success");
+            } else {
+                showNotification(data.message || "Nepodařilo se přerušit operaci.", "error");
+            }
+        } catch (err) {
+            showNotification("Chyba při komunikaci se serverem.", "error");
+        }
     });
 
     const setPlaywrightActive = (isActive) => {

@@ -9,9 +9,55 @@ from pathlib import Path
 # Přidáme aktuální adresář do sys.path, abychom mohli importovat post_to_bazos
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, CONFIG_PATH, LISTINGS_PATH
+import multiprocessing
+import asyncio
+
+from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, CONFIG_PATH, LISTINGS_PATH, session_manager
 
 app = Flask(__name__)
+
+playwright_process = None
+
+from datetime import datetime
+
+def log_debug(msg):
+    try:
+        with open("/tmp/thread_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n")
+    except Exception:
+        pass
+
+def process_target(ad, user_config, action_type, extra_val):
+    log_debug("1. Background process started")
+    
+    # Set up a new event loop for this background process
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    log_debug("2. Asyncio event loop configured")
+    
+    try:
+        listings_data, _ = load_data()
+        log_debug(f"3. Data loaded, action_type={action_type}")
+        if action_type == "sync_views":
+            log_debug("4. Calling cli_update_listings_from_bazos")
+            cli_update_listings_from_bazos(listings_data, is_web=True)
+            log_debug("5. Done cli_update_listings_from_bazos")
+            save_listings(listings_data)
+        else:
+            log_debug("4. Calling run_playwright_action")
+            success = run_playwright_action(ad, user_config, action=action_type, extra_val=extra_val, is_web=True)
+            log_debug(f"5. Done run_playwright_action, success={success}")
+            if not success:
+                with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
+                    f.write("Akce byla stornována nebo selhala.")
+            else:
+                save_listings(listings_data)
+    except Exception as e:
+        log_debug(f"ERR: {e}")
+        with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
+            f.write(str(e))
+    finally:
+        log_debug("6. Process target finished")
 
 # Konfigurace portu
 PORT = 5001
@@ -112,7 +158,18 @@ def add_listing_endpoint():
 
 @app.route("/api/action/<action_type>", methods=["POST"])
 def run_action(action_type):
+    global playwright_process
     try:
+        if playwright_process and playwright_process.is_alive():
+            return jsonify({"status": "error", "message": "Jiná operace již běží."}), 400
+
+        # Odstraníme předchozí chybu, pokud existuje
+        if os.path.exists("/tmp/playwright_error.txt"):
+            try:
+                os.remove("/tmp/playwright_error.txt")
+            except Exception:
+                pass
+
         payload = request.json or {}
         ad_id = payload.get("local_photos_dir") # používáme složku jako unikátní klíč inzerátu
         
@@ -120,40 +177,81 @@ def run_action(action_type):
         
         # Najdeme inzerát podle local_photos_dir
         selected_ad = None
-        for ad in listings_data.get("active_listings", []):
-            if ad.get("local_photos_dir") == ad_id:
-                selected_ad = ad
-                break
-                
-        if not selected_ad:
-            for ad in listings_data.get("sold_listings", []):
+        if ad_id and ad_id != "all":
+            for ad in listings_data.get("active_listings", []):
                 if ad.get("local_photos_dir") == ad_id:
                     selected_ad = ad
                     break
                     
-        if not selected_ad and action_type != "sync_views":
-            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
-            
-        if action_type == "sync_views":
-            # Synchronizace všech inzerátů z Bazoše
-            cli_update_listings_from_bazos(listings_data, is_web=True)
-            save_listings(listings_data)
-            return jsonify({"status": "success", "message": "Zhlédnutí inzerátů byla synchronizována s Bazošem."})
-            
+            if not selected_ad:
+                for ad in listings_data.get("sold_listings", []):
+                    if ad.get("local_photos_dir") == ad_id:
+                        selected_ad = ad
+                        break
+                        
+            if not selected_ad:
+                return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+                
         # Pro ostatní akce (post, edit_price, delete)
         extra_val = payload.get("extra_val") # např. nová cena
         
-        # Spustíme neblokující Playwright akci
-        success = run_playwright_action(selected_ad, user_config, action=action_type, extra_val=extra_val, is_web=True)
+        # Spustíme neblokující Playwright akci na pozadí jako samostatný proces
+        playwright_process = multiprocessing.Process(
+            target=process_target, 
+            args=(selected_ad, user_config, action_type, extra_val)
+        )
+        playwright_process.start()
         
-        if success:
-            # Uložíme případné změny (např. pokud se změnila URL u 'post')
-            save_listings(listings_data)
-            return jsonify({"status": "success", "message": f"Akce '{action_type}' úspěšně spuštěna a zpracována."})
-        else:
-            return jsonify({"status": "error", "message": f"Akce '{action_type}' selhala nebo byla přerušena."}), 500
+        return jsonify({"status": "success", "message": f"Akce '{action_type}' úspěšně spuštěna na pozadí."})
             
     except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/action/status", methods=["GET"])
+def action_status():
+    global playwright_process
+    running = False
+    error = None
+    
+    if playwright_process:
+        if playwright_process.is_alive():
+            running = True
+        else:
+            if os.path.exists("/tmp/playwright_error.txt"):
+                try:
+                    with open("/tmp/playwright_error.txt", "r", encoding="utf-8") as f:
+                        error = f.read().strip()
+                except Exception:
+                    pass
+            elif playwright_process.exitcode != 0 and playwright_process.exitcode is not None:
+                if playwright_process.exitcode in [15, -15, -9, 9]:
+                    error = "Operace byla přerušena uživatelem."
+                else:
+                    error = f"Operace selhala s kódem {playwright_process.exitcode}."
+                    
+    return jsonify({
+        "running": running,
+        "error": error
+    })
+
+@app.route("/api/action/cancel", methods=["POST"])
+def cancel_action():
+    global playwright_process
+    try:
+        if playwright_process and playwright_process.is_alive():
+            log_debug("CANCEL: Terminating playwright_process")
+            playwright_process.terminate()
+            playwright_process.join(timeout=2)
+            if playwright_process.is_alive():
+                playwright_process.kill()
+            
+            # Zapíšeme, že operace byla přerušena
+            with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
+                f.write("Operace byla přerušena uživatelem.")
+                
+        return jsonify({"status": "success", "message": "Operace byla přerušena."})
+    except Exception as e:
+        log_debug(f"CANCEL ERR: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/ai/improve", methods=["POST"])

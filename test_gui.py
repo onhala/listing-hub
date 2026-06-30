@@ -124,6 +124,22 @@ def test_bazos_automat_gui():
         
         page.screenshot(path=os.path.join(SCREENSHOT_DIR, "06_sync_running.png"))
         
+        # 6. Test přerušení běžící operace
+        print("\n🛑 6. Testuji přerušení (zrušení) běžící operace...")
+        assert page.is_visible("#btn-cancel-action"), "Tlačítko 'Přerušit' není viditelné v běžícím stavu!"
+        print("   - Klikám na tlačítko 'Přerušit'")
+        page.click("#btn-cancel-action")
+        
+        # Čekáme, až stavový řádek zmizí
+        print("   - Čekám na zmizení stavového řádku...")
+        page.wait_for_selector("#playwright-status", state="hidden", timeout=5000)
+        is_status_visible_after = page.is_visible("#playwright-status")
+        print(f"   - Stavový řádek je viditelný po přerušení: {is_status_visible_after}")
+        assert not is_status_visible_after, "Stavový řádek nezmizel ani po kliknutí na Přerušit!"
+        print("   - ✓ Stavový řádek úspěšně zmizel a operace byla přerušena.")
+        
+        page.screenshot(path=os.path.join(SCREENSHOT_DIR, "07_sync_cancelled.png"))
+        
         print("\n✅ Všechny E2E/GUI testy úspěšně proběhly!")
         browser.close()
 

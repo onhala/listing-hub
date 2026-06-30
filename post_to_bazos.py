@@ -37,16 +37,25 @@ class PlaywrightSessionManager:
         self.page = None
 
     def get_session(self):
+        from datetime import datetime
+        def log_psm(msg):
+            try:
+                with open("/tmp/thread_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [PSM] {msg}\n")
+            except Exception:
+                pass
+
         is_active = False
         try:
             if self.browser and self.browser.is_connected() and self.page and not self.page.is_closed():
                 _ = self.page.url
                 is_active = True
-        except Exception:
-            # Playwright thread/greenlet has exited — force full reset
+        except Exception as e:
+            log_psm(f"Session check error: {e}")
             is_active = False
             
         if not is_active:
+            log_psm("Starting session reset/close")
             self.close()
             try:
                 from playwright.sync_api import sync_playwright
@@ -56,20 +65,29 @@ class PlaywrightSessionManager:
                 os.system(".venv/bin/playwright install chromium")
                 from playwright.sync_api import sync_playwright
                 
+            log_psm("Calling sync_playwright().start()")
             self.playwright = sync_playwright().start()
+            log_psm("sync_playwright().start() completed")
             try:
+                log_psm("Launching browser (chrome)")
                 self.browser = self.playwright.chromium.launch(channel="chrome", headless=False)
-            except Exception:
+            except Exception as e:
+                log_psm(f"Chrome launch failed: {e}. Launching default chromium.")
                 self.browser = self.playwright.chromium.launch(headless=False)
+            log_psm("Browser launched successfully")
             
             if SESSION_STATE_PATH.exists():
-                print(f"  {Colors.BLUE}Načítám uloženou relaci (cookies)...{Colors.ENDC}")
+                log_psm("Loading session state (cookies)")
                 self.context = self.browser.new_context(storage_state=str(SESSION_STATE_PATH))
             else:
+                log_psm("Creating new context")
                 self.context = self.browser.new_context()
             
+            log_psm("Setting default timeout")
             self.context.set_default_timeout(0)
+            log_psm("Creating new page")
             self.page = self.context.new_page()
+            log_psm("Session initialized successfully")
             
         return self.playwright, self.browser, self.context, self.page
 
@@ -942,7 +960,7 @@ def cli_change_price(data, user_config, page_runner):
         page_runner(selected_ad, user_config, action="edit_price", extra_val=str(new_price))
 
 # --- Poloautomatická správa inzerátu přes Playwright (Vystavení, Smazání, Editace ceny) ---
-def run_playwright_action(ad, user_config, action="post", extra_val=None, is_web=False):
+def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, is_web=False):
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -1303,6 +1321,17 @@ def run_playwright_action(ad, user_config, action="post", extra_val=None, is_web
                     pass
                 return True
     return False
+
+def run_playwright_action(*args, **kwargs):
+    try:
+        return _run_playwright_action_impl(*args, **kwargs)
+    except Exception as e:
+        print(f"\n{Colors.FAIL}Playwright operace byla přerušena nebo selhala: {e}{Colors.ENDC}")
+        try:
+            session_manager.close()
+        except Exception:
+            pass
+        return False
 
 # --- Znovuvystavení (Topování zdarma - smazat + vystavit znovu) ---
 def cli_repost_listing(data, user_config):
