@@ -232,4 +232,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--dry-run":
         print("Flask syntax OK.")
         sys.exit(0)
-    app.run(host="127.0.0.1", port=PORT, debug=True)
+    app.run(host="0.0.0.0", port=PORT, debug=True)
+
+
+
