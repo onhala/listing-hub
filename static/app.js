@@ -318,6 +318,9 @@ document.addEventListener("DOMContentLoaded", () => {
         setPlaywrightActive(true);
         showNotification(`Spouštím akci '${actionType}' přes Playwright...`, "info");
         
+        // Automaticky přepnout na záložku s živým prohlížečem, aby uživatel viděl spuštěné okno
+        switchToTab("browser");
+        
         try {
             const res = await fetch(`${API.action}/${actionType}`, {
                 method: "POST",
@@ -562,15 +565,57 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==========================================
 
     // Přepínání tabů
+    function switchToTab(tabName) {
+        console.log("➡️ switchToTab called with:", tabName);
+        const item = Array.from(navItems).find(nav => nav.getAttribute("data-tab") === tabName);
+        if (!item) {
+            console.log("⚠️ Tab item not found for:", tabName);
+            return;
+        }
+
+        navItems.forEach(nav => nav.classList.remove("active"));
+        tabContents.forEach(tab => tab.classList.remove("active"));
+
+        item.classList.add("active");
+        const tabId = `tab-${tabName}`;
+        const tabEl = document.getElementById(tabId);
+        if (tabEl) {
+            tabEl.classList.add("active");
+        } else {
+            console.log("⚠️ Tab content element not found:", tabId);
+        }
+
+        // Aktualizovat nadpis stránky
+        if (tabName === "active-listings") {
+            pageTitle.textContent = "Aktivní inzeráty";
+        } else if (tabName === "sold-listings") {
+            pageTitle.textContent = "Prodané věci";
+        } else if (tabName === "browser") {
+            pageTitle.textContent = "Živý prohlížeč (VNC)";
+            const vncIframe = document.getElementById("vnc-iframe");
+            console.log("🔍 vncIframe:", vncIframe, "current attribute src:", vncIframe ? vncIframe.getAttribute("src") : "N/A");
+            if (vncIframe && !vncIframe.getAttribute("src")) {
+                reloadVncSrc();
+            }
+        } else if (tabName === "config") {
+            pageTitle.textContent = "Nastavení aplikace";
+        }
+    }
+
     const reloadVncSrc = () => {
         const vncIframe = document.getElementById("vnc-iframe");
-        if (!vncIframe) return;
+        if (!vncIframe) {
+            console.log("⚠️ reloadVncSrc: vncIframe not found!");
+            return;
+        }
         const isLocalDev = window.location.port === "5001";
+        console.log("ℹ️ reloadVncSrc: port =", window.location.port, "isLocalDev =", isLocalDev);
         if (isLocalDev) {
             vncIframe.src = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
         } else {
             vncIframe.src = `${window.location.protocol}//${window.location.host}/novnc/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
         }
+        console.log("➡️ reloadVncSrc: set src to =", vncIframe.src);
     };
 
     const btnReloadVnc = document.getElementById("btn-reload-vnc");
@@ -587,27 +632,8 @@ document.addEventListener("DOMContentLoaded", () => {
     navItems.forEach(item => {
         item.addEventListener("click", (e) => {
             e.preventDefault();
-            navItems.forEach(nav => nav.classList.remove("active"));
-            tabContents.forEach(tab => tab.classList.remove("active"));
-
-            item.classList.add("active");
-            const tabId = `tab-${item.getAttribute("data-tab")}`;
-            document.getElementById(tabId).classList.add("active");
-
-            // Aktualizovat nadpis stránky
-            if (item.getAttribute("data-tab") === "active-listings") {
-                pageTitle.textContent = "Aktivní inzeráty";
-            } else if (item.getAttribute("data-tab") === "sold-listings") {
-                pageTitle.textContent = "Prodané věci";
-            } else if (item.getAttribute("data-tab") === "browser") {
-                pageTitle.textContent = "Živý prohlížeč (VNC)";
-                const vncIframe = document.getElementById("vnc-iframe");
-                if (vncIframe && !vncIframe.src) {
-                    reloadVncSrc();
-                }
-            } else if (item.getAttribute("data-tab") === "config") {
-                pageTitle.textContent = "Nastavení aplikace";
-            }
+            const tabName = item.getAttribute("data-tab");
+            switchToTab(tabName);
         });
     });
 

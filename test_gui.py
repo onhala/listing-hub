@@ -1,0 +1,135 @@
+import os
+import sys
+import time
+from playwright.sync_api import sync_playwright
+
+SCREENSHOT_DIR = "/Users/ondre/.gemini/antigravity/brain/8655f474-7b26-4848-bcf5-35b13807a238/test_screenshots"
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+def test_bazos_automat_gui():
+    print("🚀 Spouštím E2E testy pro Bazoš Automat GUI...")
+    
+    with sync_playwright() as p:
+        # Spustíme prohlížeč v headless režimu pro automatické testování
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        page = context.new_page()
+        
+        # Zapneme výpis logů a chyb z konzole prohlížeče
+        page.on("console", lambda msg: print(f"🖥️ [BROWSER CONSOLE] {msg.type}: {msg.text}"))
+        def log_page_error(err):
+            print(f"🚨 [BROWSER ERROR] {err}")
+            if hasattr(err, 'message'):
+                print(f"   Message: {err.message}")
+            if hasattr(err, 'stack'):
+                print(f"   Stack: {err.stack}")
+        page.on("pageerror", log_page_error)
+        page.on("requestfailed", lambda req: print(f"❌ [REQUEST FAILED] {req.url}: {req.failure}"))
+        page.on("response", lambda res: print(f"📥 [RESPONSE] {res.status} {res.url}") if res.status >= 400 else None)
+        
+        # 1. Načtení hlavní stránky
+        print("\n📥 1. Načítám hlavní stránku http://localhost:5001...")
+        page.goto("http://localhost:5001")
+        page.wait_for_load_state("networkidle")
+        
+        # Ověření titulku stránky
+        title = page.title()
+        print(f"   - Titulek stránky: '{title}'")
+        assert "Bazoš Automat" in title, f"Neočekávaný titulek: {title}"
+        
+        # Vyfocení výchozího stavu
+        screenshot_path = os.path.join(SCREENSHOT_DIR, "01_dashboard.png")
+        page.screenshot(path=screenshot_path)
+        print(f"   - Snímek uložen do: {screenshot_path}")
+        
+        # 2. Ověření načtení inzerátů (spinner zmizí, inzeráty nebo prázdný stav se zobrazí)
+        print("\n📋 2. Ověřuji načtení inzerátů...")
+        page.wait_for_selector("#active-listings-list")
+        listings_count = page.locator("#active-listings-list .ad-card").count()
+        print(f"   - Nalezeno aktivních inzerátů: {listings_count}")
+        
+        # 3. Test přepínání záložek
+        print("\n🔄 3. Testuji přepínání záložek...")
+        
+        # Záložka: Prodané věci
+        print("   - Přepínám na: Prodané věci")
+        page.click("text=Prodané věci")
+        page.wait_for_timeout(500)
+        assert page.is_visible("#tab-sold-listings"), "Záložka Prodané věci není viditelná!"
+        page.screenshot(path=os.path.join(SCREENSHOT_DIR, "02_sold_listings.png"))
+        
+        # Záložka: Živý prohlížeč (VNC)
+        print("   - Přepínám na: Živý prohlížeč")
+        page.click("text=Živý prohlížeč")
+        page.wait_for_timeout(1000)
+        assert page.is_visible("#tab-browser"), "Záložka Živý prohlížeč není viditelná!"
+        
+        # Ověření, že VNC iframe obsahuje správné noVNC URL
+        iframe_src = page.locator("#vnc-iframe").get_attribute("src")
+        print(f"   - noVNC iframe src: {iframe_src}")
+        assert "/novnc/" in iframe_src or "6080" in iframe_src, f"Neočekávaná URL noVNC: {iframe_src}"
+        page.screenshot(path=os.path.join(SCREENSHOT_DIR, "03_live_browser.png"))
+        
+        # Záložka: Nastavení
+        print("   - Přepínám na: Nastavení")
+        page.click("text=Nastavení")
+        page.wait_for_timeout(500)
+        assert page.is_visible("#tab-config"), "Záložka Nastavení není viditelná!"
+        page.screenshot(path=os.path.join(SCREENSHOT_DIR, "04_settings.png"))
+        
+        # 4. Test formuláře nastavení (Uložení konfigurace)
+        print("\n⚙️ 4. Testuji úpravu a uložení nastavení...")
+        original_name = page.locator("#config-name").input_value()
+        test_name = f"Test_Ondra_{int(time.time())}"
+        
+        print(f"   - Původní jméno: '{original_name}'")
+        print(f"   - Zapisuji nové testovací jméno: '{test_name}'")
+        
+        page.fill("#config-name", test_name)
+        
+        # Kliknutí na uložit nastavení
+        print("   - Klikám na 'Uložit nastavení'...")
+        page.click("#btn-save-config")
+        
+        # Počkáme na reakci (notifikaci nebo uložení)
+        page.wait_for_timeout(1000)
+        page.screenshot(path=os.path.join(SCREENSHOT_DIR, "05_settings_saved.png"))
+        
+        # Vrátíme původní jméno, abychom neponičili ostrá data
+        print(f"   - Obnovuji původní jméno: '{original_name}'")
+        page.fill("#config-name", original_name)
+        page.click("#btn-save-config")
+        page.wait_for_timeout(500)
+        
+        # 5. Test spuštění synchronizace s Bazošem
+        print("\n⚡ 5. Testuji tlačítko 'Synchronizovat s Bazošem'...")
+        # Přepneme zpět na aktivní inzeráty
+        page.click("text=Aktivní inzeráty")
+        page.wait_for_timeout(500)
+        
+        # Kliknutí na synchronizovat
+        print("   - Klikám na 'Synchronizovat s Bazošem'")
+        page.click("#btn-sync-views")
+        
+        # Ověření, že se tab automaticky přepnul na Živý prohlížeč (VNC)
+        page.wait_for_timeout(1000)
+        assert page.is_visible("#tab-browser"), "Po kliknutí na synchronizaci se tab automaticky nepřepnul na Živý prohlížeč!"
+        print("   - ✓ Tab se úspěšně automaticky přepnul na Živý prohlížeč (VNC)")
+        
+        # Ověření, že se zobrazil Playwright stavový řádek na spodku stránky
+        page.wait_for_selector("#playwright-status", state="visible")
+        is_status_visible = page.is_visible("#playwright-status")
+        print(f"   - Zobrazen Playwright stavový řádek: {is_status_visible}")
+        assert is_status_visible, "Playwright stavový řádek se nezobrazil po kliknutí na synchronizaci!"
+        
+        page.screenshot(path=os.path.join(SCREENSHOT_DIR, "06_sync_running.png"))
+        
+        print("\n✅ Všechny E2E/GUI testy úspěšně proběhly!")
+        browser.close()
+
+if __name__ == "__main__":
+    try:
+        test_bazos_automat_gui()
+    except Exception as e:
+        print(f"\n❌ Test selhal s chybou: {e}")
+        sys.exit(1)
