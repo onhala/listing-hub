@@ -38,8 +38,12 @@ class PlaywrightSessionManager:
 
     def get_session(self):
         is_active = False
-        if self.browser and self.browser.is_connected() and self.page and not self.page.is_closed():
-            is_active = True
+        try:
+            if self.browser and self.browser.is_connected() and self.page and not self.page.is_closed():
+                is_active = True
+        except Exception:
+            # Playwright thread has exited — force full reset
+            is_active = False
             
         if not is_active:
             self.close()
