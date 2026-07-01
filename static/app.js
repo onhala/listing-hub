@@ -53,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnCopyDockerCmd = document.getElementById("btn-copy-docker-cmd");
     const restartOverlay = document.getElementById("restart-overlay");
     const restartStatus = document.getElementById("restart-status");
+    const appVersionLabel = document.getElementById("app-version-label");
 
     // Modals
     const addListingModal = document.getElementById("add-listing-modal");
@@ -195,6 +196,25 @@ document.addEventListener("DOMContentLoaded", () => {
             const res = await fetch(API.versionCheck);
             if (res.ok) {
                 const data = await res.json();
+                
+                // Formátování textu verze v sidebaru
+                let versionText = "v3.1.0";
+                if (data.local_hash && data.local_hash !== "unknown") {
+                    versionText += ` (${data.local_hash})`;
+                }
+                if (data.is_docker) {
+                    versionText += " [Docker]";
+                } else {
+                    versionText += " [Local]";
+                }
+                if (data.update_available) {
+                    versionText += " ⚠️ update k dispozici";
+                    appVersionLabel.style.color = "var(--accent)";
+                } else {
+                    appVersionLabel.style.color = "var(--text-muted)";
+                }
+                appVersionLabel.textContent = versionText;
+
                 if (data.update_available) {
                     appUpdateBanner.style.display = "flex";
                     // Ukážeme zprávu posledního commitu, pokud je
