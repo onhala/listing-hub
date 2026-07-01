@@ -40,7 +40,7 @@ Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování
 
 Aplikace je plně kontejnerizovaná a obsahuje kompletní prostředí včetně Xvfb, Fluxboxu a noVNC serveru pro grafické streamování prohlížeče.
 
-### 1. Spuštění kontejnerů
+### 1. Spuštění kontejnerů lokálně
 V kořenovém adresáři projektu jednoduše spusť:
 ```bash
 docker compose build
@@ -50,6 +50,37 @@ docker compose up -d
 ### 2. Přístup k aplikacím
 - **Webové rozhraní**: [http://localhost:5001](http://localhost:5001)
 - **noVNC Prohlížeč (samostatný)**: [http://localhost:6080](http://localhost:6080)
+
+---
+
+## 🐳 TrueNAS SCALE Deployment
+
+Aplikaci lze snadno provozovat na **TrueNAS SCALE** (Cobia/Dragonfish/Electric Eel) jako **Custom App**.
+
+### 1. Nastavení aplikace v TrueNAS
+Při vytváření aplikace v TrueNAS SCALE (sekce **Apps** -> **Discover Apps** -> **Custom App**) vyplňte následující parametry:
+
+- **Application Name**: `bazos-automat`
+- **Image Repository**: `ghcr.io/onhala/bazos-automat`
+- **Image Tag**: `latest`
+- **Port Forwarding (Networking)**:
+  - Port `5001` -> Host Port `5001` (Flask Web GUI)
+  - Port `6080` -> Host Port `6080` (noVNC stream pro zadání SMS)
+- **Environment Variables**:
+  - `DISPLAY` = `:99`
+  - `PYTHONUNBUFFERED` = `1`
+  - *(Volitelně)* `BAZOS_EMAIL`, `BAZOS_PASSWORD`, `BAZOS_PHONE`, `GEMINI_API_KEY` (viz sekce konfigurace)
+- **Storage (Host Path Mounts)**:
+  Pro zachování dat a fotek při aktualizacích namapujte následující svazky (Host Path):
+  - `/app/bazos_config.json` -> Cesta k souboru s konfigurací na vašem poolu
+  - `/app/bazos_active_listings.json` -> Cesta k souboru s databází inzerátů
+  - `/app/bazos_session.json` -> Cesta k souboru s přihlašovací relací Bazoše
+  - `/app/photos` -> Cesta k adresáři s lokálními fotografiemi inzerátů
+
+### 2. Automatické aktualizace a kontrola verzí na TrueNAS SCALE
+- **Detekce nové verze**: TrueNAS SCALE automaticky periodicky dotazuje GitHub Container Registry (`ghcr.io`). Pokud detekuje novější sestavení s tagem `latest`, zobrazí u aplikace tlačítko **Update**.
+- **Self-Update z UI**: Vzhledem k tomu, že kontejner je neměnný (immutable), Flask webové rozhraní při detekci nové verze zobrazí v sidebaru upozornění a po kliknutí ti ukáže instrukce pro TrueNAS. 
+- Pro aktualizaci stačí kliknout na **Update** přímo v administračním rozhraní **TrueNAS SCALE -> Apps**, čímž systém stáhne nejnovější image a bezpečně kontejner zrekonstruuje bez ztráty nastavení (díky namapovaným Host Path svazkům).
 
 ---
 

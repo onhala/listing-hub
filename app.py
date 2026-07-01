@@ -121,7 +121,8 @@ def process_target(ad, user_config, action_type, extra_val):
                         full_config = json.load(f)
                     full_config.setdefault("user", {})
                     full_config["user"]["auto_refresh_status"] = "ok"
-                    full_config["user"]["last_refresh_time"] = datetime.now().isoformat()
+                    from datetime import timezone
+                    full_config["user"]["last_refresh_time"] = datetime.now(timezone.utc).isoformat()
                     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                         json.dump(full_config, f, ensure_ascii=False, indent=2)
             except Exception as inner_e:
@@ -611,8 +612,11 @@ def background_refresh_worker():
                 should_refresh = True
             else:
                 try:
+                    from datetime import timezone
                     last_refresh = datetime.fromisoformat(last_refresh_str)
-                    if datetime.now() - last_refresh >= timedelta(minutes=auto_interval_minutes):
+                    if last_refresh.tzinfo is None:
+                        last_refresh = last_refresh.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) - last_refresh >= timedelta(minutes=auto_interval_minutes):
                         should_refresh = True
                 except Exception:
                     should_refresh = True
