@@ -1,116 +1,81 @@
-# 🤖 Bazoš Automat v1.2
+# 🤖 Bazoš Automat & AI Editor v3.0.0
 
-Prémiové interaktivní řídicí centrum (CLI Dashboard) pro kompletní správu inzerce na portálu Bazoš.cz, evidenci historie prodejů a automatickou synchronizaci do profesionální Excel tabulky přímo na OneDrive TERMS.
+Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálu Bazoš.cz, s integrovaným živým noVNC prohlížečem a pokročilým AI Gemini editorem textů. 
 
-Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování většího množství věcí s maximální úsporou času a eliminací opakovaného SMS ověřování.
+Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování většího množství věcí s maximální úsporou času, eliminací opakovaného SMS ověřování a plně automatickým obnovováním dat.
 
 ---
 
 ## 🚀 Hlavní funkce
 
-1. **Poloautomatické vystavení (`[1]`)**:
-   - Automaticky otevře Google Chrome přes Playwright, vyplní veškeré údaje z lokální databáze (nadpis, popis, cena, kontakt, PSČ, heslo) a vybere nejvhodnější kategorii na základě shody klíčových slov.
-   - Nahraje všechny fotografie ze specifické lokální složky inzerátu.
-   - Vyčká na SMS ověření uživatele a po úspěšném odeslání umožní ihned pokračovat nebo uložit URL inzerátu pro budoucí správu.
+1. **Moderní Web GUI a Taby (`templates/index.html`)**:
+   - **Aktivní inzeráty**: Přehled živých inzerátů z Bazoše se statistikami zhlédnutí a počtem fotek.
+   - **Věci k prodeji**: Sekce pro expirované věci, koncepty (drafty) a položky, které se zrovna nenabízí aktivně.
+   - **Prodané věci**: Kompletní historie prodejů se statistikou zisků.
+   - **Živý prohlížeč (VNC)**: Integrované okno noVNC přímo v aplikaci pro sledování práce robota na Bazoši a bezpečné jednorázové zadání SMS kódu.
+   - **Nastavení**: Plně grafická konfigurace uživatelského jména, e-mailu, telefonu, výchozího hesla pro inzeráty a Gemini API klíče.
 
-2. **Interaktivní průvodce přidáním věci (`[2]`)**:
-   - Rychlé přidání nové věci do databáze (Název, Cena, Popis, Stav, Složka s fotkami).
-   - Automaticky vytvoří čistou podsložku na ploše pro nahrání fotografií.
+2. **Automatický refresh na pozadí (Background Worker)**:
+   - Daemon vlákno periodicky aktualizuje stavy, platnost a zhlédnutí inzerátů z Bazoše.
+   - **SMS Guard**: Pokud Bazoš při refreshu vyžaduje SMS, proces se čistě zastaví, stav se přepne na `"needs_sms"` a v UI vyskočí červený varovný banner. Další SMS na pozadí se neodesílají, dokud uživatel neprovede ruční přihlášení.
+   - **Timing**: Interval auto-refreshu je plně nastavitelný přímo v Nastavení (od 15 minut do 24 hodin).
+   - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
 
-3. **Změna ceny inzerátu (`[3]`)**:
-   - Umožňuje změnit cenu místně v databázi a volitelně spustit robota, který automaticky přejde do administrace inzerátu na Bazoši, zadá heslo a předvyplní novou cenu pro rychlé uložení.
+3. **Pokročilý AI Editor a Gemini Integrace**:
+   - Tlačítko **Vylepšit pomocí AI** u popisu a nadpisu inzerátu.
+   - Gemini automaticky opraví překlepy, zlepší prodejní tón (s ohledem na rodinnou inženýrskou tradici firmy) a navrhne optimalizované varianty nadpisů.
 
-4. **Znovuvystavení & Topování zdarma (`[4]`)**:
-   - Smaže stávající inzerát z Bazoše pomocí hesla a ihned jej vystaví znovu, čímž se inzerát posune na první místa (topování zdarma).
-   - **Nové:** Při znovuvystavení se skript automaticky zeptá, zda chceš při této příležitosti změnit i cenu věci.
+4. **Správa a vyloučení fotografií**:
+   - V detailu inzerátu se zobrazují Base64 náhledy všech fotek z lokální složky.
+   - Kliknutím na fotku ji lze označit jako vyloučenou – Playwright ji při vystavování přeskočí.
+   - Karta inzerátu zobrazuje stav např. `📷 4/5 fotek`.
 
-5. **Zaznamenání prodeje (`[5]`)**:
-   - Přesune aktivní inzerát do historie prodejů, zeptá se na skutečnou prodejní cenu a volitelné poznámky (kdo koupil, slevy atd.).
-   - Uvolní věc z aktivních inzerátů a zaznamená datum prodeje.
-
-6. **Přehledná tabulka v terminálu (`[6]`)**:
-   - Vykreslí barevné, perfektně naformátované tabulky aktivních inzerátů a historie prodejů (včetně celkového zisku a cenových rozdílů) přímo v konzoli.
-
-7. **Aktualizace stavů z Bazoše (`[7]`)**:
-   - Spustí synchronizaci reálného stavu inzerátů přímo z Bazoše (v otevřeném prohlížeči pro stabilní sdílení aktivní relace).
-   - Aktualizuje počet zhlédnutí (views), reálné datum vystavení a automaticky detekuje, zda inzerát nebyl vymazán nebo nevypršela jeho platnost (v tom případě změní stav na **Expirováno** a zvýrazní jej červeně).
-   - Po dokončení automaticky uloží aktualizovaná data a promítne změny na OneDrive.
-
-8. **Synchronizace s OneDrive (`[8]`)**:
-   - Automaticky (po každé změně) i manuálně synchronizuje celou databázi s Excel tabulkou `Inzerce - bazos.xlsx` na OneDrive.
-   - Tabulka používá prémiový **TERMS vizuální styl** (tmavě fialové záhlaví `#4B2C82`, zapnutá mřížka, zelené/oranžové stavové štítky, automatická šířka sloupců a Excel vzorce pro součty prodejů).
+5. **Čítače a ochrana nadpisů (Limit 50 znaků)**:
+   - Real-time čítače s varovným barevným tónem (žlutá/červená) u políček nadpisů.
+   - Automatická backend sanitace zkracuje nadpisy na max 50 znaků k zamezení ořezání na straně Bazoše.
 
 ---
 
-## 🛠️ Instalace a spuštění
+## 🛠️ Rychlé spuštění v Dockeru (Doporučeno)
 
-Nástroj je plně přenosný a spravovaný přes tento GitHub repozitář.
+Aplikace je plně kontejnerizovaná a obsahuje kompletní prostředí včetně Xvfb, Fluxboxu a noVNC serveru pro grafické streamování prohlížeče.
+
+### 1. Spuštění kontejnerů
+V kořenovém adresáři projektu jednoduše spusť:
+```bash
+docker compose build
+docker compose up -d
+```
+
+### 2. Přístup k aplikacím
+- **Webové rozhraní**: [http://localhost:5001](http://localhost:5001)
+- **noVNC Prohlížeč (samostatný)**: [http://localhost:6080](http://localhost:6080)
+
+---
+
+## 🛠️ Lokální instalace (Pro vývojáře)
+
+Pokud nechcete používat Docker, můžete aplikaci spustit lokálně ve virtuálním prostředí.
 
 ### 1. Příprava virtuálního prostředí
-V adresáři projektu spusť následující příkazy:
 ```bash
-# Vytvoření virtuálního prostředí
 python3 -m venv .venv
-
-# Aktivace a instalace závislostí
-.venv/bin/pip install openpyxl tabulate playwright requests beautifulsoup4
-
-# Instalace prohlížeče Chromium pro Playwright
+.venv/bin/pip install -r requirements.txt
 .venv/bin/playwright install chromium
 ```
 
-### 2. Konfigurace profilu (`bazos_config.json`)
-Před prvním spuštěním zkopíruj šablonu `bazos_config.json.template` na `bazos_config.json` a uprav ji podle svých kontaktních údajů (výchozí e-mail, telefon, výchozí heslo v Base64 pro inzeráty):
+### 2. Spuštění Flask serveru
 ```bash
-cp bazos_config.json.template bazos_config.json
+.venv/bin/python app.py
 ```
-
-Obsah souboru `bazos_config.json`:
-```json
-{
-  "user": {
-    "email": "tuj_email@example.com",
-    "phone": "777123456",
-    "phone_verified": "+420777123456",
-    "default_ad_password_b64": "aGVzbG8xMjM=",
-    "name": "Tvoje Jméno",
-    "zip_code": "10000"
-  }
-}
-```
-
-> [!NOTE]
-> Heslo v konfiguraci je uloženo v kódování Base64 (`aGVzbG8xMjM=` -> `heslo123`). Slouží to jako základní obfuskace proti náhodným pohledům přes rameno, nejedná se o bezpečné kryptografické šifrování.
-
-
-### 3. Spuštění CLI Dashboardu
-Hlavní řídicí panel spustíš jednoduše příkazem:
-```bash
-.venv/bin/python post_to_bazos.py
-```
-
----
-
-## 🔐 Trvalá relace a stabilita přihlášení
-
-Bazoš.cz tvrdě omezuje frekvenci přihlašování přes SMS kódy. Aby se předešlo zablokování tvého čísla, Bazoš Automat používá **persistentní správu relace**:
-- **Jediná aktivní relace**: Během celého chodu aplikace se využívá jedno společné okno prohlížeče a jedna přihlašovací relace. 
-- **Automatické uložení**: Úspěšné přihlášení se ukládá do lokálního souboru `bazos_session.json` (který je bezpečně ignorován v `.gitignore`, aby neunikl na GitHub).
-- **Bezproblémový restart**: Pokud okno prohlížeče omylem zavřeš, automaticky se při příští akci otevře nové a načte stávající přihlášení ze souboru, takže SMS ověření projde bez nutnosti opakovaného zadávání kódu.
+Aplikace poběží na adrese [http://localhost:5001](http://localhost:5001).
 
 ---
 
 ## 🔍 Analýza konkurenčních cen (`bazos_analyzer.py`)
 
-Skript `bazos_analyzer.py` slouží k rychlé analýze cen podobného zboží přímo na Bazoši. Stáhne aktuální inzeráty konkurence, spočítá průměr, medián a doporučí 3 cenové strategie (rychlý prodej, férová cena, prémiová cena).
-
-### Použití analyzátoru:
+Nástroj stále obsahuje CLI skript pro analýzu cen podobného zboží:
 ```bash
 .venv/bin/python bazos_analyzer.py "Sekačka HECHT" [minimální_cena] [maximální_cena]
 ```
-
-**Příklad:**
-```bash
-.venv/bin/python bazos_analyzer.py "Drtič větví" 1000 5000
-```
-Skript vypíše podrobný přehled s doporučenými cenami a odkazem na Top 5 nejbližších konkurenčních nabídek.
+Skript stáhne konkurenční inzeráty a spočítá průměrné ceny a doporučí prodejní strategie.
