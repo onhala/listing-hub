@@ -589,9 +589,17 @@ def background_refresh_worker():
         try:
             # 1. Zkontrolujeme, zda právě neběží jiná Playwright akce
             global playwright_process
-            if playwright_process and playwright_process.is_alive():
-                time.sleep(15)
-                continue
+            if playwright_process:
+                if playwright_process.is_alive():
+                    time.sleep(15)
+                    continue
+                else:
+                    # Předchozí proces dokončil práci, uvolníme systémové prostředky
+                    try:
+                        playwright_process.join()
+                    except Exception:
+                        pass
+                    playwright_process = None
                 
             # 2. Načteme konfiguraci
             _, user_config = load_data()

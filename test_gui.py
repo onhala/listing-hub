@@ -212,6 +212,32 @@ def test_bazos_automat_gui():
         page.click("#btn-save-config")
         page.wait_for_timeout(500)
         
+        # 9. Test API pro verzi a aktualizace
+        print("\n📈 9. Testuji API pro verze a aktualizace...")
+        version_check_res = page.request.get("http://localhost:5001/api/version/check")
+        assert version_check_res.ok, "API /api/version/check neodpovědělo úspěšně!"
+        version_data = version_check_res.json()
+        print(f"   - Zjištěná verze (local_hash): {version_data.get('local_hash')}")
+        assert "is_docker" in version_data, "V JSONu chybí klíč 'is_docker'!"
+        assert "update_available" in version_data, "V JSONu chybí klíč 'update_available'!"
+        
+        # Test pokusu o update v Dockeru
+        version_update_res = page.request.post("http://localhost:5001/api/version/update")
+        if version_data.get("is_docker"):
+            assert version_update_res.status == 400, f"Očekáván status 400 pro update v Dockeru, ale přišel {version_update_res.status}!"
+            update_data = version_update_res.json()
+            assert "V Dockeru nelze spustit" in update_data.get("message", ""), f"Neočekávaná chybová zpráva: {update_data.get('message')}"
+            print("   - ✓ Pokus o update v Dockeru správně zamítnut se statusem 400.")
+        
+        # 10. Test API pro automatický refresh
+        print("\n🔄 10. Testuji API pro stav auto-refresh...")
+        refresh_status_res = page.request.get("http://localhost:5001/api/refresh/status")
+        assert refresh_status_res.ok, "API /api/refresh/status neodpovědělo úspěšně!"
+        refresh_data = refresh_status_res.json()
+        assert "auto_refresh_enabled" in refresh_data, "V JSONu chybí klíč 'auto_refresh_enabled'!"
+        assert "is_running" in refresh_data, "V JSONu chybí klíč 'is_running'!"
+        print(f"   - Auto-refresh enabled: {refresh_data.get('auto_refresh_enabled')}, running: {refresh_data.get('is_running')}")
+        
         print("\n✅ Všechny E2E/GUI testy úspěšně proběhly!")
         browser.close()
 
