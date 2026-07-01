@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     websockify \
     supervisor \
     procps \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Vytvoření neprivilegovaného uživatele a skupiny roboton (pro CRA bezpečnost a non-root běh)
