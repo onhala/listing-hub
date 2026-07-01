@@ -58,6 +58,13 @@ def test_bazos_automat_gui():
         assert page.is_visible("#tab-sold-listings"), "Záložka Prodané věci není viditelná!"
         page.screenshot(path=os.path.join(SCREENSHOT_DIR, "02_sold_listings.png"))
         
+        # Záložka: Věci k prodeji
+        print("   - Přepínám na: Věci k prodeji")
+        page.click("text=Věci k prodeji")
+        page.wait_for_timeout(500)
+        assert page.is_visible("#tab-unsold-listings"), "Záložka Věci k prodeji není viditelná!"
+        page.screenshot(path=os.path.join(SCREENSHOT_DIR, "02b_unsold_listings.png"))
+        
         # Záložka: Živý prohlížeč (VNC)
         print("   - Přepínám na: Živý prohlížeč")
         page.click("text=Živý prohlížeč")

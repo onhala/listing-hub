@@ -14,11 +14,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const navItems = document.querySelectorAll(".nav-item");
     const tabContents = document.querySelectorAll(".tab-content");
     const activeListingsContainer = document.getElementById("active-listings-list");
+    const unsoldListingsContainer = document.getElementById("unsold-listings-list");
     const soldListingsContainer = document.getElementById("sold-listings-list");
     const pageTitle = document.getElementById("page-title");
     
     // Stats elements
     const statActiveCount = document.getElementById("stat-active-count");
+    const statUnsoldCount = document.getElementById("stat-unsold-count");
     const statTotalViews = document.getElementById("stat-total-views");
     const statSoldCount = document.getElementById("stat-sold-count");
 
@@ -113,10 +115,14 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const updateStats = () => {
-        statActiveCount.textContent = activeListings.length;
+        const liveListings = activeListings.filter(ad => ad.status === "Aktivní");
+        const unsoldListings = activeListings.filter(ad => ad.status !== "Aktivní");
+        
+        statActiveCount.textContent = liveListings.length;
+        statUnsoldCount.textContent = unsoldListings.length;
         statSoldCount.textContent = soldListings.length;
         
-        const totalViews = activeListings.reduce((sum, ad) => sum + parseInt(ad.views || 0), 0);
+        const totalViews = liveListings.reduce((sum, ad) => sum + parseInt(ad.views || 0), 0);
         statTotalViews.textContent = totalViews;
     };
 
@@ -125,14 +131,29 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==========================================
 
     const renderListings = () => {
+        // Filtrování aktivních a neaktivních (expirovaných/draftů)
+        const liveListings = activeListings.filter(ad => ad.status === "Aktivní");
+        const unsoldListings = activeListings.filter(ad => ad.status !== "Aktivní");
+
         // Aktivní inzeráty
         activeListingsContainer.innerHTML = "";
-        if (activeListings.length === 0) {
+        if (liveListings.length === 0) {
             activeListingsContainer.innerHTML = `<div class="loading-state"><i class="fa-solid fa-face-smile"></i> Žádné aktivní inzeráty k zobrazení.</div>`;
         } else {
-            activeListings.forEach(ad => {
+            liveListings.forEach(ad => {
                 const card = createAdCard(ad, false);
                 activeListingsContainer.appendChild(card);
+            });
+        }
+
+        // Věci k prodeji (expirované/drafty)
+        unsoldListingsContainer.innerHTML = "";
+        if (unsoldListings.length === 0) {
+            unsoldListingsContainer.innerHTML = `<div class="loading-state"><i class="fa-solid fa-tags"></i> Žádné věci k prodeji.</div>`;
+        } else {
+            unsoldListings.forEach(ad => {
+                const card = createAdCard(ad, false);
+                unsoldListingsContainer.appendChild(card);
             });
         }
 
@@ -650,6 +671,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Aktualizovat nadpis stránky
         if (tabName === "active-listings") {
             pageTitle.textContent = "Aktivní inzeráty";
+        } else if (tabName === "unsold-listings") {
+            pageTitle.textContent = "Věci k prodeji";
         } else if (tabName === "sold-listings") {
             pageTitle.textContent = "Prodané věci";
         } else if (tabName === "browser") {

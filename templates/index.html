@@ -37,6 +37,10 @@
                     <i class="fa-solid fa-rectangle-list"></i>
                     <span>Aktivní inzeráty</span>
                 </a>
+                <a href="#" class="nav-item" data-tab="unsold-listings">
+                    <i class="fa-solid fa-tags"></i>
+                    <span>Věci k prodeji</span>
+                </a>
                 <a href="#" class="nav-item" data-tab="sold-listings">
                     <i class="fa-solid fa-circle-check"></i>
                     <span>Prodané věci</span>
@@ -90,6 +94,15 @@
                     </div>
                 </div>
                 <div class="stat-card">
+                    <div class="stat-icon yellow" style="background: rgba(234, 179, 8, 0.1); color: var(--warning);">
+                        <i class="fa-solid fa-tags" style="color: #eab308;"></i>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-label">Věci k prodeji</span>
+                        <h3 class="stat-value" id="stat-unsold-count">0</h3>
+                    </div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-icon blue">
                         <i class="fa-solid fa-eye"></i>
                     </div>
@@ -115,9 +128,18 @@
                     <!-- Cards will be dynamically rendered here -->
                     <div class="loading-state">
                         <i class="fa-solid fa-spinner fa-spin"></i> Načítám inzeráty...
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
+
+            <div class="tab-content" id="tab-unsold-listings">
+                <div class="listings-grid" id="unsold-listings-list">
+                    <!-- Cards will be dynamically rendered here -->
+                    <div class="loading-state">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Načítám věci k prodeji...
+                    </div>
+                </div>
+            </div>
 
             <div class="tab-content" id="tab-sold-listings">
                 <div class="listings-grid" id="sold-listings-list">
