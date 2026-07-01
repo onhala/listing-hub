@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // State state management
     let activeListings = [];
     let soldListings = [];
+    let excludedPhotos = new Set(); // filenames the user wants to skip
     let currentAd = null;
     let selectedTextRange = null; // Uchovává vybranou část textu pro inline AI přepis
 
@@ -53,6 +54,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const editDescription = document.getElementById("edit-description");
     const editNotes = document.getElementById("edit-notes");
     const editPhotosDir = document.getElementById("edit-photos-dir");
+    const photoGalleryGrid = document.getElementById("photo-gallery-grid");
+    const photoCountLabel = document.getElementById("photo-count-label");
 
     // Info panel elements in edit modal
     const infoUrlContainer = document.getElementById("info-url-container");
@@ -67,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const API = {
         listings: "/api/listings",
         config: "/api/config",
+        photos: "/api/photos",
         saveAd: "/api/listings/save",
         addAd: "/api/listings/add",
         action: "/api/action",
@@ -252,6 +256,10 @@ document.addEventListener("DOMContentLoaded", () => {
         editNotes.value = ad.notes || "";
         editPhotosDir.value = ad.local_photos_dir || "";
 
+        // Načteme fotogalerii
+        excludedPhotos = new Set(ad.excluded_photos || []);
+        loadPhotoGallery(ad.local_photos_dir || "");
+
         // Předvyplnit info sidebar
         if (ad.url) {
             infoUrlContainer.innerHTML = `<a href="${ad.url}" target="_blank" style="color: var(--secondary); text-decoration: none; word-break: break-all;">${ad.url}</a>`;
@@ -265,6 +273,83 @@ document.addEventListener("DOMContentLoaded", () => {
         editListingModal.classList.add("active");
     };
 
+    // ----------------------------------------
+    // Fotogalerie
+    // ----------------------------------------
+    const loadPhotoGallery = async (photosDir) => {
+        photoGalleryGrid.innerHTML = '<p class="photo-gallery-empty">Načítám fotky...</p>';
+        if (!photosDir) {
+            photoGalleryGrid.innerHTML = '<p class="photo-gallery-empty">Složka s fotkami není nastavena.</p>';
+            return;
+        }
+        try {
+            const res = await fetch(`${API.photos}?photos_dir=${encodeURIComponent(photosDir)}`);
+            const data = await res.json();
+            if (!data.photos || data.photos.length === 0) {
+                photoGalleryGrid.innerHTML = '<p class="photo-gallery-empty">Ve složce nejsou žádné fotky (JPG/PNG).</p>';
+                photoCountLabel.textContent = "";
+                return;
+            }
+            renderPhotoGallery(data.photos);
+        } catch (e) {
+            photoGalleryGrid.innerHTML = '<p class="photo-gallery-empty">Nepodařilo se načíst fotky.</p>';
+        }
+    };
+
+    const renderPhotoGallery = (photos) => {
+        photoGalleryGrid.innerHTML = "";
+        photos.forEach(photo => {
+            const isExcluded = excludedPhotos.has(photo.filename);
+            const wrapper = document.createElement("div");
+            wrapper.className = `photo-thumb-wrapper${isExcluded ? " excluded" : ""}`;
+            wrapper.dataset.filename = photo.filename;
+            wrapper.title = isExcluded ? `${photo.filename} — PŘESKOČIT` : photo.filename;
+
+            const img = document.createElement("img");
+            img.src = photo.data_url || "";
+            img.alt = photo.filename;
+            img.loading = "lazy";
+
+            const icon = document.createElement("div");
+            icon.className = "photo-exclude-icon";
+            icon.innerHTML = isExcluded
+                ? '<i class="fa-solid fa-xmark"></i>'
+                : '<i class="fa-solid fa-check"></i>';
+
+            const nameLabel = document.createElement("div");
+            nameLabel.className = "photo-thumb-name";
+            nameLabel.textContent = photo.filename;
+
+            wrapper.appendChild(img);
+            wrapper.appendChild(icon);
+            wrapper.appendChild(nameLabel);
+
+            wrapper.addEventListener("click", () => {
+                if (excludedPhotos.has(photo.filename)) {
+                    excludedPhotos.delete(photo.filename);
+                    wrapper.classList.remove("excluded");
+                    wrapper.title = photo.filename;
+                    icon.innerHTML = '<i class="fa-solid fa-check"></i>';
+                } else {
+                    excludedPhotos.add(photo.filename);
+                    wrapper.classList.add("excluded");
+                    wrapper.title = `${photo.filename} — PŘESKOČIT`;
+                    icon.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                }
+                updatePhotoCount(photos.length);
+            });
+
+            photoGalleryGrid.appendChild(wrapper);
+        });
+        updatePhotoCount(photos.length);
+    };
+
+    const updatePhotoCount = (total) => {
+        const included = total - excludedPhotos.size;
+        photoCountLabel.textContent = `${included} / ${total} fotek bude nahráno`;
+        photoCountLabel.style.color = excludedPhotos.size > 0 ? "var(--warning, #f39c12)" : "var(--text-muted)";
+    };
+
     // Uložit změny v detailu inzerátu
     document.getElementById("btn-save-listing-changes").addEventListener("click", async () => {
         if (!currentAd) return;
@@ -276,7 +361,8 @@ document.addEventListener("DOMContentLoaded", () => {
             category: editCategory.value.trim(),
             description: editDescription.value,
             notes: editNotes.value,
-            local_photos_dir: editPhotosDir.value
+            local_photos_dir: editPhotosDir.value,
+            excluded_photos: Array.from(excludedPhotos)
         };
 
         try {

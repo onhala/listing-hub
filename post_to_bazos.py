@@ -1008,6 +1008,11 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
         raw_files = os.listdir(photos_dir)
         jpg_files = [f for f in raw_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
         jpg_files = sorted(jpg_files, key=lambda x: (not x.startswith("foto_"), x))
+        excluded = set(ad.get("excluded_photos", []))
+        if excluded:
+            skipped = [f for f in jpg_files if f in excluded]
+            jpg_files = [f for f in jpg_files if f not in excluded]
+            print(f"  📷 Přeskakuji {len(skipped)} fotek dle nastavení: {skipped}")
         photos = [os.path.join(photos_dir, f) for f in jpg_files]
 
     from contextlib import nullcontext

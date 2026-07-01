@@ -134,6 +134,33 @@ def get_listings():
     listings_data, _ = load_data()
     return jsonify(listings_data)
 
+@app.route("/api/photos", methods=["GET"])
+def get_photos():
+    photos_dir = request.args.get("photos_dir", "")
+    if not photos_dir or not os.path.isdir(photos_dir):
+        return jsonify({"photos": []})
+    try:
+        raw_files = os.listdir(photos_dir)
+        img_files = sorted(
+            [f for f in raw_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))],
+            key=lambda x: (not x.startswith("foto_"), x)
+        )
+        photos = []
+        for fname in img_files:
+            fpath = os.path.join(photos_dir, fname)
+            try:
+                with open(fpath, "rb") as f:
+                    data = base64.b64encode(f.read()).decode("utf-8")
+                ext = fname.rsplit(".", 1)[-1].lower()
+                mime = "image/jpeg" if ext in ("jpg", "jpeg") else "image/png"
+                photos.append({"filename": fname, "data_url": f"data:{mime};base64,{data}"})
+            except Exception:
+                photos.append({"filename": fname, "data_url": ""})
+        return jsonify({"photos": photos})
+    except Exception as e:
+        return jsonify({"error": str(e), "photos": []}), 500
+
+
 @app.route("/api/config", methods=["GET"])
 def get_config():
     _, user_config = load_data()
