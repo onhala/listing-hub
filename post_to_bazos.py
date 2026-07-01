@@ -522,7 +522,7 @@ def parse_bazos_date(date_text):
     return datetime.today().strftime("%Y-%m-%d")
 
 # --- Aktualizace stavů z Bazoše na pozadí ---
-def cli_update_listings_from_bazos(data, is_web=False):
+def cli_update_listings_from_bazos(data, is_web=False, is_auto_refresh=False):
     from bs4 import BeautifulSoup
     import re
     
@@ -577,6 +577,10 @@ def cli_update_listings_from_bazos(data, is_web=False):
                     list_btn.click()
                     time.sleep(2)
                 else:
+                    if is_auto_refresh:
+                        print(f"  {Colors.FAIL}✖ [AUTO-REFRESH] Bazoš vyžaduje SMS ověření telefonu. Končím.{Colors.ENDC}")
+                        raise Exception("SMS_REQUIRED")
+                    
                     # Klikneme na Ověřit
                     submit_btn = page.locator("input[type='submit'][value='Ověřit']")
                     submit_btn.click()

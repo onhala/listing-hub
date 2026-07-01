@@ -102,12 +102,36 @@ def process_target(ad, user_config, action_type, extra_val):
     try:
         listings_data, _ = load_data()
         log_debug(f"3. Data loaded, action_type={action_type}")
-        if action_type == "sync_views":
+        if action_type in ("sync_views", "auto_refresh"):
             log_debug("4. Calling cli_update_listings_from_bazos")
-            cli_update_listings_from_bazos(listings_data, is_web=True)
-            log_debug("5. Done cli_update_listings_from_bazos")
-            # save_listings will now call safe_merge_save_listings dynamically
-            post_to_bazos.save_listings(listings_data)
+            is_auto = (action_type == "auto_refresh")
+            try:
+                cli_update_listings_from_bazos(listings_data, is_web=True, is_auto_refresh=is_auto)
+                log_debug("5. Done cli_update_listings_from_bazos")
+                post_to_bazos.save_listings(listings_data)
+                
+                # Zaznamenáme čas úspěšné aktualizace
+                from post_to_bazos import CONFIG_PATH
+                if CONFIG_PATH.exists():
+                    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                        full_config = json.load(f)
+                    full_config.setdefault("user", {})
+                    full_config["user"]["auto_refresh_status"] = "ok"
+                    full_config["user"]["last_refresh_time"] = datetime.now().isoformat()
+                    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                        json.dump(full_config, f, ensure_ascii=False, indent=2)
+            except Exception as inner_e:
+                log_debug(f"Inner Exception during sync: {inner_e}")
+                if "SMS_REQUIRED" in str(inner_e):
+                    from post_to_bazos import CONFIG_PATH
+                    if CONFIG_PATH.exists():
+                        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                            full_config = json.load(f)
+                        full_config.setdefault("user", {})
+                        full_config["user"]["auto_refresh_status"] = "needs_sms"
+                        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                            json.dump(full_config, f, ensure_ascii=False, indent=2)
+                raise inner_e
         else:
             log_debug("4. Calling run_playwright_action")
             success = run_playwright_action(ad, user_config, action=action_type, extra_val=extra_val, is_web=True)
@@ -191,6 +215,18 @@ def get_config():
     _, user_config = load_data()
     return jsonify(user_config)
 
+@app.route("/api/refresh/status", methods=["GET"])
+def get_refresh_status():
+    _, user_config = load_data()
+    return jsonify({
+        "auto_refresh_enabled": user_config.get("auto_refresh_enabled", False),
+        "auto_refresh_interval": int(user_config.get("auto_refresh_interval", 12)),
+        "auto_refresh_status": user_config.get("auto_refresh_status", "ok"),
+        "last_refresh_time": user_config.get("last_refresh_time", ""),
+        "is_running": playwright_process.is_alive() if playwright_process else False
+    })
+
+
 @app.route("/api/config", methods=["POST"])
 def save_config_endpoint():
     try:
@@ -201,8 +237,17 @@ def save_config_endpoint():
                 full_config = json.load(f)
         else:
             full_config = {}
+            
+        old_user = full_config.get("user", {})
         
-        full_config["user"] = new_user_config
+        # Zachovat stavové klíče
+        merged_user = {**old_user, **new_user_config}
+        
+        # Pokud posíláme prázdný klíč a starý existoval, zachováme ho
+        if not new_user_config.get("gemini_api_key") and old_user.get("gemini_api_key"):
+            merged_user["gemini_api_key"] = old_user["gemini_api_key"]
+            
+        full_config["user"] = merged_user
         
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(full_config, f, ensure_ascii=False, indent=2)
@@ -464,10 +509,68 @@ def ai_improve():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+def background_refresh_worker():
+    import time
+    from datetime import datetime, timedelta
+    from post_to_bazos import load_data
+    
+    log_debug("Background refresh worker thread started.")
+    while True:
+        try:
+            # 1. Zkontrolujeme, zda právě neběží jiná Playwright akce
+            global playwright_process
+            if playwright_process and playwright_process.is_alive():
+                time.sleep(15)
+                continue
+                
+            # 2. Načteme konfiguraci
+            _, user_config = load_data()
+            
+            auto_enabled = user_config.get("auto_refresh_enabled", False)
+            auto_interval_hours = int(user_config.get("auto_refresh_interval", 12))
+            auto_status = user_config.get("auto_refresh_status", "ok")
+            last_refresh_str = user_config.get("last_refresh_time", "")
+            
+            # Pokud není auto-refresh zapnutý nebo vyžaduje SMS, přeskočíme
+            if not auto_enabled or auto_status == "needs_sms":
+                time.sleep(15)
+                continue
+                
+            # 3. Zkontrolujeme, zda uplynul interval
+            should_refresh = False
+            if not last_refresh_str:
+                should_refresh = True
+            else:
+                try:
+                    last_refresh = datetime.fromisoformat(last_refresh_str)
+                    if datetime.now() - last_refresh >= timedelta(hours=auto_interval_hours):
+                        should_refresh = True
+                except Exception:
+                    should_refresh = True
+                    
+            if should_refresh:
+                log_debug(f"Triggering auto_refresh on background thread. Interval={auto_interval_hours}h")
+                # Spustíme synchronizaci na pozadí jako samostatný proces
+                playwright_process = multiprocessing.Process(
+                    target=process_target,
+                    args=(None, user_config, "auto_refresh", None)
+                )
+                playwright_process.start()
+                
+        except Exception as err:
+            log_debug(f"Error in background worker loop: {err}")
+            
+        time.sleep(15)
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--dry-run":
         print("Flask syntax OK.")
         sys.exit(0)
+        
+    import threading
+    t = threading.Thread(target=background_refresh_worker, daemon=True)
+    t.start()
+    
     app.run(host="0.0.0.0", port=PORT, debug=True, threaded=False)
 
 

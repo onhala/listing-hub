@@ -35,6 +35,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const configGeminiKey = document.getElementById("config-gemini-key");
     const toggleGeminiKeyBtn = document.getElementById("toggle-gemini-key");
 
+    // Auto refresh elements
+    const configAutoRefresh = document.getElementById("config-auto-refresh");
+    const configRefreshInterval = document.getElementById("config-refresh-interval");
+    const smsWarningBanner = document.getElementById("sms-warning-banner");
+    const btnSyncBanner = document.getElementById("btn-sync-banner");
+    const lastSyncTimeLabel = document.getElementById("last-sync-time-label");
+
+
     // Modals
     const addListingModal = document.getElementById("add-listing-modal");
     const editListingModal = document.getElementById("edit-listing-modal");
@@ -77,6 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
         listings: "/api/listings",
         config: "/api/config",
         photos: "/api/photos",
+        refreshStatus: "/api/refresh/status",
         saveAd: "/api/listings/save",
         addAd: "/api/listings/add",
         action: "/api/action",
@@ -120,10 +129,69 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const pollRefreshStatus = async () => {
+        try {
+            const res = await fetch(API.refreshStatus);
+            if (res.ok) {
+                const data = await res.json();
+                
+                // 1. Zobrazení SMS banneru
+                if (data.auto_refresh_status === "needs_sms") {
+                    smsWarningBanner.style.display = "flex";
+                } else {
+                    smsWarningBanner.style.display = "none";
+                }
+                
+                // 2. Formátování a zobrazení času poslední synchronizace
+                if (data.last_refresh_time) {
+                    const date = new Date(data.last_refresh_time);
+                    const formattedDate = date.toLocaleString("cs-CZ", {
+                        day: "numeric",
+                        month: "numeric",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit"
+                    });
+                    
+                    // Výpočet před kolika minutami
+                    const diffMs = new Date() - date;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    let relativeStr = "";
+                    if (diffMins < 1) {
+                        relativeStr = "před malou chvílí";
+                    } else if (diffMins < 60) {
+                        relativeStr = `před ${diffMins} min`;
+                    } else {
+                        const diffHours = Math.floor(diffMins / 60);
+                        relativeStr = `před ${diffHours} hod`;
+                    }
+                    
+                    lastSyncTimeLabel.textContent = `Aktualizováno: ${formattedDate} (${relativeStr})`;
+                } else {
+                    lastSyncTimeLabel.textContent = "Dosud neaktualizováno";
+                }
+            }
+        } catch (err) {
+            console.error("Chyba při dotazování na stav aktualizace:", err);
+        }
+    };
+
     const loadApp = async () => {
         initCharacterCounters();
         await loadConfig();
         await loadListings();
+        
+        // Nastartovat periodické dotazování na stav aktualizace a banner
+        pollRefreshStatus();
+        setInterval(pollRefreshStatus, 5000);
+        
+        // Zprovoznit synchronizaci přes varovný banner
+        if (btnSyncBanner) {
+            btnSyncBanner.addEventListener("click", () => {
+                triggerPlaywrightAction(null, "sync_views");
+            });
+        }
     };
 
     const loadConfig = async () => {
@@ -136,6 +204,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 configPhone.value = config.phone || "";
                 configZip.value = config.zip_code || "";
                 configPassword.value = config.default_ad_password_b64 ? atob(config.default_ad_password_b64) : "";
+                
+                // Auto refresh
+                configAutoRefresh.checked = config.auto_refresh_enabled || false;
+                configRefreshInterval.value = config.auto_refresh_interval || "12";
+                
                 // Gemini API klíč se nenačítá celý z bezpečnostních důvodů (pokud je, dáme tam placeholder)
                 if (config.gemini_api_key) {
                     configGeminiKey.placeholder = "••••••••••••••••••••••••••••••••";
@@ -763,6 +836,8 @@ document.addEventListener("DOMContentLoaded", () => {
             phone: configPhone.value,
             zip_code: configZip.value,
             default_ad_password_b64: configPassword.value ? btoa(configPassword.value) : "",
+            auto_refresh_enabled: configAutoRefresh.checked,
+            auto_refresh_interval: parseInt(configRefreshInterval.value) || 12,
         };
 
         if (geminiKeyVal) {
