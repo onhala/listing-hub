@@ -140,6 +140,71 @@ def test_bazos_automat_gui():
         
         page.screenshot(path=os.path.join(SCREENSHOT_DIR, "07_sync_cancelled.png"))
         
+        # 7. Test detekce chyb (Error Handling) při neplatném telefonu
+        print("\n❌ 7. Testuji detekci chyb v konfiguraci...")
+        page.click("text=Nastavení")
+        page.wait_for_timeout(500)
+        
+        original_phone = page.locator("#config-phone").input_value()
+        print("   - Nastavuji neplatné telefonní číslo...")
+        page.fill("#config-phone", "123")
+        page.click("#btn-save-config")
+        page.wait_for_timeout(500)
+        
+        page.click("text=Aktivní inzeráty")
+        page.wait_for_timeout(500)
+        print("   - Spouštím synchronizaci s neplatným telefonem...")
+        page.click("#btn-sync-views")
+        
+        # Čekáme, až se stavový řádek nejprve zobrazí
+        page.wait_for_selector("#playwright-status", state="visible", timeout=3000)
+        # Čekáme, až stavový řádek zmizí s chybou
+        page.wait_for_selector("#playwright-status", state="hidden", timeout=15000)
+        print("   - ✓ Stavový řádek správně zmizel (chyba detekována)")
+        
+        # Vrátíme původní telefon
+        page.click("text=Nastavení")
+        page.wait_for_timeout(500)
+        page.fill("#config-phone", original_phone)
+        page.click("#btn-save-config")
+        page.wait_for_timeout(500)
+
+        # 8. Test integrity stavu a zamezení race condition
+        print("\n🔒 8. Testuji ochranu dat před přepsáním (State Integrity)...")
+        page.click("text=Aktivní inzeráty")
+        page.wait_for_timeout(500)
+        
+        # Spustíme synchronizaci
+        page.click("#btn-sync-views")
+        page.wait_for_selector("#playwright-status", state="visible")
+        
+        # Během běhu synchronizace změníme jméno v nastavení přes GUI
+        page.click("text=Nastavení")
+        page.wait_for_timeout(500)
+        temp_test_name = f"Integrity_Test_{int(time.time())}"
+        page.fill("#config-name", temp_test_name)
+        page.click("#btn-save-config")
+        page.wait_for_timeout(500)
+        
+        # Nyní stornujeme běžící synchronizaci
+        page.click("text=Živý prohlížeč")
+        page.wait_for_timeout(500)
+        page.click("#btn-cancel-action")
+        page.wait_for_selector("#playwright-status", state="hidden", timeout=5000)
+        
+        # Ověříme, že změněné jméno v nastavení na disku zůstalo zachováno
+        page.click("text=Nastavení")
+        page.wait_for_timeout(500)
+        current_name_after = page.locator("#config-name").input_value()
+        print(f"   - Jméno v nastavení po stornu: '{current_name_after}'")
+        assert current_name_after == temp_test_name, f"Race condition detekována! Jméno bylo přepsáno: {current_name_after}"
+        print("   - ✓ Data byla úspěšně sloučena, nedošlo k přepsání GUI změn.")
+        
+        # Vrátíme původní jméno
+        page.fill("#config-name", original_name)
+        page.click("#btn-save-config")
+        page.wait_for_timeout(500)
+        
         print("\n✅ Všechny E2E/GUI testy úspěšně proběhly!")
         browser.close()
 

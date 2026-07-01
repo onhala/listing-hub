@@ -84,7 +84,7 @@ class PlaywrightSessionManager:
                 self.context = self.browser.new_context()
             
             log_psm("Setting default timeout")
-            self.context.set_default_timeout(0)
+            self.context.set_default_timeout(30000)
             log_psm("Creating new page")
             self.page = self.context.new_page()
             log_psm("Session initialized successfully")
@@ -529,6 +529,11 @@ def cli_update_listings_from_bazos(data, is_web=False):
     # Načteme uživatelský config pro e-mail a telefon
     _, user_config = load_data()
     
+    email_val = user_config.get("email", "").strip()
+    phone_val = user_config.get("phone", "").strip()
+    if not email_val or not phone_val or len(phone_val) != 9 or not phone_val.isdigit():
+        raise Exception("V konfiguraci chybí platné 9-místné telefonní číslo pro SMS ověření.")
+    
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -600,6 +605,8 @@ def cli_update_listings_from_bazos(data, is_web=False):
                 print(f"  {Colors.GREEN}✓ Úspěšně přihlášeno pomocí uložené relace.{Colors.ENDC}")
         except Exception as login_err:
             print(f"  {Colors.WARNING}Přihlašovací formulář se neobjevil nebo nastala chyba: {login_err}{Colors.ENDC}")
+            if is_web:
+                raise Exception(f"Nepodařilo se přihlásit k Bazoši: {login_err}")
             print(f"  {Colors.BLUE}Zkouším rovnou načíst přehled inzerátů...{Colors.ENDC}")
             
         try:
@@ -961,6 +968,11 @@ def cli_change_price(data, user_config, page_runner):
 
 # --- Poloautomatická správa inzerátu přes Playwright (Vystavení, Smazání, Editace ceny) ---
 def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, is_web=False):
+    email_val = user_config.get("email", "").strip()
+    phone_val = user_config.get("phone", "").strip()
+    if not email_val or not phone_val or len(phone_val) != 9 or not phone_val.isdigit():
+        raise Exception("V konfiguraci chybí platné 9-místné telefonní číslo pro SMS ověření.")
+        
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:

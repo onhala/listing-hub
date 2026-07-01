@@ -30,6 +30,70 @@ def log_debug(msg):
 def process_target(ad, user_config, action_type, extra_val):
     log_debug("1. Background process started")
     
+    # Catch SIGTERM to cleanly shut down Playwright session
+    import signal
+    import sys
+    def sigterm_handler(signum, frame):
+        log_debug("SIGTERM received, closing Playwright session manager...")
+        try:
+            from post_to_bazos import session_manager
+            session_manager.close()
+        except Exception as e:
+            log_debug(f"SIGTERM handler close failed: {e}")
+        sys.exit(15)
+        
+    signal.signal(signal.SIGTERM, sigterm_handler)
+    
+    # Monkey-patch save_listings to avoid race conditions/overwriting
+    import post_to_bazos
+    original_save_listings = post_to_bazos.save_listings
+    
+    def safe_merge_save_listings(local_data):
+        log_debug("Safe merge save_listings triggered")
+        fresh_data, _ = post_to_bazos.load_data()
+        
+        fresh_active = {ad["local_photos_dir"]: ad for ad in fresh_data.get("active_listings", []) if "local_photos_dir" in ad}
+        fresh_sold = {ad["local_photos_dir"]: ad for ad in fresh_data.get("sold_listings", []) if "local_photos_dir" in ad}
+        
+        # Merge sold_listings updates
+        for local_ad in local_data.get("sold_listings", []):
+            ad_id = local_ad.get("local_photos_dir")
+            if not ad_id:
+                continue
+            if ad_id in fresh_active:
+                ad = fresh_active.pop(ad_id)
+                fresh_data["active_listings"] = [a for a in fresh_data["active_listings"] if a.get("local_photos_dir") != ad_id]
+                fresh_data["sold_listings"].append(ad)
+                fresh_sold[ad_id] = ad
+            
+            target_ad = fresh_sold.get(ad_id) or fresh_active.get(ad_id)
+            if target_ad:
+                for key in ["views", "status", "url", "date_created", "notes"]:
+                    if key in local_ad:
+                        target_ad[key] = local_ad[key]
+
+        # Merge active_listings updates
+        for local_ad in local_data.get("active_listings", []):
+            ad_id = local_ad.get("local_photos_dir")
+            if not ad_id:
+                continue
+            if ad_id in fresh_sold:
+                ad = fresh_sold.pop(ad_id)
+                fresh_data["sold_listings"] = [a for a in fresh_data["sold_listings"] if a.get("local_photos_dir") != ad_id]
+                fresh_data["active_listings"].append(ad)
+                fresh_active[ad_id] = ad
+                
+            target_ad = fresh_active.get(ad_id) or fresh_sold.get(ad_id)
+            if target_ad:
+                for key in ["views", "status", "url", "date_created", "notes"]:
+                    if key in local_ad:
+                        target_ad[key] = local_ad[key]
+                        
+        original_save_listings(fresh_data)
+        log_debug("Safe merge save_listings completed")
+        
+    post_to_bazos.save_listings = safe_merge_save_listings
+    
     # Set up a new event loop for this background process
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -42,7 +106,8 @@ def process_target(ad, user_config, action_type, extra_val):
             log_debug("4. Calling cli_update_listings_from_bazos")
             cli_update_listings_from_bazos(listings_data, is_web=True)
             log_debug("5. Done cli_update_listings_from_bazos")
-            save_listings(listings_data)
+            # save_listings will now call safe_merge_save_listings dynamically
+            post_to_bazos.save_listings(listings_data)
         else:
             log_debug("4. Calling run_playwright_action")
             success = run_playwright_action(ad, user_config, action=action_type, extra_val=extra_val, is_web=True)
@@ -50,8 +115,6 @@ def process_target(ad, user_config, action_type, extra_val):
             if not success:
                 with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
                     f.write("Akce byla stornována nebo selhala.")
-            else:
-                save_listings(listings_data)
     except Exception as e:
         log_debug(f"ERR: {e}")
         with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:

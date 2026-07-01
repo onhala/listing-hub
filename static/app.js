@@ -316,9 +316,20 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==========================================
 
     const triggerPlaywrightAction = async (ad, actionType, extraVal = null) => {
+        // Okamžitě zavřít modal, pokud je aktivní, abychom viděli VNC prohlížeč
+        if (editListingModal.classList.contains("active")) {
+            editListingModal.classList.remove("active");
+        }
+
         setPlaywrightActive(true);
         showNotification(`Spouštím akci '${actionType}' přes Playwright...`, "info");
         
+        // Resetujeme stavový text description
+        const statusDesc = document.getElementById("playwright-status-desc");
+        if (statusDesc) {
+            statusDesc.textContent = "Sleduj otevřené Chrome okno a případně zadej SMS...";
+        }
+
         // Automaticky přepnout na záložku s živým prohlížečem, aby uživatel viděl spuštěné okno
         switchToTab("browser");
         
@@ -347,7 +358,6 @@ document.addEventListener("DOMContentLoaded", () => {
                                     showNotification(statusData.error, "error");
                                 } else {
                                     showNotification("Akce byla úspěšně dokončena.", "success");
-                                    editListingModal.classList.remove("active");
                                     loadListings();
                                 }
                             }
@@ -392,7 +402,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Přerušení běžící akce
-    document.getElementById("btn-cancel-action").addEventListener("click", async () => {
+    const cancelBtn = document.getElementById("btn-cancel-action");
+    cancelBtn.addEventListener("click", async () => {
+        cancelBtn.disabled = true;
+        cancelBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Ruším...`;
         showNotification("Odesílám požadavek na přerušení...", "info");
         try {
             const res = await fetch(API.cancel, { method: "POST" });
@@ -401,17 +414,30 @@ document.addEventListener("DOMContentLoaded", () => {
                 showNotification(data.message || "Operace byla přerušena.", "success");
             } else {
                 showNotification(data.message || "Nepodařilo se přerušit operaci.", "error");
+                cancelBtn.disabled = false;
+                cancelBtn.innerHTML = `<i class="fa-solid fa-ban"></i> Přerušit`;
             }
         } catch (err) {
             showNotification("Chyba při komunikaci se serverem.", "error");
+            cancelBtn.disabled = false;
+            cancelBtn.innerHTML = `<i class="fa-solid fa-ban"></i> Přerušit`;
         }
     });
 
     const setPlaywrightActive = (isActive) => {
+        const cancelBtn = document.getElementById("btn-cancel-action");
         if (isActive) {
             playwrightStatus.classList.add("active");
+            document.querySelectorAll(".listing-card").forEach(card => card.classList.add("locked"));
         } else {
             playwrightStatus.classList.remove("active");
+            document.querySelectorAll(".listing-card").forEach(card => card.classList.remove("locked"));
+            
+            // Obnovíme tlačítko stornování do výchozího stavu
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+                cancelBtn.innerHTML = `<i class="fa-solid fa-ban"></i> Přerušit`;
+            }
         }
     };
 
