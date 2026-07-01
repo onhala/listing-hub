@@ -43,11 +43,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const addListingForm = document.getElementById("add-listing-form");
     const newTitle = document.getElementById("new-title");
     const newPrice = document.getElementById("new-price");
+    const newCategory = document.getElementById("new-category");
     const newDescription = document.getElementById("new-description");
 
     const editListingForm = document.getElementById("edit-listing-form");
     const editTitle = document.getElementById("edit-title");
     const editPrice = document.getElementById("edit-price");
+    const editCategory = document.getElementById("edit-category");
     const editDescription = document.getElementById("edit-description");
     const editNotes = document.getElementById("edit-notes");
     const editPhotosDir = document.getElementById("edit-photos-dir");
@@ -245,6 +247,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Předvyplnit formulář
         editTitle.value = ad.title || "";
         editPrice.value = ad.price || 0;
+        editCategory.value = ad.category || "";
         editDescription.value = ad.description || "";
         editNotes.value = ad.notes || "";
         editPhotosDir.value = ad.local_photos_dir || "";
@@ -270,6 +273,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ...currentAd,
             title: editTitle.value,
             price: parseInt(editPrice.value) || 0,
+            category: editCategory.value.trim(),
             description: editDescription.value,
             notes: editNotes.value,
             local_photos_dir: editPhotosDir.value
@@ -310,6 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const newAdData = {
             title: newTitle.value,
             price: parseInt(newPrice.value) || 0,
+            category: newCategory.value.trim(),
             description: newDescription.value
         };
 

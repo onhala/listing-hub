@@ -1162,6 +1162,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         
                         title_lower = title.lower()
                         description_lower = description.lower()
+                        ad_category = ad.get("category", "").strip().lower()
                         
                         for opt in options_elements:
                             val = opt.get_attribute("value")
@@ -1170,6 +1171,9 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                             label = opt.inner_text().strip().lower()
                             
                             score = 0
+                            # Nejvyšší priorita: přesná shoda s kategorií zadanou uživatelem
+                            if ad_category and (ad_category in label or label in ad_category):
+                                score += 100
                             if label in title_lower:
                                 score += 10
                             if label in description_lower:
@@ -1213,6 +1217,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         
                         title_lower = title.lower()
                         description_lower = description.lower()
+                        ad_category = ad.get("category", "").strip().lower()
                         
                         for opt in options_elements:
                             val = opt.get_attribute("value")
@@ -1221,6 +1226,9 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                             label = opt.inner_text().strip().lower()
                             
                             score = 0
+                            # Nejvyšší priorita: přesná shoda s kategorií zadanou uživatelem
+                            if ad_category and (ad_category in label or label in ad_category):
+                                score += 100
                             if label in title_lower:
                                 score += 10
                             if label in description_lower:
