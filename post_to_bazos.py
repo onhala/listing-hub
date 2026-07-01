@@ -570,14 +570,21 @@ def cli_update_listings_from_bazos(data, is_web=False):
                 email_input.fill(email_val)
                 phone_input.fill(phone_val)
                 
-                # Klikneme na Ověřit
-                submit_btn = page.locator("input[type='submit'][value='Ověřit']")
-                submit_btn.click()
-                print(f"  {Colors.GREEN}✓ Odeslán požadavek na SMS kód.{Colors.ENDC}")
-                
-                # Nyní čekáme, až se objeví pole pro SMS kód kodd
-                code_input = page.locator("input[name='kodd']")
-                code_input.wait_for(timeout=10000)
+                # Zkontrolujeme, zda je telefon již ověřený (tzn. je vidět tlačítko Vypsat inzeráty)
+                list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
+                if list_btn.is_visible(timeout=2000):
+                    print(f"  {Colors.GREEN}✓ Telefon je již ověřený, klikám na Vypsat inzeráty...{Colors.ENDC}")
+                    list_btn.click()
+                    time.sleep(2)
+                else:
+                    # Klikneme na Ověřit
+                    submit_btn = page.locator("input[type='submit'][value='Ověřit']")
+                    submit_btn.click()
+                    print(f"  {Colors.GREEN}✓ Odeslán požadavek na SMS kód.{Colors.ENDC}")
+                    
+                    # Nyní čekáme, až se objeví pole pro SMS kód kodd
+                    code_input = page.locator("input[name='kodd']")
+                    code_input.wait_for(timeout=10000)
                 
                 if is_web:
                     print(f"  {Colors.WARNING}💬 [WEB] Přihlášení vyžaduje SMS kód. Zadej ho prosím přímo v otevřeném okně prohlížeče a klikni na 'Vypsat inzeráty'...{Colors.ENDC}")
@@ -1237,8 +1244,16 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         terms_checkbox = page.locator("input[name='podminky']")
                         if terms_checkbox.is_visible() and not terms_checkbox.is_checked():
                             terms_checkbox.check()
-                        print(f"\n{Colors.GREEN}[Krok 1] Telefonní číslo a souhlas předvyplněny!{Colors.ENDC}")
-                        print(f"{Colors.BOLD}👉 Klikni na tlačítko odeslat a vlož SMS kód, který ti dorazí.{Colors.ENDC}")
+                        print(f"\n{Colors.GREEN}[Krok 1] Telefonní číslo a souhlas vyplněny!{Colors.ENDC}")
+                        
+                        # Automaticky odešleme formulář krok 1
+                        submit_btn = page.locator("input[type='submit']")
+                        if submit_btn.count() > 0:
+                            submit_btn.first.click()
+                        else:
+                            phone_input.press("Enter")
+                            
+                        print(f"  {Colors.GREEN}✓ Formulář ověření odeslán.{Colors.ENDC}")
                         return True
                 except Exception:
                     pass
