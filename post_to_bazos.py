@@ -1048,6 +1048,14 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 if not is_web:
                     print("stiskni [Enter] v terminálu pro pokračování...")
                     input()
+                else:
+                    print(f"\n{Colors.BLUE}💬 [WEB] Čekám na dokončení smazání uživatelem v prohlížeči...{Colors.ENDC}")
+                    try:
+                        page.wait_for_url(lambda u: "delete.php" not in u, timeout=300000)
+                        print(f"  {Colors.GREEN}✓ Detekováno dokončení smazání (změna URL). Relace se zavře za 5 sekund...{Colors.ENDC}")
+                        time.sleep(5)
+                    except Exception as e:
+                        print(f"  {Colors.WARNING}Čekání na smazání vypršelo nebo bylo přerušeno: {e}{Colors.ENDC}")
                 try:
                     context.storage_state(path=str(SESSION_STATE_PATH))
                 except Exception:
@@ -1099,6 +1107,14 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 if not is_web:
                     print("Po dokončení stiskni [Enter] zde v terminálu...")
                     input()
+                else:
+                    print(f"\n{Colors.BLUE}💬 [WEB] Čekám na uložení změn uživatelem v prohlížeči...{Colors.ENDC}")
+                    try:
+                        page.wait_for_url(lambda u: "delete.php" not in u, timeout=300000)
+                        print(f"  {Colors.GREEN}✓ Detekováno uložení změn (změna URL). Relace se zavře za 5 sekund...{Colors.ENDC}")
+                        time.sleep(5)
+                    except Exception as e:
+                        print(f"  {Colors.WARNING}Čekání na uložení změn vypršelo nebo bylo přerušeno: {e}{Colors.ENDC}")
                 try:
                     context.storage_state(path=str(SESSION_STATE_PATH))
                 except Exception:
@@ -1168,12 +1184,17 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                             current_value = select_loc.evaluate("el => el.value")
                             if current_value != best_value:
                                 print(f"  {Colors.BLUE}Změna rubriky na '{best_label}'...{Colors.ENDC}")
+                                old_url = page.url
                                 select_loc.select_option(value=best_value)
                                 try:
-                                    page.wait_for_load_state("networkidle", timeout=3000)
+                                    page.wait_for_function(f"() => window.location.href !== '{old_url}'", timeout=5000)
                                 except Exception:
                                     pass
-                                time.sleep(1.5)
+                                try:
+                                    page.wait_for_load_state("networkidle", timeout=10000)
+                                except Exception:
+                                    pass
+                                time.sleep(1.0)
                                 print(f"  {Colors.GREEN}✓ Rubrika změněna na: '{best_label}'{Colors.ENDC}")
                                 return True
                 except Exception:
@@ -1324,6 +1345,17 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         
                         print(f"\n{Colors.HEADER}{Colors.BOLD}✅ HOTOVO! Všechno předvyplněno!{Colors.ENDC}")
                         print(f"{Colors.BOLD}👉 Zkontroluj inzerát v prohlížeči, ulož jej a zkopíruj si jeho URL.{Colors.ENDC}")
+                        
+                        if is_web:
+                            print(f"\n{Colors.BLUE}💬 [WEB] Čekám na ruční odeslání inzerátu uživatelem v prohlížeči...{Colors.ENDC}")
+                            try:
+                                # Čekáme až 5 minut (300 sekund) na to, než se změní URL (nebude obsahovat pridat-inzerat.php)
+                                page.wait_for_url(lambda u: "pridat-inzerat.php" not in u, timeout=300000)
+                                print(f"  {Colors.GREEN}✓ Detekováno odeslání inzerátu (změna URL). Relace bude uzavřena za 5 sekund...{Colors.ENDC}")
+                                time.sleep(5)
+                            except Exception as wait_err:
+                                print(f"  {Colors.WARNING}Čekání na odeslání inzerátu vypršelo nebo bylo přerušeno: {wait_err}{Colors.ENDC}")
+                        
                         form_filled = True
                         break
                     
