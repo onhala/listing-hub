@@ -514,7 +514,9 @@ def ai_improve():
             "- Používej odrážky pro parametry, stav a výhody.\n"
             "- Nepoužívej přehnané marketingové fráze a 'slop' slova (např. 'neuvěřitelná nabídka', 'jedinečná šance', 'TOP stav!!!').\n"
             "- Působ jako solidní, inženýrsky přesný a férový prodejce (podle standardů rodinné firmy TERMS s tradicí od roku 1991).\n"
-            "- Text formátuj přehledně pomocí odstavců a klasických odrážek (např. '*' nebo '-')."
+            "- Text formátuj přehledně pomocí odstavců a klasických odrážek (např. '*' nebo '-').\n"
+            "- Udržuj přibližně stejnou délku a rozsah jako původní text. NIKDY text nezkracuj drasticky a vždy dokonči celé myšlenky i věty.\n"
+            "- Ponech všechny věcné parametry (výkon, rozměry, stav, doplňky) a kontaktní/odběrové informace z původního textu."
         )
         
         user_prompt = ""
@@ -525,13 +527,13 @@ def ai_improve():
                 user_prompt = f"Vylepši tento nadpis inzerátu na Bazoš (max 50 znaků). VRAŤ POUZE VÝSLEDNÝ NADPIS BEZ UVOZOWEK A VYSVĚTLENÍ:\n\n{text}"
         else:
             if instruction_type == "improve":
-                user_prompt = f"VRAŤ POUZE VYLEPŠENÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
+                user_prompt = f"Vylepši tón a formátování tohoto popisu inzerátu. Zachovej všechny věcné parametry, doplňky a detaily z původního textu. Délka musí odpovídat původnímu rozsahu. VRAŤ POUZE VYLEPŠENÝ POPIS BEZ KOMENTÁŘŮ:\n\n{text}"
             elif instruction_type == "fix":
-                user_prompt = f"VRAŤ POUZE GRAMATICKY A STYLISTICKY OPRAVENÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
+                user_prompt = f"Oprav gramatiku, překlepy a stylistiku v tomto popisu inzerátu. Zachovej všechny původní parametry a délku. VRAŤ POUZE OPRAVENÝ POPIS:\n\n{text}"
             elif instruction_type == "shorten":
-                user_prompt = f"VRAŤ POUZE STRUČNÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
+                user_prompt = f"Zkrať tento popis inzerátu, udělej ho stručný a výstižný, ale zachovej klíčové parametry. VRAŤ POUZE STRUČNÝ POPIS:\n\n{text}"
             elif instruction_type == "lengthen":
-                user_prompt = f"VRAŤ POUZE ROZŠÍŘENÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
+                user_prompt = f"Rozšiř tento popis inzerátu o více detailů a detailní rozbor parametrů. VRAŤ POUZE ROZŠÍŘENÝ POPIS BEZ KOMENTÁŘŮ:\n\n{text}"
         
         # Volání Gemini API
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"

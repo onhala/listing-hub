@@ -1017,3 +1017,49 @@ input:focus, textarea:focus {
     grid-column: 1 / -1;
     text-align: center;
 }
+
+/* AI Editor Layout Upgrades */
+.ai-editor-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+}
+
+/* Beautiful editable textarea in modal */
+.text-preview-editor {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(131, 92, 223, 0.2);
+    border-left: 3px solid var(--accent);
+    padding: 1.25rem;
+    border-radius: 8px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.text-preview-editor:focus {
+    border-color: var(--accent);
+    background: rgba(131, 92, 223, 0.05);
+    box-shadow: 0 0 15px rgba(131, 92, 223, 0.2);
+}
+
+/* Custom Scrollbar for Previews */
+.text-preview::-webkit-scrollbar,
+.text-preview-editor::-webkit-scrollbar {
+    width: 6px;
+}
+.text-preview::-webkit-scrollbar-thumb,
+.text-preview-editor::-webkit-scrollbar-thumb {
+    background: rgba(131, 92, 223, 0.3);
+    border-radius: 4px;
+}
+.text-preview::-webkit-scrollbar-thumb:hover,
+.text-preview-editor::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}

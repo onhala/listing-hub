@@ -11,6 +11,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentAd = null;
     let userConfig = {};
     let selectedTextRange = null; // Uchovává vybranou část textu pro inline AI přepis
+    let lastAiSourceText = "";
+    let lastAiField = "";
+    let lastAiInstruction = "improve";
 
     // UI elements
     const navItems = document.querySelectorAll(".nav-item");
@@ -823,6 +826,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==========================================
 
     const triggerAiImprovement = async (text, field, instruction) => {
+        lastAiSourceText = text;
+        lastAiField = field;
+        lastAiInstruction = instruction;
+        
         showNotification("Volám AI asistenta Gemini...", "info");
         
         try {
@@ -838,13 +845,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await res.json();
             if (res.ok) {
-                showAiProposal(text, data.result);
+                showAiProposal(text, data.result, instruction);
             } else {
                 showNotification(data.message || "AI asistent selhal.", "error");
             }
         } catch (err) {
             showNotification("Nepodařilo se spojit s AI službou.", "error");
         }
+    };
+
+    const showAiProposal = (original, improved, instruction) => {
+        document.getElementById("ai-original-text-preview").textContent = original;
+        
+        const improvedInput = document.getElementById("ai-improved-text-input");
+        if (improvedInput) {
+            improvedInput.value = improved;
+        }
+        
+        const select = document.getElementById("modal-ai-instruction");
+        if (select) {
+            select.value = instruction || "improve";
+        }
+        
+        aiProposalModal.classList.add("active");
     };
 
     // AI tlačítka v editoru pro celý nadpis nebo popis
@@ -906,19 +929,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // --- Modal s porovnáním AI návrhu ---
-    const showAiProposal = (original, improved) => {
-        document.getElementById("ai-original-text-preview").textContent = original;
-        document.getElementById("ai-improved-text-preview").textContent = improved;
-        aiProposalModal.classList.add("active");
-    };
-
     // Přijetí AI návrhu
     document.getElementById("btn-accept-ai-proposal").addEventListener("click", () => {
-        const improvedText = document.getElementById("ai-improved-text-preview").textContent;
+        const improvedInput = document.getElementById("ai-improved-text-input");
+        const improvedText = improvedInput ? improvedInput.value : "";
         
         if (selectedTextRange) {
-            // Pokud přepisujeme jen vybraný kus textu
             const fullText = editDescription.value;
             const updatedText = 
                 fullText.substring(0, selectedTextRange.start) + 
@@ -927,21 +943,68 @@ document.addEventListener("DOMContentLoaded", () => {
             
             editDescription.value = updatedText;
             selectedTextRange = null;
-            showNotification("Vybraný text byl nahrazen AI verzí.", "success");
+            showNotification("Vybraný text byl nahrazen vaší upravenou AI verzí.", "success");
         } else {
-            // Pokud přepisujeme celé pole (nadpis nebo celý popis)
-            // Rozhodneme podle toho, zda se porovnávaný text shoduje s nadpisem
             if (document.getElementById("ai-original-text-preview").textContent === editTitle.value) {
                 editTitle.value = improvedText;
-                showNotification("Nadpis byl nahrazen AI verzí.", "success");
+                showNotification("Nadpis byl nahrazen vaší upravenou AI verzí.", "success");
             } else {
                 editDescription.value = improvedText;
-                showNotification("Popis byl nahrazen AI verzí.", "success");
+                showNotification("Popis byl nahrazen vaší upravenou AI verzí.", "success");
             }
         }
         
         aiProposalModal.classList.remove("active");
     });
+
+    // Sync active instruction if selection changes in modal
+    const modalSelect = document.getElementById("modal-ai-instruction");
+    if (modalSelect) {
+        modalSelect.addEventListener("change", (e) => {
+            lastAiInstruction = e.target.value;
+        });
+    }
+
+    // "Try again" regeneration handler
+    const btnRegenerate = document.getElementById("btn-regenerate-ai");
+    if (btnRegenerate) {
+        btnRegenerate.addEventListener("click", async () => {
+            if (!lastAiSourceText) return;
+            
+            btnRegenerate.disabled = true;
+            btnRegenerate.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Generuji...`;
+            
+            showNotification("Generuji nový návrh...", "info");
+            
+            try {
+                const res = await fetch(API.aiImprove, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text: lastAiSourceText,
+                        field: lastAiField,
+                        instruction: lastAiInstruction
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok) {
+                    const improvedInput = document.getElementById("ai-improved-text-input");
+                    if (improvedInput) {
+                        improvedInput.value = data.result;
+                    }
+                    showNotification("Nový návrh je připraven.", "success");
+                } else {
+                    showNotification(data.message || "Regenerace selhala.", "error");
+                }
+            } catch (err) {
+                showNotification("Chyba při komunikaci se serverem.", "error");
+            } finally {
+                btnRegenerate.disabled = false;
+                btnRegenerate.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Zkusit znovu (Regenerovat)`;
+            }
+        });
+    }
 
     // Zavírání AI modalu
     document.querySelectorAll(".btn-close-ai-modal").forEach(btn => {

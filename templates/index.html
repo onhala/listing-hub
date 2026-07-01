@@ -409,21 +409,39 @@
         </div>
     </div>
 
-    <!-- AI PROPOSAL MODAL -->
+    <!-- AI PROPOSAL MODAL (REDESIGNED) -->
     <div class="modal-overlay" id="ai-proposal-modal">
-        <div class="modal modal-md">
+        <div class="modal modal-lg" style="max-width: 900px; width: 90%;">
             <div class="modal-header">
                 <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Návrh Vylepšení</h3>
                 <button class="btn-close-ai-modal"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-body ai-diff-view">
-                <div class="diff-block">
-                    <h5>Původní text:</h5>
-                    <div class="text-preview original-text" id="ai-original-text-preview"></div>
+            <div class="modal-body ai-editor-modal-body">
+                <div class="ai-diff-view" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <div class="diff-block">
+                        <h5 style="margin-bottom: 0.5rem; color: var(--text-muted);">Původní text:</h5>
+                        <div class="text-preview original-text" id="ai-original-text-preview" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; min-height: 250px; max-height: 350px; overflow-y: auto; white-space: pre-wrap; font-size: 0.9rem; color: var(--text-main); line-height: 1.5;"></div>
+                    </div>
+                    <div class="diff-block">
+                        <h5 style="margin-bottom: 0.5rem; color: var(--accent);">Upravitelný AI návrh:</h5>
+                        <textarea class="text-preview-editor improved-text-editor" id="ai-improved-text-input" rows="12" placeholder="AI generuje text..." style="width: 100%; min-height: 250px; max-height: 350px; background: rgba(131, 92, 223, 0.03); border: 1px solid rgba(131, 92, 223, 0.3); border-left: 3px solid var(--accent); padding: 1rem; border-radius: 8px; color: #fff; font-family: inherit; font-size: 0.9rem; line-height: 1.5; resize: vertical; outline: none;"></textarea>
+                    </div>
                 </div>
-                <div class="diff-block">
-                    <h5>Navržený AI text:</h5>
-                    <div class="text-preview improved-text" id="ai-improved-text-preview"></div>
+                
+                <!-- Quick regeneration panel inside the modal -->
+                <div class="ai-generation-controls" style="display: flex; justify-content: space-between; align-items: center; background: rgba(131, 92, 223, 0.05); border: 1px solid rgba(131, 92, 223, 0.15); padding: 0.75rem 1.25rem; border-radius: 8px; gap: 1.5rem; margin-top: 0.5rem;">
+                    <div class="instruction-select-wrapper" style="display: flex; align-items: center; gap: 0.75rem; flex-grow: 1;">
+                        <label for="modal-ai-instruction" style="font-size: 0.85rem; color: var(--text-muted); white-space: nowrap;">Změnit styl / instrukci:</label>
+                        <select id="modal-ai-instruction" class="modal-select" style="background: rgba(11, 8, 22, 0.8); border: 1px solid rgba(255, 255, 255, 0.15); color: var(--text-main); padding: 0.4rem 0.85rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer; flex-grow: 1; max-width: 250px; outline: none;">
+                            <option value="improve">Vylepšit a formátovat</option>
+                            <option value="fix">Opravit gramatiku a styl</option>
+                            <option value="shorten">Zkrátit (stručný popis)</option>
+                            <option value="lengthen">Rozšířit (více detailů)</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="btn-regenerate-ai" style="padding: 0.45rem 1rem; font-size: 0.82rem; font-weight: 600;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Zkusit znovu (Regenerovat)
+                    </button>
                 </div>
             </div>
             <div class="modal-footer">
