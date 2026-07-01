@@ -230,6 +230,71 @@ def get_refresh_status():
         "is_running": playwright_process.is_alive() if playwright_process else False
     })
 
+# Detekce chodu v Dockeru
+IS_DOCKER = os.path.exists("/.dockerenv")
+
+@app.route("/api/version/check", methods=["GET"])
+def check_version():
+    import subprocess
+    
+    # 1. Zjistíme lokální commit hash
+    local_hash = "unknown"
+    try:
+        local_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        pass
+        
+    # 2. Zjistíme nejnovější commit hash z GitHubu
+    latest_hash = "unknown"
+    latest_message = ""
+    try:
+        url = "https://api.github.com/repos/onhala/bazos-automat/commits/main"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            commit_data = res.json()
+            latest_hash = commit_data.get("sha", "")
+            latest_message = commit_data.get("commit", {}).get("message", "")
+    except Exception:
+        pass
+        
+    update_available = False
+    if local_hash != "unknown" and latest_hash != "unknown" and local_hash != latest_hash:
+        update_available = True
+        
+    return jsonify({
+        "local_hash": local_hash[:8] if local_hash != "unknown" else "unknown",
+        "latest_hash": latest_hash[:8] if latest_hash != "unknown" else "unknown",
+        "latest_message": latest_message,
+        "update_available": update_available,
+        "is_docker": IS_DOCKER
+    })
+
+@app.route("/api/version/update", methods=["POST"])
+def update_version():
+    if IS_DOCKER:
+        return jsonify({"status": "error", "message": "V Dockeru nelze spustit přímou aktualizaci souborů."}), 400
+        
+    import subprocess
+    import os
+    
+    try:
+        # Spustíme git pull
+        output = subprocess.check_output(["git", "pull", "origin", "main"], text=True, stderr=subprocess.STDOUT)
+        
+        # Plánovaný restart aplikace (supervisor ji restartuje automaticky po ukončení)
+        def restart_app():
+            import time
+            time.sleep(2)
+            os._exit(0)
+            
+        import threading
+        threading.Thread(target=restart_app).start()
+        
+        return jsonify({"status": "success", "message": f"Aktualizace proběhla úspěšně:\n{output}"})
+    except Exception as err:
+        return jsonify({"status": "error", "message": f"Chyba při aktualizaci: {str(err)}"}), 500
+
 
 @app.route("/api/config", methods=["POST"])
 def save_config_endpoint():
@@ -440,32 +505,32 @@ def ai_improve():
             
         # Sestavíme system prompt pro optimalizaci prodejního textu na Bazoši
         system_prompt = (
-            "Jsi expert na online prodej, psychologii zákazníka a inzerci na českém Bazoši.\n"
-            "Tvým úkolem je pomoci uživateli upravit a vylepšit text inzerátu tak, aby působil profesionálně, "
-            "důvěryhodně, srozumitelně a maximalizoval šanci na rychlý prodej za dobrou cenu.\n"
-            "Dodržuj tyto zásady:\n"
-            "- Piš v češtině, jasně a čitelně.\n"
+            "Jsi AI asistent na úpravu prodejních textů pro Bazoš. "
+            "Tvým úkolem je vždy vrátit POUZE upravený/opravený text bez jakýchkoliv dodatečných vysvětlení, "
+            "pozdravů, uvozovek nebo komentářů. Vracíš pouze finální text, nic víc.\n\n"
+            "Pokyny pro editaci:\n"
+            "- Piš v češtině, jasně, čitelně a srozumitelně.\n"
             "- Používej odrážky pro parametry, stav a výhody.\n"
             "- Nepoužívej přehnané marketingové fráze a 'slop' slova (např. 'neuvěřitelná nabídka', 'jedinečná šance', 'TOP stav!!!').\n"
-            "- Působ jako solidní, inženýrsky přesný a férový prodejce (podle standardů rodinné firmy TERMS).\n"
-            "- Text formátuj přehledně, aby se na Bazoši dobře četl (Bazoš nepodporuje HTML, takže používej odstavce a klasické textové odrážky - např. '*' nebo '-').\n"
+            "- Působ jako solidní, inženýrsky přesný a férový prodejce (podle standardů rodinné firmy TERMS s tradicí od roku 1991).\n"
+            "- Text formátuj přehledně pomocí odstavců a klasických odrážek (např. '*' nebo '-')."
         )
         
         user_prompt = ""
         if field_type == "title":
             if instruction_type == "title_suggestions":
-                user_prompt = f"Navrhni 5 různých atraktivních a chytlavých nadpisů pro inzerát na základě tohoto původního nadpisu: '{text}'. Nadpisy musí mít maximálně 50 znaků (limit Bazoše). Vrať pouze seznam nadpisů, každý na novém řádku, bez dalšího okecávání."
+                user_prompt = f"Navrhni 5 různých atraktivních a chytlavých nadpisů pro inzerát na základě tohoto původního nadpisu: '{text}'. Nadpisy musí mít maximálně 50 znaků. VRAŤ POUZE TĚCHTO 5 NADPISŮ, KAŽDÝ NA NOVÉM ŘÁDKU, BEZ ODPOVĚDI OKOLO:"
             else:
-                user_prompt = f"Vylepši tento nadpis inzerátu na Bazoš (limit 50 znaků): '{text}'. Odpověz pouze jedním výsledným nadpisem bez uvozovek a vysvětlování."
+                user_prompt = f"Vylepši tento nadpis inzerátu na Bazoš (max 50 znaků). VRAŤ POUZE VÝSLEDNÝ NADPIS BEZ UVOZOWEK A VYSVĚTLENÍ:\n\n{text}"
         else:
             if instruction_type == "improve":
-                user_prompt = f"Vylepši a zatraktivni tento popis inzerátu pro Bazoš. Zdůrazni klíčové vlastnosti, stav věci a přidej přehledné formátování pomocí odrážek:\n\n{text}"
+                user_prompt = f"VRAŤ POUZE VYLEPŠENÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
             elif instruction_type == "fix":
-                user_prompt = f"Oprav gramatické chyby, překlepy a vylepši stylistiku tohoto popisu inzerátu, ale zachovej jeho původní délku a smysl:\n\n{text}"
+                user_prompt = f"VRAŤ POUZE GRAMATICKY A STYLISTICKY OPRAVENÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
             elif instruction_type == "shorten":
-                user_prompt = f"Zkrať tento popis inzerátu na podstatné informace, parametry a stav, aby byl stručný a úderný:\n\n{text}"
+                user_prompt = f"VRAŤ POUZE STRUČNÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
             elif instruction_type == "lengthen":
-                user_prompt = f"Rozšiř tento popis inzerátu. Přidej více detailů, vysvěli možné scénáře použití a doplň přátelskou výzvu k akci (např. možnost osobního odběru nebo zaslání):\n\n{text}"
+                user_prompt = f"VRAŤ POUZE ROZŠÍŘENÝ POPIS BEZ JAKÝCHKOLIV DALŠÍCH SLOV NEBO POZDRAVŮ:\n\n{text}"
         
         # Volání Gemini API
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"

@@ -1,5 +1,3 @@
-.git
-.gitignore
 .venv
 venv
 ENV

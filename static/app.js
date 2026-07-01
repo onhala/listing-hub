@@ -43,6 +43,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnSyncBanner = document.getElementById("btn-sync-banner");
     const lastSyncTimeLabel = document.getElementById("last-sync-time-label");
 
+    // App Update elements
+    const appUpdateBanner = document.getElementById("app-update-banner");
+    const appUpdateMsg = document.getElementById("app-update-msg");
+    const btnAppUpdate = document.getElementById("btn-app-update");
+    const dockerUpdateModal = document.getElementById("docker-update-modal");
+    const btnCloseDockerUpdate = document.getElementById("btn-close-docker-update");
+    const btnCloseDockerUpdateOk = document.getElementById("btn-close-docker-update-ok");
+    const btnCopyDockerCmd = document.getElementById("btn-copy-docker-cmd");
+    const restartOverlay = document.getElementById("restart-overlay");
+    const restartStatus = document.getElementById("restart-status");
 
     // Modals
     const addListingModal = document.getElementById("add-listing-modal");
@@ -87,6 +97,8 @@ document.addEventListener("DOMContentLoaded", () => {
         config: "/api/config",
         photos: "/api/photos",
         refreshStatus: "/api/refresh/status",
+        versionCheck: "/api/version/check",
+        versionUpdate: "/api/version/update",
         saveAd: "/api/listings/save",
         addAd: "/api/listings/add",
         action: "/api/action",
@@ -178,6 +190,82 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const checkAppVersion = async () => {
+        try {
+            const res = await fetch(API.versionCheck);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.update_available) {
+                    appUpdateBanner.style.display = "flex";
+                    // Ukážeme zprávu posledního commitu, pokud je
+                    appUpdateMsg.textContent = data.latest_message ? `"${data.latest_message}"` : "Dostupný nový kód na GitHubu.";
+                    
+                    // Nabindujeme chování podle prostředí
+                    btnAppUpdate.onclick = () => {
+                        if (data.is_docker) {
+                            // Běží v Dockeru -> ukážeme modal s instrukcemi
+                            dockerUpdateModal.style.display = "flex";
+                        } else {
+                            // Lokální vývoj -> spustíme in-place aktualizaci
+                            triggerLocalAppUpdate();
+                        }
+                    };
+                } else {
+                    appUpdateBanner.style.display = "none";
+                }
+            }
+        } catch (err) {
+            console.error("Chyba při kontrole verze:", err);
+        }
+    };
+
+    const triggerLocalAppUpdate = async () => {
+        if (!confirm("Opravdu chcete spustit aktualizaci aplikace? Server se po dokončení restartuje.")) {
+            return;
+        }
+        
+        restartOverlay.style.display = "flex";
+        restartStatus.textContent = "Spouštím aktualizaci (git pull)...";
+        
+        try {
+            const res = await fetch(API.versionUpdate, { method: "POST" });
+            if (res.ok) {
+                restartStatus.textContent = "Aktualizace dokončena. Čekám na restart serveru...";
+                
+                // Periodické dotazování na naběhnutí serveru
+                let attempts = 0;
+                const pollInterval = setInterval(async () => {
+                    attempts++;
+                    restartStatus.textContent = `Dotazuji se na server (pokus ${attempts}/15)...`;
+                    try {
+                        const checkRes = await fetch(API.config);
+                        if (checkRes.ok) {
+                            clearInterval(pollInterval);
+                            restartStatus.textContent = "Server běží! Načítám stránku...";
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 500);
+                        }
+                    } catch (e) {
+                        // Server ještě nenaběhl
+                    }
+                    if (attempts >= 15) {
+                        clearInterval(pollInterval);
+                        restartStatus.textContent = "Restart trvá příliš dlouho. Zkuste stránku načíst ručně.";
+                    }
+                }, 1500);
+                
+            } else {
+                const data = await res.json();
+                alert("Aktualizace selhala: " + (data.message || "neznámá chyba"));
+                restartOverlay.style.display = "none";
+            }
+        } catch (err) {
+            alert("Během aktualizace nastala chyba: " + err.message);
+            restartOverlay.style.display = "none";
+        }
+    };
+
     const loadApp = async () => {
         initCharacterCounters();
         await loadConfig();
@@ -187,10 +275,31 @@ document.addEventListener("DOMContentLoaded", () => {
         pollRefreshStatus();
         setInterval(pollRefreshStatus, 5000);
         
+        // Nastartovat kontrolu verze na GitHubu
+        checkAppVersion();
+        
         // Zprovoznit synchronizaci přes varovný banner
         if (btnSyncBanner) {
             btnSyncBanner.addEventListener("click", () => {
                 triggerPlaywrightAction(null, "sync_views");
+            });
+        }
+
+        // Zprovoznit zavírání Docker Update modalu
+        if (btnCloseDockerUpdate) {
+            btnCloseDockerUpdate.addEventListener("click", () => {
+                dockerUpdateModal.style.display = "none";
+            });
+        }
+        if (btnCloseDockerUpdateOk) {
+            btnCloseDockerUpdateOk.addEventListener("click", () => {
+                dockerUpdateModal.style.display = "none";
+            });
+        }
+        if (btnCopyDockerCmd) {
+            btnCopyDockerCmd.addEventListener("click", () => {
+                navigator.clipboard.writeText("docker compose pull && docker compose up -d");
+                showNotification("Příkaz zkopírován do schránky.", "success");
             });
         }
     };
