@@ -996,7 +996,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
     
     ad_id = extract_ad_id(url)
     subdomain = extract_subdomain(url)
-    password_b64 = ad.get("ad_password_b64", "aGVzbG8xMjM=")
+    password_b64 = ad.get("ad_password_b64") or user_config.get("default_ad_password_b64") or "aGVzbG8xMjM="
     password = base64.b64decode(password_b64).decode("utf-8")
     
     # Zkrácení nadpisu na limit Bazoše

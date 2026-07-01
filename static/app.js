@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const configEmail = document.getElementById("config-email");
     const configPhone = document.getElementById("config-phone");
     const configZip = document.getElementById("config-zip");
+    const configPassword = document.getElementById("config-password");
     const configGeminiKey = document.getElementById("config-gemini-key");
     const toggleGeminiKeyBtn = document.getElementById("toggle-gemini-key");
 
@@ -89,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 configEmail.value = config.email || "";
                 configPhone.value = config.phone || "";
                 configZip.value = config.zip_code || "";
+                configPassword.value = config.default_ad_password_b64 ? atob(config.default_ad_password_b64) : "";
                 // Gemini API klíč se nenačítá celý z bezpečnostních důvodů (pokud je, dáme tam placeholder)
                 if (config.gemini_api_key) {
                     configGeminiKey.placeholder = "••••••••••••••••••••••••••••••••";
@@ -348,7 +350,17 @@ document.addEventListener("DOMContentLoaded", () => {
         // Resetujeme stavový text description
         const statusDesc = document.getElementById("playwright-status-desc");
         if (statusDesc) {
-            statusDesc.textContent = "Sleduj otevřené Chrome okno a případně zadej SMS...";
+            if (actionType === "sync_views") {
+                statusDesc.textContent = "Probíhá synchronizace inzerátů s Bazošem...";
+            } else if (actionType === "post") {
+                statusDesc.textContent = "Probíhá vyplňování formuláře inzerátu na Bazoši...";
+            } else if (actionType === "delete") {
+                statusDesc.textContent = "Probíhá mazání inzerátu na Bazoši...";
+            } else if (actionType === "edit_price") {
+                statusDesc.textContent = "Probíhá změna ceny inzerátu na Bazoši...";
+            } else {
+                statusDesc.textContent = "Sleduj otevřené Chrome okno a případně zadej SMS...";
+            }
         }
 
         // Automaticky přepnout na záložku s živým prohlížečem, aby uživatel viděl spuštěné okno
@@ -610,6 +622,7 @@ document.addEventListener("DOMContentLoaded", () => {
             email: configEmail.value,
             phone: configPhone.value,
             zip_code: configZip.value,
+            default_ad_password_b64: configPassword.value ? btoa(configPassword.value) : "",
         };
 
         if (geminiKeyVal) {
