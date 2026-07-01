@@ -584,6 +584,16 @@ input:focus, textarea:focus {
     margin-top: 0.2rem;
 }
 
+.counter-warning {
+    color: var(--warning, #f39c12) !important;
+}
+
+.counter-danger {
+    color: var(--danger, #e74c3c) !important;
+    font-weight: bold;
+}
+
+
 .form-actions {
     display: flex;
     justify-content: flex-end;

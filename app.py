@@ -129,9 +129,34 @@ PORT = 5001
 def index():
     return render_template("index.html")
 
+def count_photos(photos_dir, excluded_list=None):
+    if not photos_dir or not os.path.isdir(photos_dir):
+        return 0, 0
+    try:
+        raw_files = os.listdir(photos_dir)
+        img_files = [f for f in raw_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        total = len(img_files)
+        excluded = set(excluded_list or [])
+        included = len([f for f in img_files if f not in excluded])
+        return total, included
+    except Exception:
+        return 0, 0
+
 @app.route("/api/listings", methods=["GET"])
 def get_listings():
     listings_data, _ = load_data()
+    
+    # Obohatíme inzeráty o počty fotek
+    for ad in listings_data.get("active_listings", []):
+        total, included = count_photos(ad.get("local_photos_dir"), ad.get("excluded_photos"))
+        ad["photos_count"] = total
+        ad["photos_upload_count"] = included
+        
+    for ad in listings_data.get("sold_listings", []):
+        total, included = count_photos(ad.get("local_photos_dir"), ad.get("excluded_photos"))
+        ad["photos_count"] = total
+        ad["photos_upload_count"] = included
+        
     return jsonify(listings_data)
 
 @app.route("/api/photos", methods=["GET"])
@@ -190,6 +215,9 @@ def save_config_endpoint():
 def save_listing_endpoint():
     try:
         updated_ad = request.json
+        if "title" in updated_ad:
+            updated_ad["title"] = updated_ad["title"][:50].strip()
+            
         listings_data, _ = load_data()
         
         # Hledáme inzerát v aktivních i prodaných
@@ -220,14 +248,17 @@ def save_listing_endpoint():
 def add_listing_endpoint():
     try:
         new_ad_data = request.json
+        title = new_ad_data.get("title", "novy_inzerat").strip()
+        title_trimmed = title[:50].strip()
+        
         # Vygenerujeme unikátní složku pro fotky na základě názvu
-        title_slug = "".join([c if c.isalnum() else "_" for c in new_ad_data.get("title", "novy_inzerat").lower()])
+        title_slug = "".join([c if c.isalnum() else "_" for c in title_trimmed.lower()])
         photos_dir = f"photos/{title_slug}"
         os.makedirs(photos_dir, exist_ok=True)
         
         # Nastavíme výchozí hodnoty
         new_ad = {
-            "title": new_ad_data.get("title", ""),
+            "title": title_trimmed,
             "description": new_ad_data.get("description", ""),
             "price": int(new_ad_data.get("price", 0)),
             "local_photos_dir": photos_dir,
@@ -409,6 +440,23 @@ def ai_improve():
         result_json = response.json()
         try:
             improved_text = result_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+            
+            if field_type == "title":
+                if instruction_type == "title_suggestions":
+                    cleaned_lines = []
+                    for line in improved_text.split("\n"):
+                        line_str = line.strip()
+                        if not line_str:
+                            continue
+                        # Vyčistit čísla odrážek např. "1. Nadpis" -> "Nadpis"
+                        cleaned = re.sub(r'^\d+[\.\)\-]\s*', '', line_str).strip()
+                        cleaned_lines.append(cleaned[:50].strip())
+                    improved_text = "\n".join(cleaned_lines)
+                else:
+                    # Odstraníme případné uvozovky, které AI občas generuje
+                    improved_text = improved_text.replace('"', '').replace("'", "").strip()
+                    improved_text = improved_text[:50].strip()
+                    
             return jsonify({"status": "success", "result": improved_text})
         except (KeyError, IndexError) as parse_err:
             return jsonify({"status": "error", "message": f"Selhalo parsování odpovědi Gemini API: {str(parse_err)}"}), 500

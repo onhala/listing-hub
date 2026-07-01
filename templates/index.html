@@ -225,7 +225,10 @@
             <div class="modal-body">
                 <form id="add-listing-form">
                     <div class="form-group">
-                        <label for="new-title">Název věci (Nadpis)</label>
+                        <label for="new-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span>Název věci (Nadpis)</span>
+                            <span id="new-title-counter" class="input-hint" style="font-weight: normal; font-size: 0.75rem; color: var(--text-muted);">0 / 50</span>
+                        </label>
                         <input type="text" id="new-title" maxlength="50" required placeholder="Zadej stručný a jasný název (max 50 znaků)">
                     </div>
                     <div class="form-group">
@@ -237,7 +240,10 @@
                         <input type="text" id="new-category" placeholder="Např. Sekačky, Ledničky, Stoly">
                     </div>
                     <div class="form-group">
-                        <label for="new-description">Popis věci</label>
+                        <label for="new-description" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span>Popis věci</span>
+                            <span id="new-desc-counter" class="input-hint" style="font-weight: normal; font-size: 0.75rem; color: var(--text-muted);">0 znaků</span>
+                        </label>
                         <textarea id="new-description" rows="6" required placeholder="Popiš věc, její stav, důvod prodeje a podrobnosti..."></textarea>
                     </div>
                     <div class="modal-footer">
@@ -261,8 +267,8 @@
                     <form id="edit-listing-form">
                         <input type="hidden" id="edit-photos-dir">
                         <div class="form-group">
-                            <label for="edit-title">
-                                Nadpis (max 50 znaků)
+                            <label for="edit-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                <span>Nadpis <span id="edit-title-counter" class="input-hint" style="font-weight: normal; font-size: 0.75rem; color: var(--text-muted); margin-left: 8px;">0 / 50</span></span>
                                 <button type="button" class="btn-ai-sparkle" id="ai-improve-title" title="Vylepšit nadpis pomocí AI">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i> AI Vylepšit
                                 </button>
@@ -278,8 +284,8 @@
                             <input type="text" id="edit-category" placeholder="Např. Sekačky, Ledničky, Stoly">
                         </div>
                         <div class="form-group">
-                            <label for="edit-description">
-                                Popis inzerátu
+                            <label for="edit-description" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                <span>Popis inzerátu <span id="edit-desc-counter" class="input-hint" style="font-weight: normal; font-size: 0.75rem; color: var(--text-muted); margin-left: 8px;">0 znaků</span></span>
                                 <div class="ai-actions-group">
                                     <button type="button" class="btn-ai-sparkle" id="ai-improve-desc" title="Vylepšit tón a styl pomocí AI">
                                         <i class="fa-solid fa-wand-magic-sparkles"></i> AI Vylepšit

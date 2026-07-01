@@ -57,6 +57,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const photoGalleryGrid = document.getElementById("photo-gallery-grid");
     const photoCountLabel = document.getElementById("photo-count-label");
 
+    // Character counters
+    const newTitleCounter = document.getElementById("new-title-counter");
+    const editTitleCounter = document.getElementById("edit-title-counter");
+    const newDescCounter = document.getElementById("new-desc-counter");
+    const editDescCounter = document.getElementById("edit-desc-counter");
+
     // Info panel elements in edit modal
     const infoUrlContainer = document.getElementById("info-url-container");
     const infoViews = document.getElementById("info-views");
@@ -82,7 +88,40 @@ document.addEventListener("DOMContentLoaded", () => {
     // 1. INICIALIZACE A NABÍHÁNÍ DAT
     // ==========================================
 
+    const updateCounter = (inputEl, counterEl, maxLength) => {
+        if (!inputEl || !counterEl) return;
+        const len = inputEl.value.length;
+        if (maxLength) {
+            counterEl.textContent = `${len} / ${maxLength}`;
+            if (len >= maxLength) {
+                counterEl.className = "input-hint counter-danger";
+            } else if (len >= maxLength - 5) {
+                counterEl.className = "input-hint counter-warning";
+            } else {
+                counterEl.className = "input-hint";
+            }
+        } else {
+            counterEl.textContent = `${len} znaků`;
+        }
+    };
+
+    const initCharacterCounters = () => {
+        if (newTitle && newTitleCounter) {
+            newTitle.addEventListener("input", () => updateCounter(newTitle, newTitleCounter, 50));
+        }
+        if (newDescription && newDescCounter) {
+            newDescription.addEventListener("input", () => updateCounter(newDescription, newDescCounter));
+        }
+        if (editTitle && editTitleCounter) {
+            editTitle.addEventListener("input", () => updateCounter(editTitle, editTitleCounter, 50));
+        }
+        if (editDescription && editDescCounter) {
+            editDescription.addEventListener("input", () => updateCounter(editDescription, editDescCounter));
+        }
+    };
+
     const loadApp = async () => {
+        initCharacterCounters();
         await loadConfig();
         await loadListings();
     };
@@ -198,6 +237,10 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
             <div>
                 <div class="listing-meta">
+                    <div class="meta-item" title="Fotky k nahrání (k nahrání / celkem ve složce)">
+                        <i class="fa-solid fa-camera"></i>
+                        <span>${ad.photos_count !== undefined ? `${ad.photos_upload_count}/${ad.photos_count}` : '0'} fotek</span>
+                    </div>
                     <div class="meta-item">
                         <i class="fa-solid fa-eye"></i>
                         <span>${viewsCount} zhlédnutí</span>
@@ -255,6 +298,10 @@ document.addEventListener("DOMContentLoaded", () => {
         editDescription.value = ad.description || "";
         editNotes.value = ad.notes || "";
         editPhotosDir.value = ad.local_photos_dir || "";
+
+        // Inicializovat čítače
+        updateCounter(editTitle, editTitleCounter, 50);
+        updateCounter(editDescription, editDescCounter);
 
         // Načteme fotogalerii
         excludedPhotos = new Set(ad.excluded_photos || []);
@@ -391,6 +438,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("btn-add-listing-modal").addEventListener("click", () => {
         addListingForm.reset();
+        updateCounter(newTitle, newTitleCounter, 50);
+        updateCounter(newDescription, newDescCounter);
         addListingModal.classList.add("active");
     });
 
