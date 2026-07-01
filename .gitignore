@@ -27,6 +27,5 @@ bazos_session.json
 
 # Local listing photos
 photos/
-
-
-
+# Local Docker override
+docker-compose.override.yml

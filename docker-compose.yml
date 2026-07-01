@@ -8,7 +8,7 @@ version: '3.8'
 
 services:
   bazos-automat:
-    build: .
+    # build: .
     image: ghcr.io/onhala/bazos-automat:latest
     container_name: bazos-automat
     restart: unless-stopped
