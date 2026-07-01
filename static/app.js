@@ -9,6 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let soldListings = [];
     let excludedPhotos = new Set(); // filenames the user wants to skip
     let currentAd = null;
+    let userConfig = {};
     let selectedTextRange = null; // Uchovává vybranou část textu pro inline AI přepis
 
     // UI elements
@@ -199,6 +200,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const res = await fetch(API.config);
             if (res.ok) {
                 const config = await res.json();
+                userConfig = config;
                 configName.value = config.name || "";
                 configEmail.value = config.email || "";
                 configPhone.value = config.phone || "";
@@ -921,12 +923,26 @@ document.addEventListener("DOMContentLoaded", () => {
             console.log("⚠️ reloadVncSrc: vncIframe not found!");
             return;
         }
+        
+        // Pokud má uživatel nastavenou vlastní VNC URL, použijeme ji
+        if (userConfig && userConfig.vnc_url) {
+            vncIframe.src = userConfig.vnc_url;
+            console.log("➡️ reloadVncSrc: set src to custom config URL =", vncIframe.src);
+            return;
+        }
+        
         const isLocalDev = window.location.port === "5001";
         console.log("ℹ️ reloadVncSrc: port =", window.location.port, "isLocalDev =", isLocalDev);
-        if (isLocalDev) {
+        
+        if (window.location.protocol === "https:") {
+            // Bezpečné připojení za SSL proxy na stejném hostu pod /vnc/
+            vncIframe.src = `https://${window.location.host}/vnc/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
+        } else if (isLocalDev) {
+            // Lokální vývoj na portu 5001 -> přímé připojení na port 6080
             vncIframe.src = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
         } else {
-            vncIframe.src = `${window.location.protocol}//${window.location.host}/novnc/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
+            // Ostatní HTTP případy, např. HTTP proxy bez specifikovaného portu
+            vncIframe.src = `http://${window.location.host}/vnc/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
         }
         console.log("➡️ reloadVncSrc: set src to =", vncIframe.src);
     };

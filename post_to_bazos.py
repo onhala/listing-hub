@@ -70,10 +70,10 @@ class PlaywrightSessionManager:
             log_psm("sync_playwright().start() completed")
             try:
                 log_psm("Launching browser (chrome)")
-                self.browser = self.playwright.chromium.launch(channel="chrome", headless=False)
+                self.browser = self.playwright.chromium.launch(channel="chrome", headless=False, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
             except Exception as e:
                 log_psm(f"Chrome launch failed: {e}. Launching default chromium.")
-                self.browser = self.playwright.chromium.launch(headless=False)
+                self.browser = self.playwright.chromium.launch(headless=False, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
             log_psm("Browser launched successfully")
             
             if SESSION_STATE_PATH.exists():
@@ -153,7 +153,42 @@ def load_data():
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             config_data = json.load(f)
             
-        return listings_data, config_data.get("user", {})
+        user_config = config_data.get("user", {})
+        
+        # Podpora environmentálních proměnných pro produkční nasazení (12-Factor App)
+        import os
+        import base64
+        
+        if os.environ.get("BAZOS_EMAIL"):
+            user_config["email"] = os.environ.get("BAZOS_EMAIL").strip()
+        if os.environ.get("BAZOS_PHONE"):
+            user_config["phone"] = os.environ.get("BAZOS_PHONE").strip()
+            if not os.environ.get("BAZOS_PHONE_VERIFIED"):
+                user_config["phone_verified"] = f"+420{user_config['phone']}"
+        if os.environ.get("BAZOS_PHONE_VERIFIED"):
+            user_config["phone_verified"] = os.environ.get("BAZOS_PHONE_VERIFIED").strip()
+        if os.environ.get("BAZOS_PASSWORD"):
+            pwd = os.environ.get("BAZOS_PASSWORD").strip()
+            user_config["default_ad_password_b64"] = base64.b64encode(pwd.encode('utf-8')).decode('utf-8')
+        if os.environ.get("BAZOS_NAME"):
+            user_config["name"] = os.environ.get("BAZOS_NAME").strip()
+        if os.environ.get("BAZOS_ZIP_CODE"):
+            user_config["zip_code"] = os.environ.get("BAZOS_ZIP_CODE").strip()
+            user_config["location"] = f"Město {user_config['zip_code']}"
+        if os.environ.get("GEMINI_API_KEY"):
+            user_config["gemini_api_key"] = os.environ.get("GEMINI_API_KEY").strip()
+            
+        if os.environ.get("AUTO_REFRESH_ENABLED") is not None:
+            user_config["auto_refresh_enabled"] = os.environ.get("AUTO_REFRESH_ENABLED").lower() in ("true", "1", "yes")
+        if os.environ.get("AUTO_REFRESH_INTERVAL") is not None:
+            try:
+                user_config["auto_refresh_interval"] = int(os.environ.get("AUTO_REFRESH_INTERVAL"))
+            except ValueError:
+                pass
+        if os.environ.get("BAZOS_VNC_URL"):
+            user_config["vnc_url"] = os.environ.get("BAZOS_VNC_URL").strip()
+            
+        return listings_data, user_config
     except Exception as e:
         print(f"{Colors.FAIL}Chyba při načítání databází: {e}{Colors.ENDC}")
         sys.exit(1)
