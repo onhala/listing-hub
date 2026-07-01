@@ -220,7 +220,7 @@ def get_refresh_status():
     _, user_config = load_data()
     return jsonify({
         "auto_refresh_enabled": user_config.get("auto_refresh_enabled", False),
-        "auto_refresh_interval": int(user_config.get("auto_refresh_interval", 12)),
+        "auto_refresh_interval": int(user_config.get("auto_refresh_interval", 720)),
         "auto_refresh_status": user_config.get("auto_refresh_status", "ok"),
         "last_refresh_time": user_config.get("last_refresh_time", ""),
         "is_running": playwright_process.is_alive() if playwright_process else False
@@ -527,7 +527,7 @@ def background_refresh_worker():
             _, user_config = load_data()
             
             auto_enabled = user_config.get("auto_refresh_enabled", False)
-            auto_interval_hours = int(user_config.get("auto_refresh_interval", 12))
+            auto_interval_minutes = int(user_config.get("auto_refresh_interval", 720))
             auto_status = user_config.get("auto_refresh_status", "ok")
             last_refresh_str = user_config.get("last_refresh_time", "")
             
@@ -543,13 +543,13 @@ def background_refresh_worker():
             else:
                 try:
                     last_refresh = datetime.fromisoformat(last_refresh_str)
-                    if datetime.now() - last_refresh >= timedelta(hours=auto_interval_hours):
+                    if datetime.now() - last_refresh >= timedelta(minutes=auto_interval_minutes):
                         should_refresh = True
                 except Exception:
                     should_refresh = True
                     
             if should_refresh:
-                log_debug(f"Triggering auto_refresh on background thread. Interval={auto_interval_hours}h")
+                log_debug(f"Triggering auto_refresh on background thread. Interval={auto_interval_minutes}m")
                 # Spustíme synchronizaci na pozadí jako samostatný proces
                 playwright_process = multiprocessing.Process(
                     target=process_target,

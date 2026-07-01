@@ -207,7 +207,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 // Auto refresh
                 configAutoRefresh.checked = config.auto_refresh_enabled || false;
-                configRefreshInterval.value = config.auto_refresh_interval || "12";
+                configRefreshInterval.value = config.auto_refresh_interval || "720";
                 
                 // Gemini API klíč se nenačítá celý z bezpečnostních důvodů (pokud je, dáme tam placeholder)
                 if (config.gemini_api_key) {
@@ -837,7 +837,7 @@ document.addEventListener("DOMContentLoaded", () => {
             zip_code: configZip.value,
             default_ad_password_b64: configPassword.value ? btoa(configPassword.value) : "",
             auto_refresh_enabled: configAutoRefresh.checked,
-            auto_refresh_interval: parseInt(configRefreshInterval.value) || 12,
+            auto_refresh_interval: parseInt(configRefreshInterval.value) || 720,
         };
 
         if (geminiKeyVal) {
