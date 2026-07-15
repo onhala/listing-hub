@@ -1,14 +1,14 @@
 # ==========================================================
-# Bazoš Automat & AI Editor - Docker Compose Configuration
+# Listing Hub & AI Editor - Docker Compose Configuration
 # Brand: TERMS a.s. / Roboton Custom Platform
 # For: TrueNAS / Home Server Deployment behind Nginx Proxy
 # ==========================================================
 
 services:
-  bazos-automat:
+  listing-hub:
     # build: .
-    image: ghcr.io/onhala/bazos-automat:latest
-    container_name: bazos-automat
+    image: ghcr.io/onhala/listing-hub:latest
+    container_name: listing-hub
     restart: unless-stopped
     ports:
       - "5001:5001" # Flask Web Interface

@@ -1,8 +1,8 @@
-# 🤖 Bazoš Automat & AI Editor v3.0.0
+# 🤖 Listing Hub & AI Editor v3.0.0
 
-Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálu Bazoš.cz, s integrovaným živým noVNC prohlížečem a pokročilým AI Gemini editorem textů. 
+Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem a pokročilým AI Gemini editorem textů. 
 
-Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování většího množství věcí s maximální úsporou času, eliminací opakovaného SMS ověřování a plně automatickým obnovováním dat.
+Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování většího množství věcí s maximální úsporou času a plně automatickým obnovováním dat.
 
 ---
 

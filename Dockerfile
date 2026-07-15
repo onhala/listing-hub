@@ -1,5 +1,5 @@
 # ==========================================================
-# Bazoš Automat & AI Editor - Dockerfile (Lightweight)
+# Listing Hub & AI Editor - Dockerfile (Lightweight)
 # Brand: TERMS a.s. / Roboton Custom Platform
 # Base: Debian Bookworm Slim with Chromium only
 # ==========================================================
