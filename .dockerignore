@@ -15,3 +15,7 @@ scratch/
 .DS_Store
 .idea
 .vscode
+.git
+.github
+.pytest_cache
+tests/
