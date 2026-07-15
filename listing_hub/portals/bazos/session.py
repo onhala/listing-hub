@@ -52,12 +52,18 @@ class PlaywrightSessionManager:
             log_psm("Calling sync_playwright().start()")
             self.playwright = sync_playwright().start()
             log_psm("sync_playwright().start() completed")
+            executable_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+            launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             try:
-                log_psm("Launching browser (chrome)")
-                self.browser = self.playwright.chromium.launch(channel="chrome", headless=False, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
+                if executable_path and os.path.exists(executable_path):
+                    log_psm(f"Launching system Chromium at {executable_path}")
+                    self.browser = self.playwright.chromium.launch(executable_path=executable_path, headless=False, args=launch_args)
+                else:
+                    log_psm("Launching browser (chrome channel)")
+                    self.browser = self.playwright.chromium.launch(channel="chrome", headless=False, args=launch_args)
             except Exception as e:
-                log_psm(f"Chrome launch failed: {e}. Launching default chromium.")
-                self.browser = self.playwright.chromium.launch(headless=False, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
+                log_psm(f"Browser launch fallback: {e}. Launching default chromium.")
+                self.browser = self.playwright.chromium.launch(headless=False, args=launch_args)
             log_psm("Browser launched successfully")
             
             if SESSION_STATE_PATH.exists():
