@@ -33,7 +33,7 @@ jobs:
 
       - name: Run backend unit tests
         run: |
-          python -m unittest test_backend.py
+          pytest tests/
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3

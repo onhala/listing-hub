@@ -293,6 +293,19 @@
                         </label>
                         <textarea id="new-description" rows="6" required placeholder="Popiš věc, její stav, důvod prodeje a podrobnosti..."></textarea>
                     </div>
+                    <div class="form-group">
+                        <label style="margin-bottom: 0.5rem; display: block;">Cílové portály</label>
+                        <div style="display: flex; gap: 1.5rem; align-items: center;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                <input type="checkbox" id="new-target-bazos" checked style="width: 18px; height: 18px; cursor: pointer;">
+                                Bazoš.cz
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                <input type="checkbox" id="new-target-aukro" style="width: 18px; height: 18px; cursor: pointer;">
+                                Aukro.cz
+                            </label>
+                        </div>
+                    </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary btn-close-modal">Zrušit</button>
                         <button type="submit" class="btn btn-primary">Vytvořit inzerát</button>
@@ -351,6 +364,19 @@
                         <div class="form-group">
                             <label for="edit-notes">Poznámky k inzerátu (interní)</label>
                             <textarea id="edit-notes" rows="3" placeholder="Sem si můžeš napsat poznámky k věci, kde je skladem, apod. (neodesílá se na Bazoš)"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label style="margin-bottom: 0.5rem; display: block;">Cílové portály</label>
+                            <div style="display: flex; gap: 1.5rem; align-items: center;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                    <input type="checkbox" id="edit-target-bazos" style="width: 18px; height: 18px; cursor: pointer;">
+                                    Bazoš.cz
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                    <input type="checkbox" id="edit-target-aukro" style="width: 18px; height: 18px; cursor: pointer;">
+                                    Aukro.cz
+                                </label>
+                            </div>
                         </div>
                         <div class="form-group full-width">
                             <label>

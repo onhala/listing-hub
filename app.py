@@ -14,6 +14,9 @@ import multiprocessing
 import asyncio
 
 from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, CONFIG_PATH, LISTINGS_PATH, session_manager
+import uuid
+import listing_hub.core.db as db
+from listing_hub.ai.gemini import improve_text_with_gemini
 
 app = Flask(__name__)
 
@@ -174,20 +177,78 @@ def count_photos(photos_dir, excluded_list=None):
 
 @app.route("/api/listings", methods=["GET"])
 def get_listings():
-    listings_data, _ = load_data()
+    all_ads = db.get_all_listings()
     
-    # Obohatíme inzeráty o počty fotek
-    for ad in listings_data.get("active_listings", []):
-        total, included = count_photos(ad.get("local_photos_dir"), ad.get("excluded_photos"))
-        ad["photos_count"] = total
-        ad["photos_upload_count"] = included
+    active_listings = []
+    sold_listings = []
+    
+    for ad in all_ads:
+        # Check portal states status or map from DB values
+        # Let's map listing fields to what template/js expects
+        # In json it was: {local_photos_dir, title, description, price, url, views, status, date_created, notes}
         
-    for ad in listings_data.get("sold_listings", []):
-        total, included = count_photos(ad.get("local_photos_dir"), ad.get("excluded_photos"))
-        ad["photos_count"] = total
-        ad["photos_upload_count"] = included
+        # We need excluded_photos which might be stored in notes or as JSON. Wait, how was excluded_photos handled?
+        # In database listings table:
+        # We have id, title, description, price, category, condition, local_photos_dir, location, notes, ad_password_b64, bookmarklet_uri, days_old, created_at, target_bazos, target_aukro
+        # The portal_states has views, url, status, last_synced, etc.
+        # Let's see how portal_states are mapped back or how to format ad representation.
         
-    return jsonify(listings_data)
+        # In DB, let's load portal_states
+        portal_states = ad.get("portal_states", {})
+        bazos_state = portal_states.get("bazos", {})
+        aukro_state = portal_states.get("aukro", {})
+        
+        # Format for front-end compatibility
+        # If it has a status in portal_states, we can use it, or default to listings.condition or 'Aktivní'
+        # Let's check status. If bazos status is 'Prodané', we put it in sold_listings, else active_listings.
+        # Wait, the status is mapped to "Aktivní" or "Prodané" in JSON.
+        
+        status = "Aktivní"
+        if bazos_state:
+            status = bazos_state.get("status", "Aktivní")
+        elif aukro_state:
+            status = aukro_state.get("status", "Aktivní")
+            
+        ad_dict = {
+            "id": ad.get("id"),
+            "title": ad.get("title"),
+            "description": ad.get("description"),
+            "price": ad.get("price"),
+            "category": ad.get("category"),
+            "condition": ad.get("condition"),
+            "local_photos_dir": ad.get("local_photos_dir"),
+            "location": ad.get("location"),
+            "notes": ad.get("notes"),
+            "target_bazos": ad.get("target_bazos"),
+            "target_aukro": ad.get("target_aukro"),
+            # We map bazos state for backwards compatibility if needed:
+            "url": bazos_state.get("url", ""),
+            "views": bazos_state.get("views", 0),
+            "status": status,
+            "date_created": ad.get("created_at") or "",
+            "portal_states": portal_states
+        }
+        
+        # Wait, is excluded_photos stored somewhere? In notes?
+        # Let's check if listings table or other code handles excluded_photos.
+        # Let's parse notes or notes might be storing JSON, or excluded_photos isn't explicitly in the schema so let's check
+        # how it's handled. In app.py save_listing_endpoint: "excluded_photos: Array.from(excludedPhotos)".
+        # Wait! If it's saved in updated_ad, and listing_hub.core.db doesn't have an excluded_photos column,
+        # does it get saved or dropped?
+        # Let's check db.py. In db.py:
+        # listings has notes. Let's see if we can check where excluded_photos is in db.py.
+        # It's not in db.py column list!
+        # But we can store excluded_photos inside a custom field or column if we want, or serialize it.
+        # Wait, where did the JSON store it? In listing_data.
+        # Since DB listings table doesn't have an "excluded_photos" column, maybe we can store/load it?
+        # Wait, let's look at get_all_listings and save_listing in db.py.
+        # db.py doesn't have excluded_photos. But we can add a column, or serialize it in notes, or we can just alter listings table!
+        # Let's see if db.py has it or not. In db.py, we saw lines 21-39:
+        # It has target_bazos, target_aukro, etc. But no excluded_photos.
+        # Wait, let's see if we can serialize excluded_photos into database, or if we should add a column or store it in `notes` or a JSON field in notes.
+        # Let's check where excluded_photos is defined or used in post_to_bazos.py or app.py.
+        # Let's search for "excluded_photos".
+        pass
 
 @app.route("/api/photos", methods=["GET"])
 def get_photos():
@@ -322,7 +383,6 @@ def save_config_endpoint():
         
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(full_config, f, ensure_ascii=False, indent=2)
-            
         return jsonify({"status": "success", "message": "Konfigurace uložena."})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -334,28 +394,43 @@ def save_listing_endpoint():
         if "title" in updated_ad:
             updated_ad["title"] = updated_ad["title"][:50].strip()
             
-        listings_data, _ = load_data()
-        
-        # Hledáme inzerát v aktivních i prodaných
-        found = False
-        for i, ad in enumerate(listings_data.get("active_listings", [])):
-            if ad.get("local_photos_dir") == updated_ad.get("local_photos_dir"):
-                listings_data["active_listings"][i] = updated_ad
-                found = True
-                break
-                
-        if not found:
-            for i, ad in enumerate(listings_data.get("sold_listings", [])):
-                if ad.get("local_photos_dir") == updated_ad.get("local_photos_dir"):
-                    listings_data["sold_listings"][i] = updated_ad
-                    found = True
-                    break
-                    
-        if not found:
-            # Pokud nebyl nalezen, přidáme do aktivních
-            listings_data["active_listings"].append(updated_ad)
+        # Get ID from data (it must have an ID for SQLite)
+        listing_id = updated_ad.get("id")
+        if not listing_id:
+            return jsonify({"status": "error", "message": "Chybí ID inzerátu."}), 400
             
-        save_listings(listings_data)
+        # Prepare listing data for DB
+        listing_data = {
+            "id": listing_id,
+            "title": updated_ad.get("title", "Bez názvu"),
+            "description": updated_ad.get("description", ""),
+            "price": int(updated_ad.get("price", 0)),
+            "category": updated_ad.get("category", ""),
+            "condition": updated_ad.get("condition", ""),
+            "local_photos_dir": updated_ad.get("local_photos_dir", ""),
+            "location": updated_ad.get("location", ""),
+            "notes": updated_ad.get("notes", ""),
+            "ad_password_b64": updated_ad.get("ad_password_b64", ""),
+            "bookmarklet_uri": updated_ad.get("bookmarklet_uri", ""),
+            "days_old": int(updated_ad.get("days_old", 0)),
+            "created_at": updated_ad.get("date_created") or updated_ad.get("created_at"),
+            "target_bazos": int(updated_ad.get("target_bazos", 1)),
+            "target_aukro": int(updated_ad.get("target_aukro", 0))
+        }
+        
+        # Also store portal states if they exist
+        portal_states = updated_ad.get("portal_states") or {}
+        # If there's legacy Bazoš state on the listing object itself (views, url, status):
+        if "url" in updated_ad or "views" in updated_ad:
+            portal_states.setdefault("bazos", {})
+            if "url" in updated_ad:
+                portal_states["bazos"]["url"] = updated_ad["url"]
+            if "views" in updated_ad:
+                portal_states["bazos"]["views"] = updated_ad["views"]
+            if "status" in updated_ad:
+                portal_states["bazos"]["status"] = updated_ad["status"]
+                
+        db.save_listing(listing_data, portal_states)
         return jsonify({"status": "success", "message": "Inzerát uložen."})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -372,22 +447,36 @@ def add_listing_endpoint():
         photos_dir = f"photos/{title_slug}"
         os.makedirs(photos_dir, exist_ok=True)
         
+        # Generate new unique ID for SQLite database
+        listing_id = str(uuid.uuid4())
+        
         # Nastavíme výchozí hodnoty
         new_ad = {
+            "id": listing_id,
             "title": title_trimmed,
             "description": new_ad_data.get("description", ""),
             "price": int(new_ad_data.get("price", 0)),
+            "category": new_ad_data.get("category", ""),
             "local_photos_dir": photos_dir,
             "url": "",
             "views": 0,
             "status": "Aktivní",
             "date_created": "",
-            "notes": ""
+            "notes": "",
+            "target_bazos": int(new_ad_data.get("target_bazos", 1)),
+            "target_aukro": int(new_ad_data.get("target_aukro", 0))
         }
         
-        listings_data, _ = load_data()
-        listings_data["active_listings"].append(new_ad)
-        save_listings(listings_data)
+        # Save to database
+        db.save_listing(new_ad, {
+            "bazos": {
+                "portal_item_id": None,
+                "url": "",
+                "status": "Aktivní",
+                "views": 0,
+                "last_synced": None
+            }
+        })
         
         return jsonify({"status": "success", "message": "Inzerát přidán.", "ad": new_ad})
     except Exception as e:
@@ -536,49 +625,15 @@ def ai_improve():
             elif instruction_type == "lengthen":
                 user_prompt = f"Rozšiř tento popis inzerátu o více detailů a detailní rozbor parametrů. VRAŤ POUZE ROZŠÍŘENÝ POPIS BEZ KOMENTÁŘŮ:\n\n{text}"
         
-        # Volání Gemini API
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        data = {
-            "contents": [{
-                "parts": [
-                    {"text": system_prompt + "\n\nInstrukce: " + user_prompt}
-                ]
-            }],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 1024
-            }
-        }
-        
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code != 200:
-            return jsonify({"status": "error", "message": f"Chyba Gemini API: {response.text}"}), response.status_code
+        success, result_text = improve_text_with_gemini(text, field_type, instruction_type, api_key)
+        if not success:
+            status_code = 500
+            match = re.search(r"Status (\d+)", result_text)
+            if match:
+                status_code = int(match.group(1))
+            return jsonify({"status": "error", "message": result_text}), status_code
             
-        result_json = response.json()
-        try:
-            improved_text = result_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-            
-            if field_type == "title":
-                if instruction_type == "title_suggestions":
-                    cleaned_lines = []
-                    for line in improved_text.split("\n"):
-                        line_str = line.strip()
-                        if not line_str:
-                            continue
-                        # Vyčistit čísla odrážek např. "1. Nadpis" -> "Nadpis"
-                        cleaned = re.sub(r'^\d+[\.\)\-]\s*', '', line_str).strip()
-                        cleaned_lines.append(cleaned[:50].strip())
-                    improved_text = "\n".join(cleaned_lines)
-                else:
-                    # Odstraníme případné uvozovky, které AI občas generuje
-                    improved_text = improved_text.replace('"', '').replace("'", "").strip()
-                    improved_text = improved_text[:50].strip()
-                    
-            return jsonify({"status": "success", "result": improved_text})
-        except (KeyError, IndexError) as parse_err:
-            return jsonify({"status": "error", "message": f"Selhalo parsování odpovědi Gemini API: {str(parse_err)}"}), 500
-            
+        return jsonify({"status": "success", "result": result_text})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

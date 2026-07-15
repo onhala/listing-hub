@@ -440,6 +440,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     <h4 class="listing-title" title="Klikni pro editaci">${escapeHtml(titleText)}</h4>
                     <span class="price-badge">${priceVal}</span>
                 </div>
+                <div class="portal-badges" style="display: flex; gap: 0.5rem; margin-top: -0.25rem; margin-bottom: 0.75rem;">
+                    <span class="portal-badge badge-bazos" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${ad.target_bazos ? 'background: rgba(131, 92, 223, 0.2); color: var(--accent); border: 1px solid rgba(131, 92, 223, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
+                        <i class="fa-solid ${ad.target_bazos ? 'fa-square-check' : 'fa-square'}"></i> Bazoš
+                    </span>
+                    <span class="portal-badge badge-aukro" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${ad.target_aukro ? 'background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
+                        <i class="fa-solid ${ad.target_aukro ? 'fa-square-check' : 'fa-square'}"></i> Aukro
+                    </span>
+                </div>
                 <p class="listing-desc">${escapeHtml(descText)}</p>
             </div>
             <div>
@@ -505,6 +513,12 @@ document.addEventListener("DOMContentLoaded", () => {
         editDescription.value = ad.description || "";
         editNotes.value = ad.notes || "";
         editPhotosDir.value = ad.local_photos_dir || "";
+        
+        // Portal checkboxes
+        const editTargetBazos = document.getElementById("edit-target-bazos");
+        const editTargetAukro = document.getElementById("edit-target-aukro");
+        if (editTargetBazos) editTargetBazos.checked = ad.target_bazos !== 0;
+        if (editTargetAukro) editTargetAukro.checked = ad.target_aukro === 1;
 
         // Inicializovat čítače
         updateCounter(editTitle, editTitleCounter, 50);
@@ -608,6 +622,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-save-listing-changes").addEventListener("click", async () => {
         if (!currentAd) return;
 
+        const editTargetBazos = document.getElementById("edit-target-bazos");
+        const editTargetAukro = document.getElementById("edit-target-aukro");
+
         const updatedAd = {
             ...currentAd,
             title: editTitle.value,
@@ -616,7 +633,9 @@ document.addEventListener("DOMContentLoaded", () => {
             description: editDescription.value,
             notes: editNotes.value,
             local_photos_dir: editPhotosDir.value,
-            excluded_photos: Array.from(excludedPhotos)
+            excluded_photos: Array.from(excludedPhotos),
+            target_bazos: editTargetBazos && editTargetBazos.checked ? 1 : 0,
+            target_aukro: editTargetAukro && editTargetAukro.checked ? 1 : 0
         };
 
         try {
@@ -653,11 +672,16 @@ document.addEventListener("DOMContentLoaded", () => {
     addListingForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         
+        const newTargetBazos = document.getElementById("new-target-bazos");
+        const newTargetAukro = document.getElementById("new-target-aukro");
+
         const newAdData = {
             title: newTitle.value,
             price: parseInt(newPrice.value) || 0,
             category: newCategory.value.trim(),
-            description: newDescription.value
+            description: newDescription.value,
+            target_bazos: newTargetBazos && newTargetBazos.checked ? 1 : 0,
+            target_aukro: newTargetAukro && newTargetAukro.checked ? 1 : 0
         };
 
         try {
