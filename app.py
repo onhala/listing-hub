@@ -327,7 +327,7 @@ def check_version():
     latest_hash = "unknown"
     latest_message = ""
     try:
-        url = "https://api.github.com/repos/onhala/bazos-automat/commits/main"
+        url = "https://api.github.com/repos/onhala/listing-hub/commits/main"
         headers = {"User-Agent": "Mozilla/5.0"}
         res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
