@@ -795,6 +795,10 @@ if __name__ == "__main__":
         print("Flask syntax OK.")
         sys.exit(0)
         
+    # Inicializace databázových tabulek
+    from listing_hub.core.db import init_db
+    init_db()
+        
     import threading
     t = threading.Thread(target=background_refresh_worker, daemon=True)
     t.start()
