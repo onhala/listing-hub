@@ -1,14 +1,38 @@
 import os
 import json
+import sys
 from pathlib import Path
 
 # Kořen projektu
 PROJECT_ROOT = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
 
-# Cesty k datovým souborům
-CONFIG_PATH = PROJECT_ROOT / "bazos_config.json"
-SESSION_STATE_PATH = PROJECT_ROOT / "bazos_session.json"
+# Sjednocené složky pro data
+CONFIG_DIR = PROJECT_ROOT / "config"
+DATA_DIR = PROJECT_ROOT / "data"
 PHOTOS_DIR = PROJECT_ROOT / "photos"
+
+# Automatické vytvoření složek
+for directory in [CONFIG_DIR, DATA_DIR, PHOTOS_DIR]:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"Chyba při vytváření složky {directory}: {e}", file=sys.stderr)
+
+# Cesty k datovým souborům
+CONFIG_PATH = CONFIG_DIR / "config.json"
+SESSION_STATE_PATH = CONFIG_DIR / "session.json"
+
+# Kontrola práv pro zápis
+def check_write_permissions():
+    for name, directory in [("Konfigurace", CONFIG_DIR), ("Data", DATA_DIR), ("Fotografie", PHOTOS_DIR)]:
+        test_file = directory / ".write_test"
+        try:
+            test_file.touch()
+            test_file.unlink()
+        except Exception as e:
+            print(f"VAROVÁNÍ: Složka {name} ({directory}) není zapisovatelná: {e}", file=sys.stderr)
+
+check_write_permissions()
 
 def load_user_config() -> dict:
     """Načte uživatelskou konfiguraci ze souboru."""

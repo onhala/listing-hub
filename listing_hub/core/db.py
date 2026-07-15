@@ -3,9 +3,8 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-# Databáze bude uložena v kořeni projektu
-PROJECT_ROOT = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
-DB_PATH = PROJECT_ROOT / "listings.db"
+from listing_hub.core.config import DATA_DIR
+DB_PATH = DATA_DIR / "listings.db"
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)

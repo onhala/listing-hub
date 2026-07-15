@@ -111,12 +111,11 @@ def process_target(ad, user_config, action_type, extra_val):
         listings_data, _ = load_data()
         log_debug(f"3. Data loaded, action_type={action_type}")
         if action_type in ("sync_views", "auto_refresh"):
-            log_debug("4. Calling cli_update_listings_from_bazos")
-            is_auto = (action_type == "auto_refresh")
             try:
-                cli_update_listings_from_bazos(listings_data, is_web=True, is_auto_refresh=is_auto)
-                log_debug("5. Done cli_update_listings_from_bazos")
-                post_to_bazos.save_listings(listings_data)
+                from listing_hub.portals.bazos.bazos_portal import BazosPortal
+                from listing_hub.core.config import load_user_config
+                BazosPortal().sync_listings(load_user_config())
+                log_debug("5. Done BazosPortal().sync_listings")
                 
                 # Zaznamenáme čas úspěšné aktualizace
                 from post_to_bazos import CONFIG_PATH

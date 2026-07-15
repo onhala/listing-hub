@@ -14,11 +14,9 @@ services:
       - "5001:5001" # Flask Web Interface
       - "6080:6080" # noVNC Interface (WebSockets)
     volumes:
-      # Persistent configuration and listings data
-      - ./bazos_config.json:/app/bazos_config.json
-      - ./bazos_active_listings.json:/app/bazos_active_listings.json
-      - ./bazos_session.json:/app/bazos_session.json
-      # Directory for listing photos (so they are persistent and accessible)
+      # Persistent configuration, data, and photos folders (Issue #3)
+      - ./config:/app/config
+      - ./data:/app/data
       - ./photos:/app/photos
       # Host folder mount for export (configurable via env var)
       - ${BAZOS_EXPORT_DIR:-./export}:/app/export
