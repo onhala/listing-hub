@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import re
 import base64
 import requests
 from flask import Flask, render_template, jsonify, request
@@ -654,7 +655,7 @@ if __name__ == "__main__":
     t = threading.Thread(target=background_refresh_worker, daemon=True)
     t.start()
     
-    app.run(host="0.0.0.0", port=PORT, debug=True, threaded=False)
+    app.run(host="0.0.0.0", port=PORT, debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', threaded=True)
 
 
 

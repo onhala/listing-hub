@@ -60,9 +60,10 @@ class PlaywrightSessionManager:
             try:
                 from playwright.sync_api import sync_playwright
             except ImportError:
-                print(f"\n{Colors.WARNING}Instaluji knihovnu Playwright...{Colors.ENDC}")
-                os.system(".venv/bin/pip install playwright")
-                os.system(".venv/bin/playwright install chromium")
+                raise ImportError(
+                    f"\n{Colors.FAIL}Knihovna Playwright není nainstalována. "
+                    f"Spusťte: pip install playwright && playwright install chromium{Colors.ENDC}"
+                )
                 from playwright.sync_api import sync_playwright
                 
             log_psm("Calling sync_playwright().start()")
@@ -207,8 +208,10 @@ def sync_to_onedrive(data):
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
-        print(f"{Colors.WARNING}Instaluji knihovnu openpyxl pro synchronizaci s OneDrivem...{Colors.ENDC}")
-        os.system(".venv/bin/pip install openpyxl")
+        raise ImportError(
+            f"{Colors.FAIL}Knihovna openpyxl není nainstalována. "
+            f"Spusťte: pip install openpyxl{Colors.ENDC}"
+        )
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
@@ -443,7 +446,10 @@ def display_listings_summary(data):
     try:
         from tabulate import tabulate
     except ImportError:
-        os.system(".venv/bin/pip install tabulate")
+        raise ImportError(
+            f"{Colors.FAIL}Knihovna tabulate není nainstalována. "
+            f"Spusťte: pip install tabulate{Colors.ENDC}"
+        )
         from tabulate import tabulate
 
     active = data.get("active_listings", [])
@@ -572,9 +578,10 @@ def cli_update_listings_from_bazos(data, is_web=False, is_auto_refresh=False):
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print(f"\n{Colors.WARNING}Instaluji knihovnu Playwright...{Colors.ENDC}")
-        os.system(".venv/bin/pip install playwright")
-        os.system(".venv/bin/playwright install chromium")
+        raise ImportError(
+            f"\n{Colors.FAIL}Knihovna Playwright není nainstalována. "
+            f"Spusťte: pip install playwright && playwright install chromium{Colors.ENDC}"
+        )
         from playwright.sync_api import sync_playwright
         
     print(f"\n{Colors.HEADER}{Colors.BOLD}🔄 AKTUALIZACE STAVŮ INZERÁTŮ Z BAZOŠE (Moje inzeráty){Colors.ENDC}")
@@ -1022,9 +1029,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print(f"\n{Colors.WARNING}Instaluji knihovnu Playwright...{Colors.ENDC}")
-        os.system(".venv/bin/pip install playwright")
-        os.system(".venv/bin/playwright install chromium")
+        raise ImportError(
+            f"\n{Colors.FAIL}Knihovna Playwright není nainstalována. "
+            f"Spusťte: pip install playwright && playwright install chromium{Colors.ENDC}"
+        )
         from playwright.sync_api import sync_playwright
 
     title = ad["title"]
@@ -1502,7 +1510,7 @@ def cli_repost_listing(data, user_config):
 
 # --- Hlavní spouštěcí funkce a menu ---
 def main():
-    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Bazoš Automat v1.2{Colors.ENDC}")
+    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Bazoš Automat v3.0.0{Colors.ENDC}")
     print(f"{Colors.BLUE}Komplexní správa inzerce, historie prodejů a synchronizace na OneDrive TERMS.{Colors.ENDC}\n")
 
     while True:
