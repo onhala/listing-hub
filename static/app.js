@@ -474,6 +474,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="listing-actions">
                     <button class="btn btn-secondary btn-edit"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
                     ${!isSold ? `
+                        <button class="btn btn-secondary btn-advisor" style="background: rgba(255,193,7,0.1); color: #ffc107; border: 1px solid rgba(255,193,7,0.3);"><i class="fa-solid fa-lightbulb"></i> Poradce</button>
                         <button class="btn btn-primary btn-post-action"><i class="fa-solid fa-rocket"></i> Vystavit</button>
                     ` : ""}
                 </div>
@@ -1247,6 +1248,214 @@ document.addEventListener("DOMContentLoaded", () => {
             }, 300);
         }, 4000);
     };
+
+    // ==========================================================
+    // Price Advisor & Auto-Repost Client Integration
+    // ==========================================================
+    
+    const advisorModal = document.getElementById("price-advisor-modal");
+    const closeAdvisorBtn = document.getElementById("btn-close-advisor-modal");
+    const closeAdvisorBtnFooter = document.getElementById("btn-close-advisor-modal-footer");
+    const applyAdvisorPriceBtn = document.getElementById("btn-apply-advisor-price");
+    
+    let activeAdvisorListingId = null;
+
+    // Odchytávání kliknutí na karty (Cenový poradce)
+    document.addEventListener("click", async (e) => {
+        const btn = e.target.closest(".btn-advisor");
+        if (!btn) return;
+        
+        const card = btn.closest(".listing-card");
+        if (!card) return;
+        
+        // Získáme inzerát z načteného pole
+        // (musíme prohledat activeListings podle indexu nebo názvu, případně ID)
+        // Karty ukládáme v renderListings, můžeme najít inzerát podle titulu
+        const titleEl = card.querySelector(".listing-title");
+        if (!titleEl) return;
+        const title = titleEl.innerText.trim();
+        
+        const ad = activeListings.find(item => item.title === title);
+        if (!ad) return;
+
+        activeAdvisorListingId = ad.id;
+        openAdvisor(ad);
+    });
+
+    const openAdvisor = async (ad) => {
+        // Inicializujeme modal do loading stavu
+        document.getElementById("advisor-listing-title").innerText = ad.title;
+        document.getElementById("advisor-current-price").innerText = `${ad.price.toLocaleString("cs-CZ")} Kč`;
+        
+        const statusAlert = document.getElementById("advisor-status-alert");
+        statusAlert.className = "alert alert-warning";
+        statusAlert.style.background = "rgba(255, 193, 7, 0.1)";
+        statusAlert.style.color = "#ffc107";
+        document.getElementById("advisor-message").innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzuji konkurenční nabídky na Bazoši...';
+        
+        document.getElementById("advisor-opt-quick").innerText = "- Kč";
+        document.getElementById("advisor-opt-fair").innerText = "- Kč";
+        document.getElementById("advisor-opt-premium").innerText = "- Kč";
+        
+        document.getElementById("advisor-range-min").innerText = "- Kč";
+        document.getElementById("advisor-range-median").innerText = "- Kč";
+        document.getElementById("advisor-range-avg").innerText = "- Kč";
+        document.getElementById("advisor-range-max").innerText = "- Kč";
+        
+        document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1.5rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Hledám inzeráty...</div>';
+        document.getElementById("advisor-selected-price").value = ad.price;
+        
+        advisorModal.classList.add("active");
+
+        try {
+            const res = await fetch(`/api/advisor/price/${ad.id}`);
+            const json = await res.json();
+            
+            if (json.status === "error") {
+                showToast(`Chyba analýzy: ${json.message}`, "error");
+                closeAdvisor();
+                return;
+            }
+            
+            const data = json.data;
+            const stats = data.statistics;
+            
+            // Vyhodnocení stavu a nastavení alertu
+            statusAlert.className = "alert";
+            if (data.status === "OVERPRICED") {
+                statusAlert.style.background = "rgba(220, 53, 69, 0.15)";
+                statusAlert.style.color = "#ea868f";
+                statusAlert.style.border = "1px solid rgba(220, 53, 69, 0.3)";
+            } else if (data.status === "BARGAIN") {
+                statusAlert.style.background = "rgba(25, 135, 84, 0.15)";
+                statusAlert.style.color = "#75b798";
+                statusAlert.style.border = "1px solid rgba(25, 135, 84, 0.3)";
+            } else {
+                statusAlert.style.background = "rgba(131, 92, 223, 0.15)";
+                statusAlert.style.color = "var(--accent)";
+                statusAlert.style.border = "1px solid rgba(131, 92, 223, 0.3)";
+            }
+            document.getElementById("advisor-message").innerText = data.message;
+            
+            if (data.status === "NO_COMPETITION") {
+                document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i> Nebyla nalezena žádná konkurence.</div>';
+                return;
+            }
+
+            // Nastavení doporučených cen
+            document.getElementById("advisor-opt-quick").innerText = `${stats.suggested_quick_sale.toLocaleString("cs-CZ")} Kč`;
+            document.getElementById("advisor-opt-fair").innerText = `${stats.suggested_fair.toLocaleString("cs-CZ")} Kč`;
+            document.getElementById("advisor-opt-premium").innerText = `${stats.suggested_premium.toLocaleString("cs-CZ")} Kč`;
+            
+            // Nastavení datasetů pro tlačítka "Zvolit"
+            const selectBtns = document.querySelectorAll(".btn-select-advisor-price");
+            selectBtns[0].setAttribute("data-price", stats.suggested_quick_sale);
+            selectBtns[1].setAttribute("data-price", stats.suggested_fair);
+            selectBtns[2].setAttribute("data-price", stats.suggested_premium);
+
+            // Výchozí předvyplněná cena bude férová (medián)
+            document.getElementById("advisor-selected-price").value = stats.suggested_fair;
+
+            // Nastavení tabulky rozpětí
+            document.getElementById("advisor-range-min").innerText = `${stats.min.toLocaleString("cs-CZ")} Kč`;
+            document.getElementById("advisor-range-median").innerText = `${stats.median.toLocaleString("cs-CZ")} Kč`;
+            document.getElementById("advisor-range-avg").innerText = `${stats.avg.toLocaleString("cs-CZ")} Kč`;
+            document.getElementById("advisor-range-max").innerText = `${stats.max.toLocaleString("cs-CZ")} Kč`;
+
+            // Vykreslení konkurenčních inzerátů
+            const competitorsContainer = document.getElementById("advisor-competitors-container");
+            competitorsContainer.innerHTML = "";
+            
+            data.listings.forEach(item => {
+                const itemEl = document.createElement("div");
+                itemEl.style.display = "flex";
+                itemEl.style.justify = "space-between";
+                itemEl.style.alignItems = "center";
+                itemEl.style.background = "rgba(255, 255, 255, 0.02)";
+                itemEl.style.border = "1px solid var(--border)";
+                itemEl.style.padding = "0.6rem 0.85rem";
+                itemEl.style.borderRadius = "6px";
+                itemEl.style.fontSize = "0.85rem";
+                
+                const topText = item.is_top ? '<span style="color: #ffc107; font-weight: bold; margin-left: 0.25rem;">[TOP]</span>' : '';
+                
+                itemEl.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 0.15rem; max-width: 75%;">
+                        <a href="${item.link}" target="_blank" style="color: #a5d6ff; text-decoration: none; font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHtml(item.title)}</a>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(item.location)} | 👀 ${item.views} zhlédnutí</span>
+                    </div>
+                    <strong style="color: #fff;">${item.price_text}${topText}</strong>
+                `;
+                competitorsContainer.appendChild(itemEl);
+            });
+
+        } catch (e) {
+            showToast("Chyba při komunikaci s analyzátorem cen.", "error");
+            closeAdvisor();
+        }
+    };
+
+    // Zvolení doporučené ceny z tlačítek
+    document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".btn-select-advisor-price");
+        if (!btn) return;
+        const price = btn.getAttribute("data-price");
+        if (price) {
+            document.getElementById("advisor-selected-price").value = price;
+            showToast(`Zvolena cena ${parseInt(price).toLocaleString("cs-CZ")} Kč.`, "success");
+        }
+    });
+
+    const closeAdvisor = () => {
+        advisorModal.classList.remove("active");
+        activeAdvisorListingId = null;
+    };
+
+    closeAdvisorBtn.addEventListener("click", closeAdvisor);
+    closeAdvisorBtnFooter.addEventListener("click", closeAdvisor);
+
+    // Odeslání akce znovuvystavení se zlevněním
+    applyAdvisorPriceBtn.addEventListener("click", async () => {
+        const newPriceInput = document.getElementById("advisor-selected-price");
+        const newPrice = parseInt(newPriceInput.value);
+        
+        if (!activeAdvisorListingId || isNaN(newPrice) || newPrice <= 0) {
+            showToast("Zadejte platnou cenu.", "error");
+            return;
+        }
+
+        closeAdvisor();
+        
+        // Zobrazíme running status bar
+        const statusDesc = document.getElementById("playwright-status-desc");
+        statusDesc.innerText = "Robot zlevňuje inzerát v SQLite a spouští znovuvystavení na Bazoši...";
+        const statusContainer = document.getElementById("playwright-status");
+        statusContainer.classList.add("active");
+
+        try {
+            const res = await fetch("/api/action/repost_with_new_price", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    listing_id: activeAdvisorListingId,
+                    new_price: newPrice
+                })
+            });
+            const json = await res.json();
+            
+            if (json.status === "success") {
+                showToast(json.message, "success");
+                // Refreshujeme aplikaci pro načtení nové ceny
+                loadApp();
+            } else {
+                showToast(json.message, "error");
+                statusContainer.classList.remove("active");
+            }
+        } catch (e) {
+            showToast("Nepodařilo se spustit znovuvystavení.", "error");
+            statusContainer.classList.remove("active");
+        }
+    });
 
     // Pomocná funkce pro bezpečné parsování HTML
     const escapeHtml = (unsafe) => {

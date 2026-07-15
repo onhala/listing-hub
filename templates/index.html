@@ -533,6 +533,111 @@ services:
         </div>
     </div>
 
+    <!-- Price Advisor Modal (Issue: price_advisor) -->
+    <div class="modal-overlay" id="price-advisor-modal">
+        <div class="modal modal-lg" style="max-width: 850px; width: 90%;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-lightbulb" style="color: #ffc107;"></i> Cenový poradce & Analýza trhu</h3>
+                <button class="btn-close-modal" id="btn-close-advisor-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="color: var(--text-main); font-size: 0.95rem;">
+                <div style="margin-bottom: 1.25rem;">
+                    <h4 id="advisor-listing-title" style="font-size: 1.15rem; font-weight: 600; color: #fff; margin-bottom: 0.35rem;">Název položky</h4>
+                    <p style="color: var(--text-muted); font-size: 0.9rem;">
+                        Aktuální evidovaná cena: <strong id="advisor-current-price" style="color: #fff;">0 Kč</strong>
+                    </p>
+                </div>
+
+                <!-- Status alert message from Price Advisor -->
+                <div id="advisor-status-alert" class="alert" style="margin-bottom: 1.5rem; padding: 1rem 1.25rem; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 0.75rem;">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span id="advisor-message">Načítám data z Bazoše...</span>
+                </div>
+
+                <div class="editor-layout" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <!-- Left side: Recommended pricing options -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.25rem; border-radius: 8px;">
+                        <h5 style="margin-bottom: 1rem; color: #fff; font-size: 0.95rem; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;"><i class="fa-solid fa-calculator"></i> Navrhované cenové úrovně</h5>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+                            <!-- Option 1: Quick Sale -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 6px; border-left: 4px solid var(--accent-red, #dc3545);">
+                                <div>
+                                    <span style="display: block; font-size: 0.8rem; color: var(--text-muted);">Rychlý prodej (-10% z mediánu)</span>
+                                    <strong id="advisor-opt-quick" style="font-size: 1.05rem; color: #fff;">0 Kč</strong>
+                                </div>
+                                <button class="btn btn-danger btn-sm btn-select-advisor-price" data-price="0">Zvolit</button>
+                            </div>
+                            
+                            <!-- Option 2: Fair price -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 6px; border-left: 4px solid var(--accent, #835cdf);">
+                                <div>
+                                    <span style="display: block; font-size: 0.8rem; color: var(--text-muted);">Férová tržní cena (medián)</span>
+                                    <strong id="advisor-opt-fair" style="font-size: 1.05rem; color: #fff;">0 Kč</strong>
+                                </div>
+                                <button class="btn btn-primary btn-sm btn-select-advisor-price" data-price="0">Zvolit</button>
+                            </div>
+
+                            <!-- Option 3: Premium price -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 0.75rem 1rem; border-radius: 6px; border-left: 4px solid var(--accent-green, #198754);">
+                                <div>
+                                    <span style="display: block; font-size: 0.8rem; color: var(--text-muted);">Prémiová cena (+10%)</span>
+                                    <strong id="advisor-opt-premium" style="font-size: 1.05rem; color: #fff;">0 Kč</strong>
+                                </div>
+                                <button class="btn btn-success btn-sm btn-select-advisor-price" data-price="0">Zvolit</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right side: Market pricing range info -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.25rem; border-radius: 8px;">
+                        <h5 style="margin-bottom: 1rem; color: #fff; font-size: 0.95rem; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;"><i class="fa-solid fa-chart-line"></i> Přehled rozpětí na Bazoši</h5>
+                        
+                        <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); height: 2.2rem;">
+                                <td style="color: var(--text-muted);">Minimální cena:</td>
+                                <td style="text-align: right; font-weight: 600; color: #fff;" id="advisor-range-min">0 Kč</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); height: 2.2rem;">
+                                <td style="color: var(--text-muted);">Tržní medián:</td>
+                                <td style="text-align: right; font-weight: 600; color: #fff;" id="advisor-range-median">0 Kč</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); height: 2.2rem;">
+                                <td style="color: var(--text-muted);">Průměrná cena:</td>
+                                <td style="text-align: right; font-weight: 600; color: #fff;" id="advisor-range-avg">0 Kč</td>
+                            </tr>
+                            <tr style="height: 2.2rem;">
+                                <td style="color: var(--text-muted);">Maximální cena:</td>
+                                <td style="text-align: right; font-weight: 600; color: #fff;" id="advisor-range-max">0 Kč</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Competitive Listings Section -->
+                <div>
+                    <h5 style="margin-bottom: 0.75rem; color: #fff; font-size: 0.95rem; font-weight: 600;"><i class="fa-solid fa-list"></i> Top 5 nejbližších konkurenčních nabídek na trhu</h5>
+                    <div id="advisor-competitors-container" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 180px; overflow-y: auto; padding-right: 5px;">
+                        <!-- List populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <label for="advisor-selected-price" style="font-size: 0.85rem; color: var(--text-muted);">Zvolená nová cena (Kč):</label>
+                    <input type="number" id="advisor-selected-price" class="form-control" style="width: 110px; padding: 0.4rem 0.6rem; text-align: right;" value="0">
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button type="button" class="btn btn-secondary" id="btn-close-advisor-modal-footer">Zavřít</button>
+                    <button type="button" class="btn btn-primary" id="btn-apply-advisor-price">
+                        <i class="fa-solid fa-check-double"></i> Zlevnit a znovuvystavit
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Server Restart Overlay Screen -->
     <div id="restart-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 15, 0.95); z-index: 9999; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; color: #fff;">
         <div class="spinner" style="width: 60px; height: 60px; border-width: 5px; border-top-color: var(--accent); border-style: solid; border-radius: 50%;"></div>

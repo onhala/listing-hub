@@ -636,6 +636,78 @@ def ai_improve():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/advisor/price/<listing_id>", methods=["GET"])
+def api_get_price_recommendation(listing_id):
+    try:
+        from listing_hub.ai.advisor import get_price_recommendation
+        res = get_price_recommendation(listing_id)
+        if "error" in res:
+            return jsonify({"status": "error", "message": res["error"]}), 400
+        return jsonify({"status": "success", "data": res})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/action/repost_with_new_price", methods=["POST"])
+def api_repost_with_new_price():
+    try:
+        global playwright_process
+        if playwright_process and playwright_process.is_alive():
+            return jsonify({"status": "error", "message": "Jiná akce robota právě probíhá. Počkejte na dokončení."}), 409
+
+        payload = request.json or {}
+        listing_id = payload.get("listing_id")
+        new_price = payload.get("new_price")
+
+        if not listing_id or new_price is None:
+            return jsonify({"status": "error", "message": "Chybí listing_id nebo new_price."}), 400
+
+        # 1. Aktualizujeme cenu v SQLite databázi
+        from listing_hub.core.db import get_db_connection, save_listing
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM listings WHERE id = ?", (listing_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+            
+        listing_data = dict(row)
+        listing_data["price"] = int(new_price)
+        
+        # Načteme a zachováme stavy portálů
+        cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (listing_id,))
+        states_rows = cursor.fetchall()
+        portal_states = {state["portal_name"]: dict(state) for state in states_rows}
+        conn.close()
+        
+        save_listing(listing_data, portal_states)
+
+        # 2. Spustíme znovuvystavení inzerátu (topování) na pozadí jako Playwright proces
+        # Převedeme na formát pro legacy automat
+        ad_legacy = {
+            "title": listing_data["title"],
+            "description": listing_data["description"],
+            "price": listing_data["price"],
+            "local_photos_dir": listing_data["local_photos_dir"],
+            "url": portal_states.get("bazos", {}).get("url", ""),
+            "ad_password_b64": listing_data["ad_password_b64"]
+        }
+
+        from app import run_playwright_action_wrapper
+        playwright_process = multiprocessing.Process(
+            target=run_playwright_action_wrapper,
+            args=(ad_legacy, "repost")
+        )
+        playwright_process.start()
+
+        return jsonify({
+            "status": "success",
+            "message": f"Cena inzerátu byla změněna na {new_price} Kč a bylo spuštěno znovuvystavení na Bazoši."
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 def background_refresh_worker():
     import time
     from datetime import datetime, timedelta
