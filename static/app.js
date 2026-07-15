@@ -1152,14 +1152,12 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("ℹ️ reloadVncSrc: port =", window.location.port, "isLocalDev =", isLocalDev);
         
         if (window.location.protocol === "https:") {
-            // Bezpečné připojení za SSL proxy na stejném hostu pod /vnc/
-            vncIframe.src = `https://${window.location.host}/vnc/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
-        } else if (isLocalDev) {
-            // Lokální vývoj na portu 5001 -> přímé připojení na port 6080
-            vncIframe.src = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
+            // Přímé připojení na zabezpečený noVNC port 6080 (pokud NPM/Cloudflare proxy směřuje port 6080)
+            // nebo na stejný host na portu 6080
+            vncIframe.src = `https://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
         } else {
-            // Ostatní HTTP případy, např. HTTP proxy bez specifikovaného portu
-            vncIframe.src = `http://${window.location.host}/vnc/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
+            // Výchozí HTTP připojení na port 6080
+            vncIframe.src = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
         }
         console.log("➡️ reloadVncSrc: set src to =", vncIframe.src);
     };
