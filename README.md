@@ -23,7 +23,7 @@ Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování
 
 3. **Pokročilý AI Editor a Gemini Integrace**:
    - Tlačítko **Vylepšit pomocí AI** u popisu a nadpisu inzerátu.
-   - Gemini automaticky opraví překlepy, zlepší prodejní tón (s ohledem na rodinnou inženýrskou tradici firmy) a navrhne optimalizované varianty nadpisů.
+   - Gemini automaticky opraví překlepy, zlepší prodejní tón a navrhne optimalizované varianty nadpisů.
 
 4. **Správa a vyloučení fotografií**:
    - V detailu inzerátu se zobrazují Base64 náhledy všech fotek z lokální složky.
