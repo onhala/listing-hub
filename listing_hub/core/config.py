@@ -22,7 +22,7 @@ for directory in [CONFIG_DIR, DATA_DIR, PHOTOS_DIR]:
 CONFIG_PATH = CONFIG_DIR / "config.json"
 SESSION_STATE_PATH = CONFIG_DIR / "session.json"
 
-# Kontrola práv pro zápis
+# Kontrola a automatická oprava práv pro zápis
 def check_write_permissions():
     for name, directory in [("Konfigurace", CONFIG_DIR), ("Data", DATA_DIR), ("Fotografie", PHOTOS_DIR)]:
         test_file = directory / ".write_test"
@@ -30,7 +30,14 @@ def check_write_permissions():
             test_file.touch()
             test_file.unlink()
         except Exception as e:
-            print(f"VAROVÁNÍ: Složka {name} ({directory}) není zapisovatelná: {e}", file=sys.stderr)
+            # Pokusíme se automaticky opravit práva složky na 777
+            try:
+                os.chmod(directory, 0o777)
+                test_file.touch()
+                test_file.unlink()
+                print(f"✅ Automaticky opravena přístupová práva pro složku {name} ({directory})", file=sys.stderr)
+            except Exception as fix_err:
+                print(f"❌ KRITICKÁ CHYBA: Složka {name} ({directory}) není zapisovatelná: {e}. Nepodařilo se automaticky opravit práva ({fix_err}). Spusťte na serveru: chmod -R 777 {directory}", file=sys.stderr)
 
 check_write_permissions()
 
