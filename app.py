@@ -161,6 +161,23 @@ PORT = 5001
 def index():
     return render_template("index.html")
 
+@app.route("/vnc/")
+@app.route("/vnc/<path:path>")
+def vnc_proxy(path=""):
+    import requests
+    vnc_url = f"http://127.0.0.1:6080/{path}"
+    if request.query_string:
+        vnc_url += f"?{request.query_string.decode('utf-8')}"
+    try:
+        resp = requests.get(vnc_url, stream=True, timeout=5)
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        headers = [(name, value) for (name, value) in resp.raw.headers.items()
+                   if name.lower() not in excluded_headers]
+        from flask import Response
+        return Response(resp.content, resp.status_code, headers)
+    except Exception as e:
+        return f"VNC Proxy Error: {e}", 502
+
 def count_photos(photos_dir, excluded_list=None):
     if not photos_dir or not os.path.isdir(photos_dir):
         return 0, 0
