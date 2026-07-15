@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 import multiprocessing
 import asyncio
 
-from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, CONFIG_PATH, LISTINGS_PATH, session_manager
+from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, LISTINGS_PATH, session_manager
+from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH
 import uuid
 import listing_hub.core.db as db
 from listing_hub.ai.gemini import improve_text_with_gemini

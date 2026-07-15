@@ -23,8 +23,7 @@ class Colors:
 # Cesty k souborům (relativní k umístění skriptu pro plnou přenositelnost)
 SCRIPT_DIR = Path(__file__).parent.resolve()
 LISTINGS_PATH = SCRIPT_DIR / "bazos_active_listings.json"
-CONFIG_PATH = SCRIPT_DIR / "bazos_config.json"
-SESSION_STATE_PATH = SCRIPT_DIR / "bazos_session.json"
+from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH
 
 
 import atexit
