@@ -9,7 +9,7 @@ FROM python:3.11-slim-bookworm
 # OpenContainers & TrueNAS Metadata Labels
 LABEL org.opencontainers.image.title="Listing Hub" \
       org.opencontainers.image.description="Automatizovaná správa inzerátů a AI poradce cen pro Bazoš.cz a Aukro.cz" \
-      org.opencontainers.image.version="2.0.0" \
+      org.opencontainers.image.version="3.2.0" \
       org.opencontainers.image.vendor="Ondřej Hála" \
       org.opencontainers.image.url="https://github.com/onhala/listing-hub" \
       org.opencontainers.image.source="https://github.com/onhala/listing-hub" \

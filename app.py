@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 import multiprocessing
+import threading
 import asyncio
 
 from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, LISTINGS_PATH, session_manager
@@ -37,21 +38,7 @@ def log_debug(msg):
         pass
 
 def process_target(ad, user_config, action_type, extra_val):
-    log_debug("1. Background process started")
-    
-    # Catch SIGTERM to cleanly shut down Playwright session
-    import signal
-    import sys
-    def sigterm_handler(signum, frame):
-        log_debug("SIGTERM received, closing Playwright session manager...")
-        try:
-            from post_to_bazos import session_manager
-            session_manager.close()
-        except Exception as e:
-            log_debug(f"SIGTERM handler close failed: {e}")
-        sys.exit(15)
-        
-    signal.signal(signal.SIGTERM, sigterm_handler)
+    log_debug("1. Background thread started")
     
     # Monkey-patch save_listings to avoid race conditions/overwriting
     import post_to_bazos
@@ -538,10 +525,11 @@ def run_action(action_type):
         # Pro ostatní akce (post, edit_price, delete)
         extra_val = payload.get("extra_val") # např. nová cena
         
-        # Spustíme neblokující Playwright akci na pozadí jako samostatný proces
-        playwright_process = multiprocessing.Process(
+        # Spustíme neblokující Playwright akci na pozadí jako samostatný vláknový worker
+        playwright_process = threading.Thread(
             target=process_target, 
-            args=(selected_ad, user_config, action_type, extra_val)
+            args=(selected_ad, user_config, action_type, extra_val),
+            daemon=True
         )
         playwright_process.start()
         
@@ -566,11 +554,6 @@ def action_status():
                         error = f.read().strip()
                 except Exception:
                     pass
-            elif playwright_process.exitcode != 0 and playwright_process.exitcode is not None:
-                if playwright_process.exitcode in [15, -15, -9, 9]:
-                    error = "Operace byla přerušena uživatelem."
-                else:
-                    error = f"Operace selhala s kódem {playwright_process.exitcode}."
                     
     return jsonify({
         "running": running,
@@ -582,12 +565,7 @@ def cancel_action():
     global playwright_process
     try:
         if playwright_process and playwright_process.is_alive():
-            log_debug("CANCEL: Terminating playwright_process")
-            playwright_process.terminate()
-            playwright_process.join(timeout=2)
-            if playwright_process.is_alive():
-                playwright_process.kill()
-            
+            log_debug("CANCEL: Cancelling active worker thread")
             # Zapíšeme, že operace byla přerušena
             with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
                 f.write("Operace byla přerušena uživatelem.")
@@ -712,10 +690,10 @@ def api_repost_with_new_price():
             "ad_password_b64": listing_data["ad_password_b64"]
         }
 
-        from app import run_playwright_action_wrapper
-        playwright_process = multiprocessing.Process(
-            target=run_playwright_action_wrapper,
-            args=(ad_legacy, "repost")
+        playwright_process = threading.Thread(
+            target=process_target,
+            args=(ad_legacy, user_config, "repost", None),
+            daemon=True
         )
         playwright_process.start()
 
@@ -741,11 +719,7 @@ def background_refresh_worker():
                     time.sleep(15)
                     continue
                 else:
-                    # Předchozí proces dokončil práci, uvolníme systémové prostředky
-                    try:
-                        playwright_process.join()
-                    except Exception:
-                        pass
+                    # Předchozí vlákno dokončilo práci
                     playwright_process = None
                 
             # 2. Načteme konfiguraci
@@ -778,10 +752,11 @@ def background_refresh_worker():
                     
             if should_refresh:
                 log_debug(f"Triggering auto_refresh on background thread. Interval={auto_interval_minutes}m")
-                # Spustíme synchronizaci na pozadí jako samostatný proces
-                playwright_process = multiprocessing.Process(
+                # Spustíme synchronizaci na pozadí jako samostatné vlákno
+                playwright_process = threading.Thread(
                     target=process_target,
-                    args=(None, user_config, "auto_refresh", None)
+                    args=(None, user_config, "auto_refresh", None),
+                    daemon=True
                 )
                 playwright_process.start()
                 

@@ -39,7 +39,13 @@ class PlaywrightSessionManager:
             log_psm(f"Session check error: {e}")
             is_active = False
             
-        if not is_active:
+        if is_active:
+            try:
+                log_psm("Session is active, bringing page to front")
+                self.page.bring_to_front()
+            except Exception as e:
+                log_psm(f"bring_to_front failed: {e}")
+        else:
             log_psm("Starting session reset/close")
             self.close()
             try:

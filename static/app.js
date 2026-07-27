@@ -201,7 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
                 
                 // Formátování textu verze v sidebaru
-                let versionText = "v3.1.0";
+                let versionText = "v3.2.0";
                 if (data.local_hash && data.local_hash !== "unknown") {
                     versionText += ` (${data.local_hash})`;
                 }
