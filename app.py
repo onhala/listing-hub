@@ -149,22 +149,57 @@ PORT = 5001
 def index():
     return render_template("index.html")
 
-@app.route("/vnc/")
-@app.route("/vnc/<path:path>")
-def vnc_proxy(path=""):
-    import requests
-    vnc_url = f"http://127.0.0.1:6080/{path}"
-    if request.query_string:
-        vnc_url += f"?{request.query_string.decode('utf-8')}"
+from flask_sock import Sock
+import time
+
+sock = Sock(app)
+
+@sock.route("/api/screencast/ws")
+def screencast_ws(ws):
+    """Stream live Playwright browser frames to HTML5 Canvas via thread-safe CDP frame buffer."""
+    last_frame_bytes = None
+    while True:
+        try:
+            frame = getattr(session_manager, "latest_frame", None)
+            if frame and frame != last_frame_bytes:
+                ws.send(frame)
+                last_frame_bytes = frame
+            time.sleep(0.08) # ~12 FPS
+        except Exception:
+            break
+
+@app.route("/api/screencast/input", methods=["POST"])
+def screencast_input():
+    """Handle mouse clicks and keyboard input from HTML5 Canvas via thread-safe CDP dispatching."""
+    data = request.json or {}
+    action = data.get("action")
+    
+    if not session_manager.page or session_manager.page.is_closed():
+        try:
+            session_manager.get_session()
+            if session_manager.page:
+                session_manager.page.goto("https://www.bazos.cz/moje-inzeraty.php")
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Cannot initialize browser session: {e}"}), 500
+        
     try:
-        resp = requests.get(vnc_url, stream=True, timeout=5)
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        headers = [(name, value) for (name, value) in resp.raw.headers.items()
-                   if name.lower() not in excluded_headers]
-        from flask import Response
-        return Response(resp.content, resp.status_code, headers)
+        if action == "click":
+            x = data.get("x", 0)
+            y = data.get("y", 0)
+            success = session_manager.send_cdp_click(x, y)
+            return jsonify({"status": "ok" if success else "error", "action": "click", "x": x, "y": y})
+        elif action == "type":
+            text = data.get("text", "")
+            success = session_manager.send_cdp_type(text)
+            return jsonify({"status": "ok" if success else "error", "action": "type", "text": text})
+        elif action == "key":
+            key = data.get("key", "")
+            success = session_manager.send_cdp_key(key)
+            return jsonify({"status": "ok" if success else "error", "action": "key", "key": key})
     except Exception as e:
-        return f"VNC Proxy Error: {e}", 502
+        return jsonify({"status": "error", "message": str(e)}), 500
+        
+    return jsonify({"status": "ignored"}), 400
 
 def count_photos(photos_dir, excluded_list=None):
     if not photos_dir or not os.path.isdir(photos_dir):
@@ -233,26 +268,15 @@ def get_listings():
             "portal_states": portal_states
         }
         
-        # Wait, is excluded_photos stored somewhere? In notes?
-        # Let's check if listings table or other code handles excluded_photos.
-        # Let's parse notes or notes might be storing JSON, or excluded_photos isn't explicitly in the schema so let's check
-        # how it's handled. In app.py save_listing_endpoint: "excluded_photos: Array.from(excludedPhotos)".
-        # Wait! If it's saved in updated_ad, and listing_hub.core.db doesn't have an excluded_photos column,
-        # does it get saved or dropped?
-        # Let's check db.py. In db.py:
-        # listings has notes. Let's see if we can check where excluded_photos is in db.py.
-        # It's not in db.py column list!
-        # But we can store excluded_photos inside a custom field or column if we want, or serialize it.
-        # Wait, where did the JSON store it? In listing_data.
-        # Since DB listings table doesn't have an "excluded_photos" column, maybe we can store/load it?
-        # Wait, let's look at get_all_listings and save_listing in db.py.
-        # db.py doesn't have excluded_photos. But we can add a column, or serialize it in notes, or we can just alter listings table!
-        # Let's see if db.py has it or not. In db.py, we saw lines 21-39:
-        # It has target_bazos, target_aukro, etc. But no excluded_photos.
-        # Wait, let's see if we can serialize excluded_photos into database, or if we should add a column or store it in `notes` or a JSON field in notes.
-        # Let's check where excluded_photos is defined or used in post_to_bazos.py or app.py.
-        # Let's search for "excluded_photos".
-        pass
+        if status in ["Prodané", "Sold", "prodané"]:
+            sold_listings.append(ad_dict)
+        else:
+            active_listings.append(ad_dict)
+
+    return jsonify({
+        "active_listings": active_listings,
+        "sold_listings": sold_listings
+    })
 
 @app.route("/api/photos", methods=["GET"])
 def get_photos():
@@ -483,6 +507,19 @@ def add_listing_endpoint():
         })
         
         return jsonify({"status": "success", "message": "Inzerát přidán.", "ad": new_ad})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/delete", methods=["POST", "DELETE"])
+def delete_listing_endpoint():
+    """Endpoint pro kompletní smazání inzerátu z databázi."""
+    try:
+        data = request.json or {}
+        listing_id = data.get("id")
+        if not listing_id:
+            return jsonify({"status": "error", "message": "Chybí ID inzerátu"}), 400
+        db.delete_listing(listing_id)
+        return jsonify({"status": "success", "message": "Inzerát úspěšně smazán."})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

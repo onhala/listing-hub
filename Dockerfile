@@ -18,21 +18,14 @@ LABEL org.opencontainers.image.title="Listing Hub" \
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV DISPLAY=:99
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV HEADLESS=true
 
 # 1. Instalace systémových závislostí + systémové Chromium z Debianu
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     chromium-sandbox \
-    xvfb \
-    x11vnc \
-    fluxbox \
-    feh \
-    novnc \
-    websockify \
-    supervisor \
     procps \
     git \
     && apt-get clean \
@@ -41,8 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 2. Vytvoření neprivilegovaného uživatele appuser
 RUN groupadd -g 1000 appuser && \
     useradd -u 1000 -g appuser -d /app -s /bin/bash appuser && \
-    mkdir -p /var/log/supervisor /var/run/supervisor /tmp/.X11-unix /app/config /app/data /app/photos && \
-    chown -R appuser:appuser /var/log/supervisor /var/run/supervisor /tmp/.X11-unix /app
+    mkdir -p /app/config /app/data /app/photos && \
+    chown -R appuser:appuser /app
 
 WORKDIR /app
 
@@ -55,8 +48,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 COPY --chown=appuser:appuser . /app/
 
 EXPOSE 5001
-EXPOSE 6080
 
 USER appuser
 
-CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
+CMD ["python", "app.py"]

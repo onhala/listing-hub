@@ -495,16 +495,7 @@ def cli_update_listings_from_bazos(data, is_web=False, is_auto_refresh=False):
     print(f"\n{Colors.HEADER}{Colors.BOLD}🔄 AKTUALIZACE STAVŮ INZERÁTŮ Z BAZOŠE (Moje inzeráty){Colors.ENDC}")
     print(f"{Colors.BLUE}Spouštím/připojuji prohlížeč pro přihlášení a stažení inzerátů...{Colors.ENDC}\n")
     
-    html_content = ""
-    from contextlib import nullcontext
-    with nullcontext():
-        try:
-            p, browser, context, page = session_manager.get_session()
-        except Exception as e:
-            print(f"{Colors.FAIL}Chyba při inicializaci prohlížeče: {e}{Colors.ENDC}")
-            return
-            
-        # Přejdeme na Moje inzeráty
+    def _fetch_html(page):
         page.goto("https://www.bazos.cz/moje-inzeraty.php")
         
         # Zkontrolujeme, zda je zobrazen formulář pro přihlášení
@@ -556,7 +547,7 @@ def cli_update_listings_from_bazos(data, is_web=False, is_auto_refresh=False):
                     if not sms_code:
                         print(f"{Colors.FAIL}SMS kód nebyl zadán. Ruším synchronizaci.{Colors.ENDC}")
                         session_manager.save_state()
-                        return
+                        return ""
                     code_input.fill(sms_code)
                     # Klikneme na odeslat - Vypsat inzeráty
                     list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
@@ -584,8 +575,15 @@ def cli_update_listings_from_bazos(data, is_web=False, is_auto_refresh=False):
         except Exception as state_err:
             print(f"  {Colors.WARNING}Nepodařilo se uložit stav relace: {state_err}{Colors.ENDC}")
             
-        html_content = page.content()
-        pass
+        return page.content()
+
+    try:
+        html_content = session_manager.run_on_worker(_fetch_html)
+    except Exception as e:
+        print(f"{Colors.FAIL}Chyba při stahování přehledu inzerátů: {e}{Colors.ENDC}")
+        if is_web:
+            raise e
+        return
 
 
         
@@ -1351,7 +1349,9 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
 
 def run_playwright_action(*args, **kwargs):
     try:
-        return _run_playwright_action_impl(*args, **kwargs)
+        def _worker_wrapper(page, *w_args, **w_kwargs):
+            return _run_playwright_action_impl(*w_args, **w_kwargs)
+        return session_manager.run_on_worker(_worker_wrapper, *args, **kwargs)
     except Exception as e:
         print(f"\n{Colors.FAIL}Playwright operace byla přerušena nebo selhala: {e}{Colors.ENDC}")
         try:

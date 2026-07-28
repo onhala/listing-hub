@@ -24,15 +24,17 @@ def test_bazos_sync_auto_imports_missing_listings(mock_db):
     
     user_config = {
         "email": "test@example.com",
-        "phone": "777123456",
+        "phone": "777654321",
         "location": "Praha 1"
     }
     
     # Mockujeme Playwright session a scrape_listings_from_html z post_to_bazos
     mock_page = MagicMock()
+    mock_page.locator.return_value.is_visible.return_value = False
     mock_page.content.return_value = "<html></html>"
     
-    with patch("listing_hub.portals.bazos.session.session_manager.get_session", return_value=(None, None, None, mock_page)), \
+    with patch("listing_hub.portals.bazos.session.session_manager.run_on_worker", side_effect=lambda func, *args, **kwargs: func(mock_page, *args, **kwargs)), \
+         patch("listing_hub.portals.bazos.session.session_manager.get_session", return_value=(None, None, None, mock_page)), \
          patch("listing_hub.portals.bazos.bazos_portal.scrape_listings_from_html", return_value=scraped_mock):
         
         # Spustíme synchronizaci

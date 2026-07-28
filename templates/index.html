@@ -181,12 +181,22 @@
                             <i class="fa-solid fa-circle-info" style="color: var(--primary-color);"></i>
                             <span>Zde můžeš v reálném čase sledovat a ovládat prohlížeč Playwright. Pokud Bazoš vyžaduje SMS kód, zadej jej přímo v tomto okně.</span>
                         </div>
-                        <button class="btn btn-secondary" id="btn-reload-vnc" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
-                            <i class="fa-solid fa-arrows-rotate"></i> Znovu připojit
-                        </button>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none; font-size: 0.85rem; background: rgba(255, 255, 255, 0.05); padding: 0.3rem 0.7rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                <input type="checkbox" id="vnc-interactive-toggle" checked style="width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary-color);">
+                                <span id="vnc-mode-label">Režim: Plné ovládání</span>
+                            </label>
+                            <button class="btn btn-secondary" id="btn-reload-vnc" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+                                <i class="fa-solid fa-arrows-rotate"></i> Znovu připojit
+                            </button>
+                        </div>
                     </div>
-                    <div class="browser-frame-wrapper" style="flex: 1; border-radius: 16px; overflow: hidden; background: #07050e; border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);">
-                        <iframe id="vnc-iframe" style="width: 100%; height: 100%; border: none;" src=""></iframe>
+                    <div class="browser-frame-wrapper" style="flex: 1; border-radius: 16px; overflow: hidden; background: #07050e; border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); display: flex; justify-content: center; align-items: center; position: relative;">
+                        <canvas id="screencast-canvas" style="display: block; cursor: crosshair; border-radius: 8px; shadow: 0 4px 12px rgba(0,0,0,0.5);"></canvas>
+                        <div id="screencast-placeholder" style="position: absolute; color: var(--text-muted); font-size: 0.9rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; pointer-events: none;">
+                            <i class="fa-solid fa-desktop" style="font-size: 2rem; opacity: 0.5;"></i>
+                            <span>Živý náhled prohlížeče se načítá...</span>
+                        </div>
                     </div>
                 </div>
             </div>

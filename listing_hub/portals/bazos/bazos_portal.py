@@ -79,43 +79,52 @@ class BazosPortal(AbstractPortal):
         Stáhne inzeráty z Bazoše, spáruje je se SQLite databází,
         automaticky naimportuje nově nalezené cizí inzeráty a aktualizuje stavy.
         """
-        # Spustíme scrape inzerátů z Bazoše
-        # Získáme seznam z Bazoše pomocí metody z post_to_bazos
-        # (dočasně využijeme vnitřní logiku scraperu z post_to_bazos)
-        try:
-            _, browser, _, page = session_manager.get_session()
-        except Exception as e:
-            raise Exception(f"Nepodařilo se připojit k prohlížeči Bazoše: {e}")
-
-        # Přejdeme na Moje inzeráty
-        page.goto("https://www.bazos.cz/moje-inzeraty.php")
-        
-        # Přihlášení
-        try:
+        def _fetch_html_on_worker(page, cfg):
+            page.goto("https://www.bazos.cz/moje-inzeraty.php")
+            
             email_input = page.locator("input[name='mail']")
             phone_input = page.locator("input[name='telefon']")
-            if email_input.is_visible(timeout=3000):
-                email_val = user_config.get("email", "")
-                phone_val = user_config.get("phone", "")
+            code_input = page.locator("input[name='kodd']")
+            
+            if email_input.is_visible(timeout=2000) is True:
+                user_dict = cfg.get("user", cfg) if isinstance(cfg, dict) else {}
+                email_val = str(user_dict.get("email") or (cfg.get("email") if isinstance(cfg, dict) else "") or "").strip()
+                phone_val = str(user_dict.get("phone") or (cfg.get("phone") if isinstance(cfg, dict) else "") or "").strip()
+                
+                if not email_val or not phone_val or email_val == "tuj_email@example.com" or phone_val == "777123456":
+                    raise Exception("V nastavení aplikace chybí tvůj reálný e-mail a telefon pro Bazoš.")
+                
                 email_input.fill(email_val)
                 phone_input.fill(phone_val)
                 
                 list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
-                if list_btn.is_visible(timeout=2000):
+                if list_btn.is_visible(timeout=2000) is True:
                     list_btn.click()
                 else:
                     submit_btn = page.locator("input[type='submit'][value='Ověřit']")
-                    submit_btn.click()
-                    # Čekáme na kód
-                    code_input = page.locator("input[name='kodd']")
-                    code_input.wait_for(timeout=10000)
-                    # Čekáme na ruční zadání v noVNC
-                    page.wait_for_selector("input[name='kodd']", state="hidden", timeout=60000)
-        except Exception:
-            pass
+                    if submit_btn.is_visible(timeout=2000) is True:
+                        submit_btn.click()
+                        code_input.wait_for(timeout=5000)
+                        try:
+                            # Čekáme na zadání SMS kódu v živém prohlížeči (až 45 sec)
+                            page.wait_for_selector("input[name='kodd']", state="hidden", timeout=45000)
+                        except Exception:
+                            raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
+
+            # Ověříme, zda nejsme stále na přihlašovací stránce
+            if email_input.is_visible(timeout=1000) is True or code_input.is_visible(timeout=1000) is True:
+                raise Exception("Přihlášení k Bazoši selhalo. Zadej SMS kód v záložce Živý prohlížeč nebo zkontroluj přihlašovací údaje.")
+
+            return page.content()
+
+        try:
+            html_content = session_manager.run_on_worker(_fetch_html_on_worker, user_config)
+        except Exception as e:
+            if "Bazoš" in str(e) or "nastavení" in str(e) or "SMS" in str(e):
+                raise e
+            raise Exception(f"Přihlášení k Bazoši selhalo: {e}")
 
         # Stáhneme inzeráty z HTML
-        html_content = page.content()
         scraped_listings = scrape_listings_from_html(html_content)
         
         # Načteme lokální inzeráty z SQLite

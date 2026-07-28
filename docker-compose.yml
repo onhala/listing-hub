@@ -6,13 +6,12 @@
 
 services:
   listing-hub:
-    # build: .
-    image: ghcr.io/onhala/listing-hub:latest
+    build: .
+    image: listing-hub:local
     container_name: listing-hub
     restart: unless-stopped
     ports:
-      - "5001:5001" # Flask Web Interface
-      - "6080:6080" # noVNC Interface (WebSockets)
+      - "5001:5001" # Flask Web Interface (VNC proxying tunneled via 5001)
     volumes:
       # Persistent configuration, data, and photos folders (Issue #3)
       - ./config:/app/config

@@ -1,5 +1,8 @@
 import os
+import time
 import atexit
+import queue
+import threading
 from datetime import datetime
 from pathlib import Path
 from listing_hub.core.config import SESSION_STATE_PATH
@@ -21,72 +24,173 @@ class PlaywrightSessionManager:
         self.browser = None
         self.context = None
         self.page = None
+        self.latest_frame = None
+        self.cdp_session = None
+        self.input_queue = queue.Queue()
+        self.thread = None
+        self.running = False
+        self._lock = threading.Lock()
+
+    def start_worker(self):
+        """Start permanent background worker thread bound to Playwright."""
+        with self._lock:
+            if not self.running or not self.thread or not self.thread.is_alive():
+                self.running = True
+                self.thread = threading.Thread(target=self._worker_loop, daemon=True, name="PlaywrightWorker")
+                self.thread.start()
+
+    def _worker_loop(self):
+        """Dedicated background thread loop that owns Playwright and processes CDP events."""
+        try:
+            from playwright.sync_api import sync_playwright
+            self.playwright = sync_playwright().start()
+
+            headless_env = os.environ.get("HEADLESS")
+            is_headless = headless_env.lower() in ("true", "1", "yes") if headless_env else ("DISPLAY" not in os.environ)
+            exec_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+            launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+
+            if exec_path and os.path.exists(exec_path):
+                self.browser = self.playwright.chromium.launch(executable_path=exec_path, headless=is_headless, args=launch_args)
+            else:
+                self.browser = self.playwright.chromium.launch(headless=is_headless, args=launch_args)
+
+            if SESSION_STATE_PATH.exists():
+                self.context = self.browser.new_context(storage_state=str(SESSION_STATE_PATH), viewport={"width": 1280, "height": 800})
+            else:
+                self.context = self.browser.new_context(viewport={"width": 1280, "height": 800})
+
+            self.context.set_default_timeout(30000)
+            self.page = self.context.new_page()
+            self.page.goto("https://www.bazos.cz/moje-inzeraty.php")
+
+            # Setup CDP Screencast
+            import base64
+            cdp = self.context.new_cdp_session(self.page)
+            def _on_screencast_frame(event):
+                try:
+                    data_str = event.get("data")
+                    if data_str:
+                        self.latest_frame = base64.b64decode(data_str)
+                    session_id = event.get("sessionId")
+                    if session_id and hasattr(cdp, "_impl_obj") and hasattr(cdp._impl_obj, "_channel"):
+                        try:
+                            cdp._impl_obj._channel.send_no_reply("send", {
+                                "method": "Page.screencastFrameAck",
+                                "params": {"sessionId": session_id}
+                            })
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            cdp.on("Page.screencastFrame", _on_screencast_frame)
+            cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 70, "everyNthFrame": 1})
+            self.cdp_session = cdp
+        except Exception as e:
+            print(f"Error initializing Playwright worker thread: {e}")
+            self.running = False
+            return
+
+        # Continuous Input Processing Loop on Worker Thread
+        while self.running and self.browser and self.browser.is_connected():
+            try:
+                has_events = False
+                while not self.input_queue.empty():
+                    try:
+                        evt = self.input_queue.get_nowait()
+                        has_events = True
+                        act = evt.get("action")
+                        if act == "click":
+                            cx, cy = evt["x"], evt["y"]
+                            self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
+                            self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "buttons": 1, "clickCount": 1})
+                            self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": cx, "y": cy, "button": "left", "buttons": 0, "clickCount": 1})
+                        elif act == "type":
+                            for char in evt.get("text", ""):
+                                self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyDown", "text": char})
+                                self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyUp", "text": char})
+                        elif act == "key":
+                            key_name = evt.get("key", "")
+                            key_data = {
+                                "Backspace": {"key": "Backspace", "code": "Backspace", "windowsVirtualKeyCode": 8},
+                                "Enter": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r"},
+                                "Tab": {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
+                                "Escape": {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27}
+                            }
+                            params = key_data.get(key_name, {"key": key_name})
+                            self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyDown", **params})
+                            self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyUp", **params})
+                        elif act == "goto":
+                            url = evt.get("url")
+                            if url and self.page and not self.page.is_closed():
+                                self.page.goto(url)
+                        elif act == "call":
+                            func = evt["func"]
+                            args = evt.get("args", ())
+                            kwargs = evt.get("kwargs", {})
+                            try:
+                                res = func(self.page, *args, **kwargs)
+                                evt["result_queue"].put((res, None))
+                            except Exception as ex:
+                                evt["result_queue"].put((None, ex))
+                    except queue.Empty:
+                        break
+                    except Exception as ex:
+                        print(f"Error handling event in worker: {ex}")
+
+                if has_events and self.cdp_session:
+                    try:
+                        self.cdp_session.send("Runtime.evaluate", {
+                            "expression": "document.body.style.opacity = '0.999'; setTimeout(() => document.body.style.opacity = '1.0', 10);"
+                        })
+                    except Exception:
+                        pass
+
+                time.sleep(0.05)
+            except Exception as loop_e:
+                print(f"Worker loop error: {loop_e}")
+                time.sleep(0.1)
+
+    def run_on_worker(self, func, *args, **kwargs):
+        """Dispatches `func(self.page, *args, **kwargs)` to execute on the Playwright worker thread."""
+        self.start_worker()
+        res_q = queue.Queue()
+        self.input_queue.put({
+            "action": "call",
+            "func": func,
+            "args": args,
+            "kwargs": kwargs,
+            "result_queue": res_q
+        })
+        res, err = res_q.get()
+        if err:
+            raise err
+        return res
 
     def get_session(self):
-        def log_psm(msg):
-            try:
-                with open("/tmp/thread_debug.log", "a", encoding="utf-8") as f:
-                    f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [PSM] {msg}\n")
-            except Exception:
-                pass
-
-        is_active = False
-        try:
-            if self.browser and self.browser.is_connected() and self.page and not self.page.is_closed():
-                _ = self.page.url
-                is_active = True
-        except Exception as e:
-            log_psm(f"Session check error: {e}")
-            is_active = False
-            
-        if is_active:
-            try:
-                log_psm("Session is active, bringing page to front")
-                self.page.bring_to_front()
-            except Exception as e:
-                log_psm(f"bring_to_front failed: {e}")
-        else:
-            log_psm("Starting session reset/close")
-            self.close()
-            try:
-                from playwright.sync_api import sync_playwright
-            except ImportError:
-                raise ImportError(
-                    f"\n{Colors.FAIL}Knihovna Playwright není nainstalována. "
-                    f"Spusťte: pip install playwright && playwright install chromium{Colors.ENDC}"
-                )
-                
-            log_psm("Calling sync_playwright().start()")
-            self.playwright = sync_playwright().start()
-            log_psm("sync_playwright().start() completed")
-            executable_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
-            launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            try:
-                if executable_path and os.path.exists(executable_path):
-                    log_psm(f"Launching system Chromium at {executable_path}")
-                    self.browser = self.playwright.chromium.launch(executable_path=executable_path, headless=False, args=launch_args)
-                else:
-                    log_psm("Launching browser (chrome channel)")
-                    self.browser = self.playwright.chromium.launch(channel="chrome", headless=False, args=launch_args)
-            except Exception as e:
-                log_psm(f"Browser launch fallback: {e}. Launching default chromium.")
-                self.browser = self.playwright.chromium.launch(headless=False, args=launch_args)
-            log_psm("Browser launched successfully")
-            
-            if SESSION_STATE_PATH.exists():
-                log_psm("Loading session state (cookies)")
-                self.context = self.browser.new_context(storage_state=str(SESSION_STATE_PATH))
-            else:
-                log_psm("Creating new context")
-                self.context = self.browser.new_context()
-            
-            log_psm("Setting default timeout")
-            self.context.set_default_timeout(30000)
-            log_psm("Creating new page")
-            self.page = self.context.new_page()
-            log_psm("Session initialized successfully")
-            
+        self.start_worker()
+        # Wait up to 10s for worker thread to initialize page
+        for _ in range(100):
+            if self.page and not self.page.is_closed():
+                break
+            time.sleep(0.1)
         return self.playwright, self.browser, self.context, self.page
+
+    def send_cdp_click(self, x, y):
+        self.start_worker()
+        self.input_queue.put({"action": "click", "x": x, "y": y})
+        return True
+
+    def send_cdp_type(self, text):
+        self.start_worker()
+        self.input_queue.put({"action": "type", "text": text})
+        return True
+
+    def send_cdp_key(self, key_name):
+        self.start_worker()
+        self.input_queue.put({"action": "key", "key": key_name})
+        return True
 
     def save_state(self):
         if self.context:
@@ -96,6 +200,7 @@ class PlaywrightSessionManager:
                 print(f"  {Colors.WARNING}Nepodařilo se uložit stav relace: {e}{Colors.ENDC}")
 
     def close(self):
+        self.running = False
         if self.context:
             self.save_state()
         if self.browser:
@@ -108,10 +213,12 @@ class PlaywrightSessionManager:
                 self.playwright.stop()
             except Exception:
                 pass
-        self.playwright = None
-        self.browser = None
-        self.context = None
         self.page = None
+        self.context = None
+        self.browser = None
+        self.playwright = None
+        self.cdp_session = None
+        self.latest_frame = None
 
 session_manager = PlaywrightSessionManager()
 atexit.register(session_manager.close)

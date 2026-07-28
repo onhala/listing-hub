@@ -1,0 +1,15 @@
+{
+  "user": {
+    "email": "ondrejhala@gmail.com",
+    "phone": "775650641",
+    "phone_verified": "+420777123456",
+    "default_ad_password_b64": "bGFrMG1lYw==",
+    "name": "Ondřej H.",
+    "zip_code": "38101",
+    "location": "Praha 100 00",
+    "auto_refresh_status": "ok",
+    "last_refresh_time": "2026-07-28T19:34:41.736898+00:00",
+    "auto_refresh_enabled": false,
+    "auto_refresh_interval": 720
+  }
+}

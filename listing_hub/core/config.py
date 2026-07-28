@@ -42,7 +42,7 @@ def check_write_permissions():
 check_write_permissions()
 
 def load_user_config() -> dict:
-    """Načte uživatelskou konfiguraci ze souboru."""
+    """Načte uživatelskou konfiguraci ze souboru (z klíče 'user' nebo kořene)."""
     if not CONFIG_PATH.exists():
         # Pokud neexistuje, vrátí prázdnou šablonu
         return {
@@ -55,7 +55,8 @@ def load_user_config() -> dict:
         }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return data.get("user", data)
     except Exception:
         return {}
 

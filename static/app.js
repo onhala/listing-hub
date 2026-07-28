@@ -1090,11 +1090,77 @@ document.addEventListener("DOMContentLoaded", () => {
         toggleGeminiKeyBtn.querySelector("i").className = type === "password" ? "fa-solid fa-eye" : "fa-solid fa-eye-slash";
     });
 
-    // ==========================================
-    // 8. GLOBÁLNÍ UTILITY (NOTIFIKACE, MODALY, TABS)
-    // ==========================================
+    let screencastWs = null;
 
-    // Přepínání tabů
+    const initScreencast = () => {
+        const canvas = document.getElementById("screencast-canvas");
+        const placeholder = document.getElementById("screencast-placeholder");
+        const toggleInteractive = document.getElementById("vnc-interactive-toggle");
+        const modeLabel = document.getElementById("vnc-mode-label");
+        
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        
+        const isInteractive = toggleInteractive ? toggleInteractive.checked : false;
+        if (modeLabel) {
+            modeLabel.textContent = isInteractive ? "Režim: Plné ovládání" : "Režim: Pouze náhled";
+            modeLabel.style.color = isInteractive ? "#4ade80" : "var(--text-muted)";
+        }
+        canvas.style.cursor = isInteractive ? "pointer" : "default";
+
+        if (screencastWs && (screencastWs.readyState === WebSocket.OPEN || screencastWs.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
+        const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProtocol}//${window.location.host}/api/screencast/ws`;
+        
+        screencastWs = new WebSocket(wsUrl);
+        screencastWs.binaryType = "arraybuffer";
+
+        function fitCanvasToContainer() {
+            if (!canvas.width || !canvas.height) return;
+            const parent = canvas.parentElement;
+            if (!parent) return;
+
+            const pw = parent.clientWidth;
+            const ph = parent.clientHeight;
+            if (!pw || !ph) return;
+
+            const imgAspect = canvas.width / canvas.height;
+            const containerAspect = pw / ph;
+
+            if (containerAspect > imgAspect) {
+                canvas.style.height = `${ph}px`;
+                canvas.style.width = `${Math.round(ph * imgAspect)}px`;
+            } else {
+                canvas.style.width = `${pw}px`;
+                canvas.style.height = `${Math.round(pw / imgAspect)}px`;
+            }
+        }
+
+        window.addEventListener("resize", fitCanvasToContainer);
+
+        screencastWs.onmessage = (event) => {
+            const blob = new Blob([event.data], { type: "image/jpeg" });
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                fitCanvasToContainer();
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(url);
+                if (placeholder) placeholder.style.display = "none";
+            };
+            img.src = url;
+        };
+
+        screencastWs.onclose = () => {
+            screencastWs = null;
+        };
+    };
+
     function switchToTab(tabName) {
         console.log("➡️ switchToTab called with:", tabName);
         const item = Array.from(navItems).find(nav => nav.getAttribute("data-tab") === tabName);
@@ -1115,7 +1181,6 @@ document.addEventListener("DOMContentLoaded", () => {
             console.log("⚠️ Tab content element not found:", tabId);
         }
 
-        // Aktualizovat nadpis stránky
         if (tabName === "active-listings") {
             pageTitle.textContent = "Aktivní inzeráty";
         } else if (tabName === "unsold-listings") {
@@ -1123,53 +1188,98 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (tabName === "sold-listings") {
             pageTitle.textContent = "Prodané věci";
         } else if (tabName === "browser") {
-            pageTitle.textContent = "Živý prohlížeč (VNC)";
-            const vncIframe = document.getElementById("vnc-iframe");
-            console.log("🔍 vncIframe:", vncIframe, "current attribute src:", vncIframe ? vncIframe.getAttribute("src") : "N/A");
-            if (vncIframe && !vncIframe.getAttribute("src")) {
-                reloadVncSrc();
-            }
+            pageTitle.textContent = "Živý prohlížeč";
+            initScreencast();
         } else if (tabName === "config") {
             pageTitle.textContent = "Nastavení aplikace";
         }
     }
 
-    const reloadVncSrc = () => {
-        const vncIframe = document.getElementById("vnc-iframe");
-        if (!vncIframe) {
-            console.log("⚠️ reloadVncSrc: vncIframe not found!");
-            return;
-        }
-        
-        // Pokud má uživatel nastavenou vlastní VNC URL, použijeme ji
-        if (userConfig && userConfig.vnc_url) {
-            vncIframe.src = userConfig.vnc_url;
-            console.log("➡️ reloadVncSrc: set src to custom config URL =", vncIframe.src);
-            return;
-        }
-        
-        const isLocalDev = window.location.port === "5001";
-        console.log("ℹ️ reloadVncSrc: port =", window.location.port, "isLocalDev =", isLocalDev);
-        
-        if (window.location.protocol === "https:") {
-            // Přímé připojení na zabezpečený noVNC port 6080 (pokud NPM/Cloudflare proxy směřuje port 6080)
-            // nebo na stejný host na portu 6080
-            vncIframe.src = `https://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
-        } else {
-            // Výchozí HTTP připojení na port 6080
-            vncIframe.src = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true`;
-        }
-        console.log("➡️ reloadVncSrc: set src to =", vncIframe.src);
-    };
+    const canvasElem = document.getElementById("screencast-canvas");
+    if (canvasElem) {
+        const handleCanvasClick = (e) => {
+            const toggleInteractive = document.getElementById("vnc-interactive-toggle");
+            if (!toggleInteractive || !toggleInteractive.checked) return;
+
+            const rect = canvasElem.getBoundingClientRect();
+            if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+
+            const canvasWidth = canvasElem.width || 1280;
+            const canvasHeight = canvasElem.height || 800;
+
+            const scaleX = canvasWidth / rect.width;
+            const scaleY = canvasHeight / rect.height;
+
+            const clickX = Math.round((e.clientX - rect.left) * scaleX);
+            const clickY = Math.round((e.clientY - rect.top) * scaleY);
+
+            console.log(`🖱️ Screencast Click: (${clickX}, ${clickY}) [Canvas DOM size: ${Math.round(rect.width)}x${Math.round(rect.height)}]`);
+
+            // Vytvoříme vizuální klesající kroužek (ripple) na přesném místě kurzoru (fixed position)
+            const ripple = document.createElement("div");
+            ripple.style.position = "fixed";
+            ripple.style.left = `${e.clientX - 12}px`;
+            ripple.style.top = `${e.clientY - 12}px`;
+            ripple.style.width = "24px";
+            ripple.style.height = "24px";
+            ripple.style.borderRadius = "50%";
+            ripple.style.border = "2px solid #4ade80";
+            ripple.style.background = "rgba(74, 222, 128, 0.4)";
+            ripple.style.pointerEvents = "none";
+            ripple.style.zIndex = "99999";
+            ripple.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+
+            document.body.appendChild(ripple);
+            requestAnimationFrame(() => {
+                ripple.style.transform = "scale(2.5)";
+                ripple.style.opacity = "0";
+            });
+            setTimeout(() => ripple.remove(), 400);
+
+            fetch("/api/screencast/input", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "click", x: clickX, y: clickY })
+            });
+        };
+
+        canvasElem.addEventListener("mousedown", handleCanvasClick);
+
+        document.addEventListener("keydown", (e) => {
+            const toggleInteractive = document.getElementById("vnc-interactive-toggle");
+            const browserTab = document.getElementById("tab-browser");
+            if (!toggleInteractive || !toggleInteractive.checked || !browserTab || !browserTab.classList.contains("active")) return;
+            
+            if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+            
+            if (e.key.length === 1) {
+                fetch("/api/screencast/input", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "type", text: e.key })
+                });
+            } else if (["Backspace", "Enter", "Tab", "Escape"].includes(e.key)) {
+                fetch("/api/screencast/input", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "key", key: e.key })
+                });
+            }
+        });
+    }
 
     const btnReloadVnc = document.getElementById("btn-reload-vnc");
     if (btnReloadVnc) {
         btnReloadVnc.addEventListener("click", () => {
-            const vncIframe = document.getElementById("vnc-iframe");
-            if (vncIframe) {
-                vncIframe.src = "";
-                setTimeout(reloadVncSrc, 100);
-            }
+            if (screencastWs) screencastWs.close();
+            initScreencast();
+        });
+    }
+
+    const toggleInteractive = document.getElementById("vnc-interactive-toggle");
+    if (toggleInteractive) {
+        toggleInteractive.addEventListener("change", () => {
+            initScreencast();
         });
     }
 
@@ -1310,7 +1420,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const json = await res.json();
             
             if (json.status === "error") {
-                showToast(`Chyba analýzy: ${json.message}`, "error");
+                showNotification(`Chyba analýzy: ${json.message}`, "error");
                 closeAdvisor();
                 return;
             }
@@ -1388,7 +1498,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
         } catch (e) {
-            showToast("Chyba při komunikaci s analyzátorem cen.", "error");
+            showNotification("Chyba při komunikaci s analyzátorem cen.", "error");
             closeAdvisor();
         }
     };
@@ -1400,60 +1510,62 @@ document.addEventListener("DOMContentLoaded", () => {
         const price = btn.getAttribute("data-price");
         if (price) {
             document.getElementById("advisor-selected-price").value = price;
-            showToast(`Zvolena cena ${parseInt(price).toLocaleString("cs-CZ")} Kč.`, "success");
+            showNotification(`Zvolena cena ${parseInt(price).toLocaleString("cs-CZ")} Kč.`, "success");
         }
     });
 
     const closeAdvisor = () => {
-        advisorModal.classList.remove("active");
+        if (advisorModal) advisorModal.classList.remove("active");
         activeAdvisorListingId = null;
     };
 
-    closeAdvisorBtn.addEventListener("click", closeAdvisor);
-    closeAdvisorBtnFooter.addEventListener("click", closeAdvisor);
+    if (closeAdvisorBtn) closeAdvisorBtn.addEventListener("click", closeAdvisor);
+    if (closeAdvisorBtnFooter) closeAdvisorBtnFooter.addEventListener("click", closeAdvisor);
 
     // Odeslání akce znovuvystavení se zlevněním
-    applyAdvisorPriceBtn.addEventListener("click", async () => {
-        const newPriceInput = document.getElementById("advisor-selected-price");
-        const newPrice = parseInt(newPriceInput.value);
-        
-        if (!activeAdvisorListingId || isNaN(newPrice) || newPrice <= 0) {
-            showToast("Zadejte platnou cenu.", "error");
-            return;
-        }
-
-        closeAdvisor();
-        
-        // Zobrazíme running status bar
-        const statusDesc = document.getElementById("playwright-status-desc");
-        statusDesc.innerText = "Robot zlevňuje inzerát v SQLite a spouští znovuvystavení na Bazoši...";
-        const statusContainer = document.getElementById("playwright-status");
-        statusContainer.classList.add("active");
-
-        try {
-            const res = await fetch("/api/action/repost_with_new_price", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    listing_id: activeAdvisorListingId,
-                    new_price: newPrice
-                })
-            });
-            const json = await res.json();
+    if (applyAdvisorPriceBtn) {
+        applyAdvisorPriceBtn.addEventListener("click", async () => {
+            const newPriceInput = document.getElementById("advisor-selected-price");
+            const newPrice = parseInt(newPriceInput.value);
             
-            if (json.status === "success") {
-                showToast(json.message, "success");
-                // Refreshujeme aplikaci pro načtení nové ceny
-                loadApp();
-            } else {
-                showToast(json.message, "error");
-                statusContainer.classList.remove("active");
+            if (!activeAdvisorListingId || isNaN(newPrice) || newPrice <= 0) {
+                showNotification("Zadejte platnou cenu.", "error");
+                return;
             }
-        } catch (e) {
-            showToast("Nepodařilo se spustit znovuvystavení.", "error");
-            statusContainer.classList.remove("active");
-        }
-    });
+
+            closeAdvisor();
+            
+            // Zobrazíme running status bar
+            const statusDesc = document.getElementById("playwright-status-desc");
+            if (statusDesc) statusDesc.innerText = "Robot zlevňuje inzerát v SQLite a spouští znovuvystavení na Bazoši...";
+            const statusContainer = document.getElementById("playwright-status");
+            if (statusContainer) statusContainer.classList.add("active");
+
+            try {
+                const res = await fetch("/api/action/repost_with_new_price", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        listing_id: activeAdvisorListingId,
+                        new_price: newPrice
+                    })
+                });
+                const json = await res.json();
+                
+                if (json.status === "success") {
+                    showNotification(json.message, "success");
+                    // Refreshujeme aplikaci pro načtení nové ceny
+                    loadApp();
+                } else {
+                    showNotification(json.message, "error");
+                    if (statusContainer) statusContainer.classList.remove("active");
+                }
+            } catch (e) {
+                showNotification("Nepodařilo se spustit znovuvystavení.", "error");
+                if (statusContainer) statusContainer.classList.remove("active");
+            }
+        });
+    }
 
     // Pomocná funkce pro bezpečné parsování HTML
     const escapeHtml = (unsafe) => {
