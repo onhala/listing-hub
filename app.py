@@ -538,26 +538,24 @@ def run_action(action_type):
                 pass
 
         payload = request.json or {}
-        ad_id = payload.get("local_photos_dir") # používáme složku jako unikátní klíč inzerátu
+        ad_id = payload.get("local_photos_dir") or payload.get("id")
         
         listings_data, user_config = load_data()
         
-        # Najdeme inzerát podle local_photos_dir
+        # Najdeme inzerát podle ID, local_photos_dir nebo názvu
         selected_ad = None
         if ad_id and ad_id != "all":
-            for ad in listings_data.get("active_listings", []):
-                if ad.get("local_photos_dir") == ad_id:
+            all_candidates = listings_data.get("active_listings", []) + listings_data.get("sold_listings", [])
+            for ad in all_candidates:
+                if (ad.get("id") == ad_id or 
+                    ad.get("local_photos_dir") == ad_id or 
+                    (ad.get("local_photos_dir") and ad_id in ad.get("local_photos_dir")) or
+                    ad.get("title") == ad_id):
                     selected_ad = ad
                     break
-                    
-            if not selected_ad:
-                for ad in listings_data.get("sold_listings", []):
-                    if ad.get("local_photos_dir") == ad_id:
-                        selected_ad = ad
-                        break
                         
             if not selected_ad:
-                return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+                return jsonify({"status": "error", "message": f"Inzerát '{ad_id}' nebyl nalezen."}), 404
                 
         # Pro ostatní akce (post, edit_price, delete)
         extra_val = payload.get("extra_val") # např. nová cena

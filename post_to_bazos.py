@@ -32,17 +32,76 @@ from listing_hub.portals.bazos.session import session_manager, PlaywrightSession
 
 def load_data():
     try:
-        if not LISTINGS_PATH.exists():
-            with open(LISTINGS_PATH, "w", encoding="utf-8") as f:
-                json.dump({"active_listings": [], "sold_listings": []}, f, ensure_ascii=False, indent=2)
-                
-        with open(LISTINGS_PATH, "r", encoding="utf-8") as f:
-            listings_data = json.load(f)
+        from listing_hub.core.db import init_db, get_all_listings, save_listing
+        init_db()
+
+        # Načíst inzeráty ze SQLite databáze
+        db_listings = get_all_listings()
+        
+        # Pokud je SQLite prázdná, ale existuje JSON, provést jednorázový import z JSON do SQLite
+        if not db_listings and LISTINGS_PATH.exists():
+            try:
+                with open(LISTINGS_PATH, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+                import uuid
+                for cat in ["active_listings", "sold_listings", "unsold_listings"]:
+                    for item in json_data.get(cat, []):
+                        lid = item.get("id") or str(uuid.uuid4())
+                        item["id"] = lid
+                        p_states = {}
+                        if item.get("url") or item.get("status"):
+                            p_states["bazos"] = {
+                                "portal_item_id": None,
+                                "url": item.get("url", ""),
+                                "status": "Prodané" if cat == "sold_listings" else item.get("status", "Aktivní"),
+                                "views": item.get("views", 0),
+                                "last_synced": None
+                            }
+                        save_listing(item, p_states)
+                db_listings = get_all_listings()
+            except Exception as e_mig:
+                print(f"Varování při auto-migraci JSON -> SQLite: {e_mig}")
+
+        active_listings = []
+        sold_listings = []
+        for ad in db_listings:
+            portal_states = ad.get("portal_states", {})
+            bazos_state = portal_states.get("bazos", {})
+            aukro_state = portal_states.get("aukro", {})
             
-        if "active_listings" not in listings_data:
-            listings_data["active_listings"] = []
-        if "sold_listings" not in listings_data:
-            listings_data["sold_listings"] = []
+            status = bazos_state.get("status") or aukro_state.get("status") or ad.get("status", "Aktivní")
+            
+            ad_dict = {
+                "id": ad.get("id"),
+                "title": ad.get("title"),
+                "description": ad.get("description"),
+                "price": ad.get("price"),
+                "category": ad.get("category"),
+                "condition": ad.get("condition"),
+                "local_photos_dir": ad.get("local_photos_dir"),
+                "location": ad.get("location"),
+                "notes": ad.get("notes"),
+                "ad_password_b64": ad.get("ad_password_b64"),
+                "bookmarklet_uri": ad.get("bookmarklet_uri"),
+                "days_old": ad.get("days_old", 0),
+                "created_at": ad.get("created_at") or ad.get("date_created", ""),
+                "date_created": ad.get("created_at") or ad.get("date_created", ""),
+                "target_bazos": ad.get("target_bazos", 1),
+                "target_aukro": ad.get("target_aukro", 0),
+                "url": bazos_state.get("url", ad.get("url", "")),
+                "views": bazos_state.get("views", ad.get("views", 0)),
+                "status": status,
+                "portal_states": portal_states
+            }
+            if status in ["Prodané", "Sold", "prodané"]:
+                sold_listings.append(ad_dict)
+            else:
+                active_listings.append(ad_dict)
+                
+        listings_data = {
+            "active_listings": active_listings,
+            "sold_listings": sold_listings
+        }
             
         if not CONFIG_PATH.exists():
             default_config = {
@@ -104,6 +163,25 @@ def load_data():
 
 def save_listings(data):
     try:
+        from listing_hub.core.db import save_listing
+        import uuid
+        for cat in ["active_listings", "sold_listings"]:
+            for item in data.get(cat, []):
+                lid = item.get("id")
+                if not lid:
+                    lid = str(uuid.uuid4())
+                    item["id"] = lid
+                portal_states = item.get("portal_states") or {}
+                if item.get("url") or item.get("status"):
+                    portal_states.setdefault("bazos", {})
+                    if "url" in item:
+                        portal_states["bazos"]["url"] = item["url"]
+                    if "status" in item:
+                        portal_states["bazos"]["status"] = item["status"]
+                    if "views" in item:
+                        portal_states["bazos"]["views"] = item["views"]
+                save_listing(item, portal_states)
+
         with open(LISTINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
