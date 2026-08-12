@@ -100,20 +100,27 @@ class BazosPortal(AbstractPortal):
                 list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
                 if list_btn.is_visible(timeout=2000) is True:
                     list_btn.click()
-                else:
-                    submit_btn = page.locator("input[type='submit'][value='Ověřit']")
-                    if submit_btn.is_visible(timeout=2000) is True:
-                        submit_btn.click()
-                        code_input.wait_for(timeout=5000)
-                        try:
-                            # Čekáme na zadání SMS kódu v živém prohlížeči (až 45 sec)
-                            page.wait_for_selector("input[name='kodd']", state="hidden", timeout=45000)
-                        except Exception:
-                            raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
+                    page.wait_for_timeout(1000)
+                
+                submit_btn = page.locator("input[type='submit'][value='Ověřit']")
+                if submit_btn.is_visible(timeout=2000) is True or code_input.is_visible(timeout=2000) is True:
+                    try:
+                        # Čekáme na zadání SMS kódu v živém prohlížeči (až 60 sec)
+                        code_input.wait_for(timeout=3000)
+                        page.wait_for_selector("input[name='kodd']", state="hidden", timeout=60000)
+                    except Exception:
+                        raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
 
             # Ověříme, zda nejsme stále na přihlašovací stránce
             if email_input.is_visible(timeout=1000) is True or code_input.is_visible(timeout=1000) is True:
                 raise Exception("Přihlášení k Bazoši selhalo. Zadej SMS kód v záložce Živý prohlížeč nebo zkontroluj přihlašovací údaje.")
+
+            # Uložíme platné session cookies pro příští rychlé přihlášení
+            try:
+                from listing_hub.core.config import SESSION_STATE_PATH
+                page.context.storage_state(path=str(SESSION_STATE_PATH))
+            except Exception:
+                pass
 
             return page.content()
 

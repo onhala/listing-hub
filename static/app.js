@@ -566,6 +566,353 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // --- Klientská komprese obrázků před uploadem ---
+    const compressImageFile = (file, maxWidth = 1920, maxHeight = 1920, quality = 0.85) => {
+        return new Promise((resolve) => {
+            if (!file.type.startsWith("image/")) {
+                resolve(file);
+                return;
+            }
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                let w = img.width;
+                let h = img.height;
+                if (w > maxWidth || h > maxHeight) {
+                    if (w > h) {
+                        h = Math.round((h * maxWidth) / w);
+                        w = maxWidth;
+                    } else {
+                        w = Math.round((w * maxHeight) / h);
+                        h = maxHeight;
+                    }
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, w, h);
+                canvas.toBlob(
+                    (blob) => {
+                        if (!blob) {
+                            resolve(file);
+                            return;
+                        }
+                        const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
+                            type: "image/jpeg",
+                            lastModified: Date.now()
+                        });
+                        resolve(newFile);
+                    },
+                    "image/jpeg",
+                    quality
+                );
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                resolve(file);
+            };
+            img.src = url;
+        });
+    };
+
+    const handlePhotoUpload = async (files) => {
+        const photosDir = editPhotosDir.value;
+        if (!photosDir) {
+            showNotification("Složka pro fotky není nastavená.", "error");
+            return;
+        }
+        if (!files || files.length === 0) return;
+
+        showNotification("Zpracovávám a komprimuji fotky...", "info");
+        const compressedFiles = [];
+        for (let i = 0; i < files.length; i++) {
+            const comp = await compressImageFile(files[i]);
+            compressedFiles.push(comp);
+        }
+
+        const formData = new FormData();
+        formData.append("photos_dir", photosDir);
+        for (let file of compressedFiles) {
+            formData.append("photos", file);
+        }
+
+        showNotification("Nahrávám fotky na server...", "info");
+        try {
+            const res = await fetch(API.uploadPhotos, {
+                method: "POST",
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                showNotification(data.message || "Fotky byly úspěšně nahrány!", "success");
+                loadPhotoGallery(photosDir);
+            } else {
+                showNotification(data.message || "Chyba při nahrávání fotek.", "error");
+            }
+        } catch (err) {
+            showNotification("Chyba při nahrávání fotek.", "error");
+        }
+    };
+
+    // Paste event support (Cmd+V / Ctrl+V)
+    document.addEventListener("paste", (e) => {
+        const modal = document.getElementById("edit-listing-modal");
+        if (!modal || modal.style.display === "none") return;
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        const imageFiles = [];
+        for (let item of items) {
+            if (item.type.indexOf("image") !== -1) {
+                const blob = item.getAsFile();
+                if (blob) {
+                    const file = new File([blob], `pasted_photo_${Date.now()}.png`, { type: blob.type });
+                    imageFiles.push(file);
+                }
+            }
+        }
+        if (imageFiles.length > 0) {
+            e.preventDefault();
+            handlePhotoUpload(imageFiles);
+        }
+    });
+
+    const photoDropzone = document.getElementById("photo-dropzone");
+    const editPhotoFileInput = document.getElementById("edit-photo-file-input");
+
+    if (photoDropzone && editPhotoFileInput) {
+        photoDropzone.addEventListener("click", () => editPhotoFileInput.click());
+
+        editPhotoFileInput.addEventListener("change", (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handlePhotoUpload(e.target.files);
+                e.target.value = "";
+            }
+        });
+
+        photoDropzone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            photoDropzone.style.background = "rgba(59, 130, 246, 0.15)";
+            photoDropzone.style.borderColor = "var(--primary-color, #3b82f6)";
+        });
+
+        photoDropzone.addEventListener("dragleave", (e) => {
+            e.preventDefault();
+            photoDropzone.style.background = "rgba(255, 255, 255, 0.03)";
+            photoDropzone.style.borderColor = "var(--border-color, #cbd5e1)";
+        });
+
+        photoDropzone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            photoDropzone.style.background = "rgba(255, 255, 255, 0.03)";
+            photoDropzone.style.borderColor = "var(--border-color, #cbd5e1)";
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handlePhotoUpload(e.dataTransfer.files);
+            }
+        });
+    }
+
+    let draggedItemIdx = null;
+    let currentPhotosList = [];
+
+    const renderPhotoGallery = (photos) => {
+        photoGalleryGrid.innerHTML = "";
+        currentPhotosList = photos;
+
+        photos.forEach((photo, idx) => {
+            const isExcluded = excludedPhotos.has(photo.filename);
+            const wrapper = document.createElement("div");
+            wrapper.className = `photo-thumb-wrapper${isExcluded ? " excluded" : ""}`;
+            wrapper.dataset.filename = photo.filename;
+            wrapper.dataset.index = idx;
+            wrapper.draggable = true;
+
+            // Thumbnail Image
+            const img = document.createElement("img");
+            img.src = photo.data_url || "";
+            img.alt = photo.filename;
+            img.loading = "lazy";
+
+            // Cover Badge on 1st photo
+            if (idx === 0) {
+                const coverBadge = document.createElement("div");
+                coverBadge.className = "cover-photo-badge";
+                coverBadge.style.cssText = "position: absolute; top: 6px; left: 6px; background: rgba(16, 185, 129, 0.9); color: #fff; font-size: 0.68rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; z-index: 5; backdrop-filter: blur(4px); shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 4px;";
+                coverBadge.innerHTML = '<i class="fa-solid fa-star"></i> Hlavní fotka';
+                wrapper.appendChild(coverBadge);
+            }
+
+            // Controls Overlay Action Buttons
+            const overlay = document.createElement("div");
+            overlay.className = "photo-actions-overlay";
+            overlay.style.cssText = "position: absolute; bottom: 0; left: 0; right: 0; background: rgba(15, 23, 42, 0.85); display: flex; justify-content: space-around; align-items: center; padding: 4px; backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.2s; z-index: 4;";
+            
+            // Show overlay on hover
+            wrapper.addEventListener("mouseenter", () => overlay.style.opacity = "1");
+            wrapper.addEventListener("mouseleave", () => overlay.style.opacity = "0");
+
+            // 1. Toggle Include/Exclude button
+            const btnToggle = document.createElement("button");
+            btnToggle.type = "button";
+            btnToggle.title = isExcluded ? "Zahrnout do inzerátu" : "Přeskočit na Bazoši";
+            btnToggle.style.cssText = "background: none; border: none; color: #fff; cursor: pointer; padding: 4px; font-size: 0.85rem;";
+            btnToggle.innerHTML = isExcluded ? '<i class="fa-solid fa-eye-slash" style="color: #ef4444;"></i>' : '<i class="fa-solid fa-eye" style="color: #10b981;"></i>';
+            btnToggle.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (excludedPhotos.has(photo.filename)) {
+                    excludedPhotos.delete(photo.filename);
+                } else {
+                    excludedPhotos.add(photo.filename);
+                }
+                renderPhotoGallery(currentPhotosList);
+            });
+
+            // 2. Rotate button
+            const btnRotate = document.createElement("button");
+            btnRotate.type = "button";
+            btnRotate.title = "Otočit o 90°";
+            btnRotate.style.cssText = "background: none; border: none; color: #fff; cursor: pointer; padding: 4px; font-size: 0.85rem;";
+            btnRotate.innerHTML = '<i class="fa-solid fa-rotate-right"></i>';
+            btnRotate.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                showNotification("Otáčím fotku...", "info");
+                try {
+                    const res = await fetch("/api/photos/rotate", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ photos_dir: editPhotosDir.value, filename: photo.filename, angle: 90 })
+                    });
+                    const resData = await res.json();
+                    if (resData.status === "success") {
+                        loadPhotoGallery(editPhotosDir.value);
+                    } else {
+                        showNotification(resData.message, "error");
+                    }
+                } catch (err) {
+                    showNotification("Chyba při otáčení.", "error");
+                }
+            });
+
+            // 3. Zoom Lightbox button
+            const btnZoom = document.createElement("button");
+            btnZoom.type = "button";
+            btnZoom.title = "Zvětšit (Lightbox)";
+            btnZoom.style.cssText = "background: none; border: none; color: #fff; cursor: pointer; padding: 4px; font-size: 0.85rem;";
+            btnZoom.innerHTML = '<i class="fa-solid fa-magnifying-glass-plus"></i>';
+            btnZoom.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openLightbox(photo.data_url, photo.filename);
+            });
+
+            // 4. Delete button
+            const btnDelete = document.createElement("button");
+            btnDelete.type = "button";
+            btnDelete.title = "Smazat fotku z disku";
+            btnDelete.style.cssText = "background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px; font-size: 0.85rem;";
+            btnDelete.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+            btnDelete.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                if (confirm(`Opravdu smazat fotku '${photo.filename}'?`)) {
+                    try {
+                        const res = await fetch("/api/photos/delete", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ photos_dir: editPhotosDir.value, filename: photo.filename })
+                        });
+                        const resData = await res.json();
+                        if (resData.status === "success") {
+                            showNotification("Fotka byla smazána.", "success");
+                            excludedPhotos.delete(photo.filename);
+                            loadPhotoGallery(editPhotosDir.value);
+                        } else {
+                            showNotification(resData.message, "error");
+                        }
+                    } catch (err) {
+                        showNotification("Chyba při mazání.", "error");
+                    }
+                }
+            });
+
+            overlay.appendChild(btnToggle);
+            overlay.appendChild(btnRotate);
+            overlay.appendChild(btnZoom);
+            overlay.appendChild(btnDelete);
+
+            const nameLabel = document.createElement("div");
+            nameLabel.className = "photo-thumb-name";
+            nameLabel.textContent = photo.filename;
+
+            wrapper.appendChild(img);
+            wrapper.appendChild(overlay);
+            wrapper.appendChild(nameLabel);
+
+            // Drag and Drop reordering logic
+            wrapper.addEventListener("dragstart", (e) => {
+                draggedItemIdx = idx;
+                e.dataTransfer.effectAllowed = "move";
+                wrapper.style.opacity = "0.4";
+            });
+
+            wrapper.addEventListener("dragend", () => {
+                wrapper.style.opacity = "1";
+            });
+
+            wrapper.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+            });
+
+            wrapper.addEventListener("drop", async (e) => {
+                e.preventDefault();
+                if (draggedItemIdx !== null && draggedItemIdx !== idx) {
+                    const reordered = [...currentPhotosList];
+                    const [movedItem] = reordered.splice(draggedItemIdx, 1);
+                    reordered.splice(idx, 0, movedItem);
+
+                    const filenames = reordered.map(p => p.filename);
+                    showNotification("Měním pořadí fotek...", "info");
+                    try {
+                        const res = await fetch("/api/photos/reorder", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ photos_dir: editPhotosDir.value, filenames: filenames })
+                        });
+                        const resData = await res.json();
+                        if (resData.status === "success") {
+                            loadPhotoGallery(editPhotosDir.value);
+                        }
+                    } catch (err) {
+                        showNotification("Chyba při změně pořadí.", "error");
+                    }
+                }
+            });
+
+            photoGalleryGrid.appendChild(wrapper);
+        });
+        updatePhotoCount(photos.length);
+    };
+
+    // Lightbox modal logic
+    const lightboxModal = document.getElementById("lightbox-modal");
+    const lightboxImg = document.getElementById("lightbox-img");
+    const lightboxCaption = document.getElementById("lightbox-caption");
+    const closeLightboxBtn = document.getElementById("close-lightbox-btn");
+
+    const openLightbox = (dataUrl, filename) => {
+        if (lightboxModal && lightboxImg) {
+            lightboxImg.src = dataUrl;
+            lightboxCaption.textContent = filename;
+            lightboxModal.style.display = "flex";
+        }
+    };
+
+    if (closeLightboxBtn && lightboxModal) {
+        closeLightboxBtn.addEventListener("click", () => lightboxModal.style.display = "none");
+        lightboxModal.addEventListener("click", (e) => {
+            if (e.target === lightboxModal) lightboxModal.style.display = "none";
+        });
+    }
+
     const handlePhotoUpload = async (files) => {
         const photosDir = editPhotosDir.value;
         if (!photosDir) {

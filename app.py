@@ -336,6 +336,78 @@ def upload_photos():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/photos/delete", methods=["POST", "DELETE"])
+def delete_photo():
+    try:
+        data = request.json or {}
+        photos_dir = data.get("photos_dir", "").strip()
+        filename = data.get("filename", "").strip()
+        if not photos_dir or not filename:
+            return jsonify({"status": "error", "message": "Chybí složka nebo název fotky."}), 400
+            
+        file_path = os.path.join(photos_dir, filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            return jsonify({"status": "success", "message": "Fotka smazána."})
+        return jsonify({"status": "error", "message": "Fotka nenalezena."}), 404
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/photos/rotate", methods=["POST"])
+def rotate_photo():
+    try:
+        data = request.json or {}
+        photos_dir = data.get("photos_dir", "").strip()
+        filename = data.get("filename", "").strip()
+        angle = int(data.get("angle", 90))
+        if not photos_dir or not filename:
+            return jsonify({"status": "error", "message": "Chybí složka nebo název fotky."}), 400
+
+        file_path = os.path.join(photos_dir, filename)
+        if not os.path.exists(file_path):
+            return jsonify({"status": "error", "message": "Fotka nenalezena."}), 404
+
+        try:
+            from PIL import Image, ImageOps
+            with Image.open(file_path) as img:
+                img = ImageOps.exif_transpose(img)
+                rotated = img.rotate(-angle, expand=True)
+                rotated.save(file_path)
+            return jsonify({"status": "success", "message": "Fotka byla otočena."})
+        except ImportError:
+            return jsonify({"status": "error", "message": "Pillow (PIL) není nainstalována."}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/photos/reorder", methods=["POST"])
+def reorder_photos():
+    try:
+        data = request.json or {}
+        photos_dir = data.get("photos_dir", "").strip()
+        filenames = data.get("filenames", [])
+        if not photos_dir or not os.path.isdir(photos_dir) or not filenames:
+            return jsonify({"status": "error", "message": "Chybí složka nebo seznam fotek."}), 400
+
+        temp_renames = []
+        for idx, old_fname in enumerate(filenames):
+            old_path = os.path.join(photos_dir, old_fname)
+            if os.path.exists(old_path):
+                ext = old_fname.rsplit(".", 1)[-1].lower() if "." in old_fname else "jpg"
+                temp_path = os.path.join(photos_dir, f"__tmp_reorder_{idx}_{uuid.uuid4().hex[:6]}.{ext}")
+                os.rename(old_path, temp_path)
+                temp_renames.append((temp_path, ext))
+
+        final_filenames = []
+        for idx, (tmp_path, ext) in enumerate(temp_renames, 1):
+            new_fname = f"foto_{idx}.{ext}"
+            new_path = os.path.join(photos_dir, new_fname)
+            os.rename(tmp_path, new_path)
+            final_filenames.append(new_fname)
+
+        return jsonify({"status": "success", "message": "Pořadí fotek bylo aktualizováno.", "filenames": final_filenames})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route("/api/config", methods=["GET"])
 def get_config():

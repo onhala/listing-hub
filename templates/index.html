@@ -665,6 +665,17 @@ services:
         </div>
     </div>
 
+    <!-- Lightbox Preview Modal -->
+    <div class="modal-overlay" id="lightbox-modal" style="z-index: 10000; display: none;">
+        <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <button class="btn-close-modal" id="close-lightbox-btn" style="position: absolute; top: -40px; right: 0; color: #fff; font-size: 1.5rem; background: none; border: none; cursor: pointer;">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <img id="lightbox-img" src="" alt="Detail fotky" style="max-width: 90vw; max-height: 80vh; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); object-fit: contain;">
+            <p id="lightbox-caption" style="color: #cbd5e1; margin-top: 12px; font-size: 0.9rem; font-family: monospace;"></p>
+        </div>
+    </div>
+
     <!-- Client application logic -->
     <script src="/static/app.js"></script>
 </body>
