@@ -103,25 +103,83 @@ class PlaywrightSessionManager:
                         act = evt.get("action")
                         if act == "click":
                             cx, cy = evt["x"], evt["y"]
-                            self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
-                            self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "buttons": 1, "clickCount": 1})
-                            self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": cx, "y": cy, "button": "left", "buttons": 0, "clickCount": 1})
+                            if self.page and not self.page.is_closed():
+                                try:
+                                    self.page.mouse.click(cx, cy)
+                                except Exception as ex:
+                                    print(f"page.mouse.click error: {ex}")
+                            if self.cdp_session:
+                                try:
+                                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
+                                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "buttons": 1, "clickCount": 1})
+                                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": cx, "y": cy, "button": "left", "buttons": 0, "clickCount": 1})
+                                except Exception:
+                                    pass
                         elif act == "type":
-                            for char in evt.get("text", ""):
-                                self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyDown", "text": char})
-                                self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyUp", "text": char})
+                            text_val = evt.get("text", "")
+                            if self.page and not self.page.is_closed():
+                                try:
+                                    # Automaticky zaměříme pole pro SMS kód (kodd / klic) pokud existuje
+                                    code_input = self.page.locator("input[name='kodd'], input[name='klic']")
+                                    if code_input.count() > 0 and code_input.first.is_visible():
+                                        curr_val = code_input.first.input_value() or ""
+                                        new_val = curr_val + text_val if len(text_val) == 1 else text_val
+                                        code_input.first.fill(new_val)
+                                    else:
+                                        self.page.evaluate('''() => {
+                                            let el = document.activeElement;
+                                            if (!el || el.tagName === "BODY" || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
+                                                let input = document.querySelector("input[type='text']") || 
+                                                            document.querySelector("input[type='number']") ||
+                                                            document.querySelector("input:not([type='hidden'])");
+                                                if (input) input.focus();
+                                            }
+                                        }''')
+                                        self.page.keyboard.type(text_val)
+                                except Exception as ex:
+                                    print(f"Type error: {ex}")
+                                    if self.cdp_session:
+                                        try:
+                                            self.cdp_session.send("Input.insertText", {"text": text_val})
+                                        except Exception:
+                                            pass
                         elif act == "key":
                             key_name = evt.get("key", "")
-                            key_data = {
-                                "Backspace": {"key": "Backspace", "code": "Backspace", "windowsVirtualKeyCode": 8},
-                                "Enter": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r"},
-                                "Tab": {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
-                                "Escape": {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27}
-                            }
-                            params = key_data.get(key_name, {"key": key_name})
-                            self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyDown", **params})
-                            self.cdp_session.send("Input.dispatchKeyEvent", {"type": "keyUp", **params})
-                        elif act == "goto":
+                            if self.page and not self.page.is_closed():
+                                try:
+                                    code_input = self.page.locator("input[name='kodd'], input[name='klic']")
+                                    if key_name == "Backspace" and code_input.count() > 0 and code_input.first.is_visible():
+                                        curr_val = code_input.first.input_value() or ""
+                                        code_input.first.fill(curr_val[:-1])
+                                    elif key_name == "Enter" and code_input.count() > 0 and code_input.first.is_visible():
+                                        submit_btn = self.page.locator("input[type='submit'][value*='Vypsat'], input[type='submit'][value*='Ověř'], form:has(input[name='kodd']) input[type='submit']")
+                                        if submit_btn.count() > 0 and submit_btn.first.is_visible():
+                                            submit_btn.first.click()
+                                        else:
+                                            self.page.keyboard.press("Enter")
+                                    else:
+                                        self.page.keyboard.press(key_name)
+                                except Exception as ex:
+                                    print(f"Key error: {ex}")
+                        elif act == "scroll":
+                            cx, cy = evt["x"], evt["y"]
+                            dx, dy = evt.get("deltaX", 0), evt.get("deltaY", 0)
+                            if self.cdp_session:
+                                try:
+                                    self.cdp_session.send("Input.dispatchMouseEvent", {
+                                        "type": "mouseWheel",
+                                        "x": cx,
+                                        "y": cy,
+                                        "deltaX": dx,
+                                        "deltaY": dy
+                                    })
+                                except Exception as ex:
+                                    print(f"Scroll CDP error: {ex}")
+                            elif self.page and not self.page.is_closed():
+                                try:
+                                    self.page.mouse.wheel(dx, dy)
+                                except Exception:
+                                    pass
                             url = evt.get("url")
                             if url and self.page and not self.page.is_closed():
                                 self.page.goto(url)
@@ -192,17 +250,45 @@ class PlaywrightSessionManager:
         self.input_queue.put({"action": "key", "key": key_name})
         return True
 
+    def send_cdp_scroll(self, x, y, delta_x, delta_y):
+        self.start_worker()
+        self.input_queue.put({"action": "scroll", "x": x, "y": y, "deltaX": delta_x, "deltaY": delta_y})
+        return True
+
     def save_state(self):
-        if self.context:
+        if self.context and self.page and not self.page.is_closed():
+            def _do_save(page, *args):
+                try:
+                    st = page.context.storage_state()
+                    import json
+                    with open(SESSION_STATE_PATH, "w", encoding="utf-8") as f:
+                        json.dump(st, f, indent=2)
+                except Exception as e:
+                    print(f"  {Colors.WARNING}Nepodařilo se uložit stav relace: {e}{Colors.ENDC}")
             try:
-                self.context.storage_state(path=str(SESSION_STATE_PATH))
-            except Exception as e:
-                print(f"  {Colors.WARNING}Nepodařilo se uložit stav relace: {e}{Colors.ENDC}")
+                self.run_on_worker(_do_save)
+            except Exception:
+                pass
+
+    def cancel_current_action(self):
+        self.cancel_requested = True
+        if self.page:
+            try:
+                self.page.close()
+            except Exception:
+                pass
+        self.page = None
 
     def close(self):
         self.running = False
-        if self.context:
-            self.save_state()
+        if self.context and self.page and not self.page.is_closed():
+            try:
+                st = self.page.context.storage_state()
+                import json
+                with open(SESSION_STATE_PATH, "w", encoding="utf-8") as f:
+                    json.dump(st, f, indent=2)
+            except Exception:
+                pass
         if self.browser:
             try:
                 self.browser.close()

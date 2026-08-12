@@ -12,8 +12,133 @@ from listing_hub.portals.bazos.scraper import scrape_listings_from_html
 
 import sys
 import os
+import urllib.request
+from pathlib import Path
+from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 import post_to_bazos
+from listing_hub.core.config import PROJECT_ROOT
+
+def download_bazos_photos_if_missing(ad_url: str, local_photos_dir_str: str):
+    """
+    Stáhne fotky z Bazoše v plném rozlišení, pokud lokální složka neobsahuje žádné fotky.
+    Pokud v lokální složce už fotky existují (uživatel je vytvořil/nahrál lokálně), 
+    stahování se přeskočí a uživatelské fotky zůstanou 100% zachovány.
+    """
+    if not ad_url or not local_photos_dir_str:
+        return
+        
+    m_id = re.search(r'/inzerat/(\d+)/', ad_url)
+    if not m_id:
+        return
+    target_id = m_id.group(1)
+
+    p_dir = Path(local_photos_dir_str)
+    if not p_dir.is_absolute():
+        p_dir = PROJECT_ROOT / p_dir
+
+    p_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pokud ve složce už existují fotky, nic nestahujeme
+    existing = [f for f in os.listdir(p_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+    if existing:
+        return
+
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
+        req = urllib.request.Request(ad_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+            
+        soup = BeautifulSoup(html, 'html.parser')
+        photo_urls = []
+        seen = set()
+        
+        for img in soup.find_all('img'):
+            src = img.get('src', '')
+            m = re.search(r'/img/(\d+)t?/(\d+)/(' + target_id + r')\.jpg', src)
+            if m:
+                img_num, sub_folder, item_id = m.groups()
+                if img_num not in seen:
+                    seen.add(img_num)
+                    domain = 'https://www.bazos.cz'
+                    if src.startswith('http'):
+                        domain = src.split('/img/')[0]
+                    full_res = f'{domain}/img/{img_num}/{sub_folder}/{item_id}.jpg'
+                    photo_urls.append((int(img_num), full_res))
+                    
+        photo_urls.sort(key=lambda x: x[0])
+        
+        for idx, (_, img_url) in enumerate(photo_urls, start=1):
+            try:
+                img_req = urllib.request.Request(img_url, headers=headers)
+                with urllib.request.urlopen(img_req, timeout=10) as img_resp:
+                    img_data = img_resp.read()
+                    if img_data:
+                        save_path = p_dir / f"foto_{idx}.jpg"
+                        with open(save_path, "wb") as f:
+                            f.write(img_data)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def fetch_bazos_ad_details(ad_url: str) -> dict:
+    """
+    Stáhne detail stránky inzerátu z Bazoše a vytáhne popis a lokaci.
+    Vrátí dict s klíči 'description', 'location' a 'is_deleted'.
+    """
+    result = {"description": "", "location": "", "is_deleted": False}
+    if not ad_url:
+        return result
+    try:
+        # Sanitize malformed or protocol-relative URLs
+        if ad_url.startswith("//"):
+            ad_url = "https:" + ad_url
+        if "www.bazos.cz//" in ad_url:
+            ad_url = "https://" + ad_url.split("www.bazos.cz//")[-1]
+            
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
+        req = urllib.request.Request(ad_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            final_url = resp.geturl()
+            # Pokud dojde k přesměrování mimo detail inzerátu (např. na úvodní stránku nebo vyhledávání), ignorujeme
+            if "/inzerat/" not in final_url:
+                result["is_deleted"] = True
+                return result
+            html = resp.read().decode('utf-8', errors='ignore')
+
+        # Pokud stránka obsahuje oznámení o smazání / vymazání inzerátu
+        html_lower = html.lower()
+        if 'vymazán' in html_lower or 'smazán' in html_lower or 'neexistuje' in html_lower or 'byl smazán' in html_lower:
+            result["is_deleted"] = True
+            return result
+
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # --- Popis ---
+        desc_el = soup.find(class_='popis')
+        if not desc_el:
+            desc_el = soup.find(attrs={'class': re.compile(r'popis', re.I)})
+        if desc_el:
+            result["description"] = desc_el.get_text(separator='\n', strip=True)
+
+        # --- Lokace ---
+        loc_el = soup.find(class_='inzeratylok')
+        if not loc_el:
+            loc_el = soup.find(attrs={'class': re.compile(r'lok|lokal|lokace', re.I)})
+        if loc_el:
+            loc_text = loc_el.get_text(separator=' ', strip=True)
+            loc_text = re.sub(r'([^\d\s])(\d)', r'\1 \2', loc_text)
+            loc_text = re.sub(r'\s+', ' ', loc_text).strip()
+            if loc_text:
+                result["location"] = loc_text
+
+    except Exception:
+        pass
+
+    return result
 
 class BazosPortal(AbstractPortal):
     """
@@ -145,12 +270,24 @@ class BazosPortal(AbstractPortal):
         for local_ad in local_listings:
             bazos_state = local_ad.get("portal_states", {}).get("bazos", {})
             local_url = bazos_state.get("url", "").strip()
+            local_ad_id = extract_ad_id(local_url)
             
             best_scraped_match = None
             best_scraped_idx = -1
             
-            # Match podle URL
-            if local_url:
+            # Priority 1: Match podle Bazoš ID inzerátu (zaručuje 100% přináležitost)
+            if local_ad_id:
+                for s_idx, scraped_ad in enumerate(scraped_listings):
+                    if s_idx in matched_scraped_indices:
+                        continue
+                    scraped_id = extract_ad_id(scraped_ad["url"])
+                    if scraped_id and scraped_id == local_ad_id:
+                        best_scraped_match = scraped_ad
+                        best_scraped_idx = s_idx
+                        break
+
+            # Priority 2: Match podle přesné URL
+            if not best_scraped_match and local_url:
                 for s_idx, scraped_ad in enumerate(scraped_listings):
                     if s_idx in matched_scraped_indices:
                         continue
@@ -159,14 +296,14 @@ class BazosPortal(AbstractPortal):
                         best_scraped_idx = s_idx
                         break
                         
-            # Match podle nadpisu (prvních 50 znaků)
-            if not best_scraped_match:
-                local_title_50 = local_ad["title"][:50].lower().strip()
+            # Priority 3: Match podle nadpisu (normalizovaný řetězec)
+            if not best_scraped_match and local_ad.get("title"):
+                local_title_clean = re.sub(r'\s+', ' ', local_ad["title"][:50].lower().strip())
                 for s_idx, scraped_ad in enumerate(scraped_listings):
                     if s_idx in matched_scraped_indices:
                         continue
-                    scraped_title_50 = scraped_ad["title"][:50].lower().strip()
-                    if scraped_title_50 == local_title_50:
+                    scraped_title_clean = re.sub(r'\s+', ' ', scraped_ad["title"][:50].lower().strip())
+                    if scraped_title_clean == local_title_clean and len(local_title_clean) > 3:
                         best_scraped_match = scraped_ad
                         best_scraped_idx = s_idx
                         break
@@ -187,6 +324,15 @@ class BazosPortal(AbstractPortal):
                 
                 local_ad["price"] = best_scraped_match["price"]
                 local_ad["days_old"] = days_old_val
+
+                # Pokud má inzerát ještě placeholder popis, dofetchuj reálný z Bazoše
+                _PLACEHOLDER = "Automaticky importovaný inzerát z Bazoše. Doplňte prosím popis."
+                if local_ad.get("description", "").strip() == _PLACEHOLDER:
+                    _details = fetch_bazos_ad_details(best_scraped_match["url"])
+                    if _details["description"]:
+                        local_ad["description"] = _details["description"]
+                    if _details["location"]:
+                        local_ad["location"] = _details["location"]
                 
                 bazos_state_data = {
                     "portal_item_id": portal_item_id,
@@ -196,6 +342,9 @@ class BazosPortal(AbstractPortal):
                     "last_synced": datetime.now().isoformat()
                 }
                 save_listing(local_ad, {"bazos": bazos_state_data})
+                
+                # Stáhnout fotky z Bazoše pouze pokud lokální složka neobsahuje žádné fotky
+                download_bazos_photos_if_missing(best_scraped_match["url"], local_ad.get("local_photos_dir", ""))
                 
                 result.append({
                     "portal_item_id": portal_item_id,
@@ -243,18 +392,23 @@ class BazosPortal(AbstractPortal):
             except Exception:
                 pass
                 
+            # Stáhnout detail inzerátu (popis, lokace) z Bazoše
+            ad_details = fetch_bazos_ad_details(scraped_ad["url"])
+            description_text = ad_details["description"] or "Automaticky importovaný inzerát z Bazoše. Doplňte prosím popis."
+            location_text = ad_details["location"] or user_config.get("location", "Český Krumlov 381 01")
+
             # Založíme nový inzerát v SQLite listings
             listing_id = str(uuid.uuid4())
             new_listing = {
                 "id": listing_id,
                 "title": scraped_ad["title"],
-                "description": "Automaticky importovaný inzerát z Bazoše. Doplňte prosím popis.",
+                "description": description_text,
                 "price": scraped_ad["price"],
                 "category": get_target_domain(scraped_ad["title"], scraped_ad["url"]),
                 "condition": "Aktivní",
                 "local_photos_dir": str(local_ad_photos_dir),
-                "location": user_config.get("location", "Český Krumlov 381 01"),
-                "notes": "Automatický import",
+                "location": location_text,
+                "notes": "",
                 "ad_password_b64": default_pwd_b64,
                 "bookmarklet_uri": "",
                 "days_old": days_old_val,
@@ -273,6 +427,9 @@ class BazosPortal(AbstractPortal):
             }
             
             save_listing(new_listing, {"bazos": bazos_state_data})
+            
+            # Stáhnout fotky z Bazoše pouze pokud lokální složka neobsahuje žádné fotky
+            download_bazos_photos_if_missing(scraped_ad["url"], str(local_ad_photos_dir))
             
             result.append({
                 "portal_item_id": portal_item_id,

@@ -25,9 +25,11 @@ def scrape_listings_from_html(html_content: str) -> List[Dict[str, Any]]:
                 continue
                 
             title_text = a_tag.get_text().strip()
-            ad_url = a_tag.get("href", "")
+            ad_url = a_tag.get("href", "").strip()
             
-            if ad_url.startswith("/"):
+            if ad_url.startswith("//"):
+                ad_url = "https:" + ad_url
+            elif ad_url.startswith("/"):
                 ad_url = "https://www.bazos.cz" + ad_url
             elif not ad_url.startswith("http"):
                 ad_url = "https://" + ad_url

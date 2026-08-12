@@ -24,6 +24,10 @@ bazos_config.json
 bazos_active_listings.json
 bazos_active_listings.json.tmp
 bazos_session.json
+config/session.json
+data/*.db
+scratch/
+data/listings.db
 
 # Local listing photos
 photos/

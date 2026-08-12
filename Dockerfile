@@ -16,6 +16,9 @@ LABEL org.opencontainers.image.title="Listing Hub" \
       org.opencontainers.image.icon="https://raw.githubusercontent.com/onhala/listing-hub/main/static/icon.png" \
       net.unraid.docker.icon="https://raw.githubusercontent.com/onhala/listing-hub/main/static/icon.png"
 
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium

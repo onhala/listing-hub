@@ -693,7 +693,7 @@ input:focus, textarea:focus {
     display: grid;
     grid-template-columns: 1.5fr 1fr;
     gap: 2rem;
-    padding: 2rem;
+    height: 100%;
 }
 
 .editor-fields {

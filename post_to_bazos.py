@@ -417,15 +417,50 @@ def extract_subdomain(url):
         return match.group(1)
     return "dum.bazos.cz"
 
-def get_target_domain(title, original_url=""):
-    if original_url and "nabytek" in original_url:
+def get_target_domain(title, original_url="", category=""):
+    url_lower = (original_url or "").lower()
+    title_lower = (title or "").lower()
+    cat_lower = (category or "").lower()
+
+    if "deti" in url_lower or "deti" in cat_lower:
+        return "deti.bazos.cz"
+    if "nabytek" in url_lower or "nabytek" in cat_lower:
         return "nabytek.bazos.cz"
-    # Fallback podle klíčových slov
-    nabytek_keywords = ["stůl", "židle", "skříň", "komoda", "postel", "matrace", "sedačka", "pohovka", "křeslo", "stoly", "židle", "nabytek", "jídelní", "sedák"]
-    title_lower = title.lower()
-    if any(kw in title_lower for kw in nabytek_keywords):
+    if "sport" in url_lower or "sport" in cat_lower:
+        return "sport.bazos.cz"
+    if "elektro" in url_lower or "elektro" in cat_lower:
+        return "elektro.bazos.cz"
+    if "auto" in url_lower or "auto" in cat_lower:
+        return "auto.bazos.cz"
+    if "moto" in url_lower or "moto" in cat_lower:
+        return "motorky.bazos.cz"
+
+    # Děti / Hračky / Plameňák / Vodní hračky
+    deti_kw = ["plameňák", "hračk", "kočárek", "postýlka", "dětsk", "odrážedlo", "autosedačka", "plena", "bábov"]
+    if any(kw in title_lower or kw in cat_lower for kw in deti_kw):
+        return "deti.bazos.cz"
+
+    # Nábytek
+    nabytek_kw = ["stůl", "židle", "skříň", "komoda", "postel", "matrace", "sedačka", "pohovka", "křeslo", "stoly", "jídelní", "sedák", "skříňka", "polička"]
+    if any(kw in title_lower or kw in cat_lower for kw in nabytek_kw):
         return "nabytek.bazos.cz"
-    return "dum.bazos.cz"
+
+    # Sport / Vodní sporty
+    sport_kw = ["kolo", "lyže", "snowboard", "fitness", "činky", "stan", "spací pytel", "raketa", "kolečkové korčule", "surfing", "paddleboard"]
+    if any(kw in title_lower or kw in cat_lower for kw in sport_kw):
+        return "sport.bazos.cz"
+
+    # Elektro
+    elektro_kw = ["tv", "televize", "telefon", "mobil", "notebook", "počítač", "monitor", "pračka", "lednice", "kávovar", "vysavač", "reproduktor", "sluchátka"]
+    if any(kw in title_lower or kw in cat_lower for kw in elektro_kw):
+        return "elektro.bazos.cz"
+
+    # Dům a Zahrada (sekačky, drtiče, nářadí)
+    dum_kw = ["sekač", "drtič", "štěpkov", "zahrada", "vrtačka", "pila", "křovinořez", "nářadí", "baterie", "gril"]
+    if any(kw in title_lower or kw in cat_lower for kw in dum_kw):
+        return "dum.bazos.cz"
+
+    return "deti.bazos.cz" if ("vodní" in title_lower or "vodní" in cat_lower) else "dum.bazos.cz"
 
 # --- Zobrazení terminálové tabulky (UX) ---
 def display_listings_summary(data):
@@ -1077,8 +1112,11 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                     print(f"  {Colors.GREEN}✓ Možnost 'Smazat' vybrána.{Colors.ENDC}")
                 
                 # Klikneme na odeslat/potvrdit
-                submit_btn = page.locator("input[type='submit'], button[type='submit']")
-                submit_btn.first.click()
+                submit_btn = page.locator("form:has(input[name='heslo']) input[type='submit'], form:has(input[name='heslo']) button[type='submit']")
+                if submit_btn.count() > 0:
+                    submit_btn.first.click()
+                else:
+                    page.locator("input[type='submit'][value*='Potvrdit'], input[type='submit'][value*='Smazat']").first.click()
                 print(f"\n{Colors.GREEN}✓ Formulář odeslán.{Colors.ENDC}")
                 print(f"{Colors.BOLD}👉 Dokonči smazání v prohlížeči (např. výběr důvodu)...{Colors.ENDC}")
                 if not is_web:
@@ -1130,8 +1168,11 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                     radio_edit.click()
                     print(f"  {Colors.GREEN}✓ Vybrána editace inzerátu.{Colors.ENDC}")
                     
-                submit_btn = page.locator("input[type='submit'], button[type='submit']")
-                submit_btn.first.click()
+                submit_btn = page.locator("form:has(input[name='heslo']) input[type='submit'], form:has(input[name='heslo']) button[type='submit']")
+                if submit_btn.count() > 0:
+                    submit_btn.first.click()
+                else:
+                    page.locator("input[type='submit'][value*='Upravit'], input[type='submit'][value*='Potvrdit']").first.click()
                 
                 # Čekáme na načtení editačního formuláře ceny
                 price_input = page.locator("input[name='cena'], #cena")
@@ -1170,7 +1211,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
 
         # --- AKCE: POST / VYSTAVENÍ (DEFAULT) ---
         else:
-            target_domain = get_target_domain(title, url)
+            target_domain = get_target_domain(title, url, ad.get("category", ""))
             print(f"\n{Colors.BLUE}Směřuji na přidání inzerátu: https://{target_domain}/pridat-inzerat.php{Colors.ENDC}")
             page.goto(f"https://{target_domain}/pridat-inzerat.php")
             
@@ -1311,10 +1352,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                             terms_checkbox.check()
                         print(f"\n{Colors.GREEN}[Krok 1] Telefonní číslo a souhlas vyplněny!{Colors.ENDC}")
                         
-                        # Automaticky odešleme formulář krok 1
-                        submit_btn = page.locator("input[type='submit']")
-                        if submit_btn.count() > 0:
-                            submit_btn.first.click()
+                        # Automaticky odešleme formulář krok 1 (musíme vybrat tlačítko ve formuláři, ne vyhledávání v hlavičce!)
+                        form_submit = page.locator("form:has(input[name='teloverit']) input[type='submit'], form:has(input[name='teloverit']) input[value*='Odesl'], form:has(input[name='teloverit']) input[value*='Ověř']")
+                        if form_submit.count() > 0 and form_submit.first.is_visible(timeout=1000):
+                            form_submit.first.click()
                         else:
                             phone_input.press("Enter")
                             

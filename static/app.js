@@ -58,6 +58,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const restartStatus = document.getElementById("restart-status");
     const appVersionLabel = document.getElementById("app-version-label");
 
+    // Lightbox modal elements
+    const lightboxModal = document.getElementById("lightbox-modal");
+    const lightboxImg = document.getElementById("lightbox-img");
+    const lightboxCaption = document.getElementById("lightbox-caption");
+    const closeLightboxBtn = document.getElementById("close-lightbox-btn");
+
+    function openLightbox(dataUrl, filename) {
+        if (lightboxModal && lightboxImg) {
+            lightboxImg.src = dataUrl;
+            lightboxCaption.textContent = filename || "";
+            lightboxModal.style.display = "flex";
+        }
+    }
+
     // Modals
     const addListingModal = document.getElementById("add-listing-modal");
     const editListingModal = document.getElementById("edit-listing-modal");
@@ -202,9 +216,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
                 
                 // Formátování textu verze v sidebaru
+                const commitHash = (data.local_hash && data.local_hash !== "unknown") 
+                    ? data.local_hash 
+                    : (data.latest_hash && data.latest_hash !== "unknown" ? data.latest_hash : "");
+
                 let versionText = "v3.2.0";
-                if (data.local_hash && data.local_hash !== "unknown") {
-                    versionText += ` (${data.local_hash})`;
+                if (commitHash) {
+                    versionText += ` (${commitHash.substring(0, 7)})`;
                 }
                 if (data.is_docker) {
                     versionText += " [Docker]";
@@ -562,6 +580,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             renderPhotoGallery(data.photos);
         } catch (e) {
+            console.error("Chyba při loadPhotoGallery:", e);
             photoGalleryGrid.innerHTML = '<p class="photo-gallery-empty">Nepodařilo se načíst fotky.</p>';
         }
     };
@@ -625,7 +644,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (!files || files.length === 0) return;
 
-        showNotification("Zpracovávám a komprimuji fotky...", "info");
+        const count = files.length;
+        showNotification(`Zpracovávám a komprimuji ${count} ${count === 1 ? "fotku" : count < 5 ? "fotky" : "fotek"}...`, "info");
+        
         const compressedFiles = [];
         for (let i = 0; i < files.length; i++) {
             const comp = await compressImageFile(files[i]);
@@ -638,7 +659,7 @@ document.addEventListener("DOMContentLoaded", () => {
             formData.append("photos", file);
         }
 
-        showNotification("Nahrávám fotky na server...", "info");
+        showNotification(`Nahrávám ${compressedFiles.length} ${compressedFiles.length === 1 ? "fotku" : compressedFiles.length < 5 ? "fotky" : "fotek"}...`, "info");
         try {
             const res = await fetch(API.uploadPhotos, {
                 method: "POST",
@@ -681,7 +702,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const editPhotoFileInput = document.getElementById("edit-photo-file-input");
 
     if (photoDropzone && editPhotoFileInput) {
-        photoDropzone.addEventListener("click", () => editPhotoFileInput.click());
+        photoDropzone.addEventListener("click", (e) => {
+            // Prevent file picker if user clicked button or gallery child
+            if (e.target.closest("button") || e.target.closest(".photo-thumb-wrapper") || e.target.closest(".btn")) return;
+            editPhotoFileInput.click();
+        });
 
         editPhotoFileInput.addEventListener("change", (e) => {
             if (e.target.files && e.target.files.length > 0) {
@@ -692,8 +717,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         photoDropzone.addEventListener("dragover", (e) => {
             e.preventDefault();
-            photoDropzone.style.background = "rgba(59, 130, 246, 0.15)";
-            photoDropzone.style.borderColor = "var(--primary-color, #3b82f6)";
+            if (draggedItemIdx === null) {
+                photoDropzone.style.background = "rgba(59, 130, 246, 0.15)";
+                photoDropzone.style.borderColor = "var(--primary-color, #3b82f6)";
+            }
         });
 
         photoDropzone.addEventListener("dragleave", (e) => {
@@ -706,6 +733,10 @@ document.addEventListener("DOMContentLoaded", () => {
             e.preventDefault();
             photoDropzone.style.background = "rgba(255, 255, 255, 0.03)";
             photoDropzone.style.borderColor = "var(--border-color, #cbd5e1)";
+            
+            // Ignore if internal photo drag-to-reorder
+            if (draggedItemIdx !== null) return;
+
             if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 handlePhotoUpload(e.dataTransfer.files);
             }
@@ -732,6 +763,18 @@ document.addEventListener("DOMContentLoaded", () => {
             img.src = photo.data_url || "";
             img.alt = photo.filename;
             img.loading = "lazy";
+            img.style.cursor = "pointer";
+            img.onerror = () => {
+                img.style.display = "none";
+                const placeholder = document.createElement("div");
+                placeholder.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;min-height:80px;color:#64748b;font-size:0.72rem;gap:4px;padding:8px;box-sizing:border-box;";
+                placeholder.innerHTML = `<i class="fa-solid fa-image-slash" style="font-size:1.4rem;color:#475569;"></i><span style="text-align:center;word-break:break-all;">${photo.filename}</span><span style="color:#ef4444;font-size:0.65rem;">Poškozená fotka</span>`;
+                wrapper.insertBefore(placeholder, img);
+            };
+            img.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (photo.data_url) openLightbox(photo.data_url, photo.filename);
+            });
 
             // Cover Badge on 1st photo
             if (idx === 0) {
@@ -742,14 +785,53 @@ document.addEventListener("DOMContentLoaded", () => {
                 wrapper.appendChild(coverBadge);
             }
 
+            // Drag Grip Handle (top right)
+            const gripIcon = document.createElement("div");
+            gripIcon.className = "drag-grip-handle";
+            gripIcon.style.cssText = "position: absolute; top: 6px; right: 6px; background: rgba(15, 23, 42, 0.75); color: #cbd5e1; border-radius: 4px; padding: 2px 5px; font-size: 0.72rem; z-index: 5; pointer-events: none; backdrop-filter: blur(2px); border: 1px solid rgba(255,255,255,0.1);";
+            gripIcon.title = "Přetáhněte pro změnu pořadí";
+            gripIcon.innerHTML = '<i class="fa-solid fa-grip-vertical"></i>';
+            wrapper.appendChild(gripIcon);
+
             // Controls Overlay Action Buttons
             const overlay = document.createElement("div");
             overlay.className = "photo-actions-overlay";
-            overlay.style.cssText = "position: absolute; bottom: 0; left: 0; right: 0; background: rgba(15, 23, 42, 0.85); display: flex; justify-content: space-around; align-items: center; padding: 4px; backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.2s; z-index: 4;";
+            overlay.style.cssText = "position: absolute; bottom: 0; left: 0; right: 0; background: rgba(15, 23, 42, 0.88); display: flex; justify-content: space-around; align-items: center; padding: 6px 4px; backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.2s; z-index: 6;";
             
             // Show overlay on hover
             wrapper.addEventListener("mouseenter", () => overlay.style.opacity = "1");
             wrapper.addEventListener("mouseleave", () => overlay.style.opacity = "0");
+
+            // 0. Set as Cover Photo button (for index > 0)
+            if (idx > 0) {
+                const btnSetCover = document.createElement("button");
+                btnSetCover.type = "button";
+                btnSetCover.title = "Nastavit jako Hlavní titulní fotku";
+                btnSetCover.style.cssText = "background: none; border: none; color: #f59e0b; cursor: pointer; padding: 4px; font-size: 0.9rem;";
+                btnSetCover.innerHTML = '<i class="fa-solid fa-star"></i>';
+                btnSetCover.addEventListener("click", async (e) => {
+                    e.stopPropagation();
+                    showNotification("Nastavuji jako Hlavní fotku...", "info");
+                    const reordered = [...currentPhotosList];
+                    const [movedItem] = reordered.splice(idx, 1);
+                    reordered.splice(0, 0, movedItem);
+                    const filenames = reordered.map(p => p.filename);
+                    try {
+                        const res = await fetch("/api/photos/reorder", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ photos_dir: editPhotosDir.value, filenames: filenames })
+                        });
+                        if (res.ok) {
+                            showNotification("Hlavní fotka byla nastavena!", "success");
+                            loadPhotoGallery(editPhotosDir.value);
+                        }
+                    } catch (err) {
+                        showNotification("Chyba při nastavování hlavní fotky.", "error");
+                    }
+                });
+                overlay.appendChild(btnSetCover);
+            }
 
             // 1. Toggle Include/Exclude button
             const btnToggle = document.createElement("button");
@@ -892,18 +974,11 @@ document.addEventListener("DOMContentLoaded", () => {
         updatePhotoCount(photos.length);
     };
 
-    // Lightbox modal logic
-    const lightboxModal = document.getElementById("lightbox-modal");
-    const lightboxImg = document.getElementById("lightbox-img");
-    const lightboxCaption = document.getElementById("lightbox-caption");
-    const closeLightboxBtn = document.getElementById("close-lightbox-btn");
-
-    const openLightbox = (dataUrl, filename) => {
-        if (lightboxModal && lightboxImg) {
-            lightboxImg.src = dataUrl;
-            lightboxCaption.textContent = filename;
-            lightboxModal.style.display = "flex";
-        }
+    const updatePhotoCount = (total) => {
+        if (!photoCountLabel) return;
+        const included = total - excludedPhotos.size;
+        photoCountLabel.textContent = `${included} / ${total} fotek bude nahráno`;
+        photoCountLabel.style.color = excludedPhotos.size > 0 ? "var(--warning, #f39c12)" : "var(--text-muted)";
     };
 
     if (closeLightboxBtn && lightboxModal) {
@@ -913,126 +988,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    const handlePhotoUpload = async (files) => {
-        const photosDir = editPhotosDir.value;
-        if (!photosDir) {
-            showNotification("Složka pro fotky není nastavená.", "error");
-            return;
-        }
-        if (!files || files.length === 0) return;
 
-        const formData = new FormData();
-        formData.append("photos_dir", photosDir);
-        for (let i = 0; i < files.length; i++) {
-            formData.append("photos", files[i]);
-        }
-
-        showNotification("Nahrávám fotky na server...", "info");
-        try {
-            const res = await fetch(API.uploadPhotos, {
-                method: "POST",
-                body: formData
-            });
-            const data = await res.json();
-            if (res.ok && data.status === "success") {
-                showNotification(data.message || "Fotky byly úspěšně nahrány!", "success");
-                loadPhotoGallery(photosDir);
-            } else {
-                showNotification(data.message || "Chyba při nahrávání fotek.", "error");
-            }
-        } catch (err) {
-            showNotification("Chyba při nahrávání fotek.", "error");
-        }
-    };
-
-    const photoDropzone = document.getElementById("photo-dropzone");
-    const editPhotoFileInput = document.getElementById("edit-photo-file-input");
-
-    if (photoDropzone && editPhotoFileInput) {
-        photoDropzone.addEventListener("click", () => editPhotoFileInput.click());
-
-        editPhotoFileInput.addEventListener("change", (e) => {
-            if (e.target.files && e.target.files.length > 0) {
-                handlePhotoUpload(e.target.files);
-                e.target.value = "";
-            }
-        });
-
-        photoDropzone.addEventListener("dragover", (e) => {
-            e.preventDefault();
-            photoDropzone.style.background = "rgba(59, 130, 246, 0.15)";
-            photoDropzone.style.borderColor = "var(--primary-color, #3b82f6)";
-        });
-
-        photoDropzone.addEventListener("dragleave", (e) => {
-            e.preventDefault();
-            photoDropzone.style.background = "rgba(255, 255, 255, 0.03)";
-            photoDropzone.style.borderColor = "var(--border-color, #cbd5e1)";
-        });
-
-        photoDropzone.addEventListener("drop", (e) => {
-            e.preventDefault();
-            photoDropzone.style.background = "rgba(255, 255, 255, 0.03)";
-            photoDropzone.style.borderColor = "var(--border-color, #cbd5e1)";
-            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                handlePhotoUpload(e.dataTransfer.files);
-            }
-        });
-    }
-
-    const renderPhotoGallery = (photos) => {
-        photoGalleryGrid.innerHTML = "";
-        photos.forEach(photo => {
-            const isExcluded = excludedPhotos.has(photo.filename);
-            const wrapper = document.createElement("div");
-            wrapper.className = `photo-thumb-wrapper${isExcluded ? " excluded" : ""}`;
-            wrapper.dataset.filename = photo.filename;
-            wrapper.title = isExcluded ? `${photo.filename} — PŘESKOČIT` : photo.filename;
-
-            const img = document.createElement("img");
-            img.src = photo.data_url || "";
-            img.alt = photo.filename;
-            img.loading = "lazy";
-
-            const icon = document.createElement("div");
-            icon.className = "photo-exclude-icon";
-            icon.innerHTML = isExcluded
-                ? '<i class="fa-solid fa-xmark"></i>'
-                : '<i class="fa-solid fa-check"></i>';
-
-            const nameLabel = document.createElement("div");
-            nameLabel.className = "photo-thumb-name";
-            nameLabel.textContent = photo.filename;
-
-            wrapper.appendChild(img);
-            wrapper.appendChild(icon);
-            wrapper.appendChild(nameLabel);
-
-            wrapper.addEventListener("click", () => {
-                if (excludedPhotos.has(photo.filename)) {
-                    excludedPhotos.delete(photo.filename);
-                    wrapper.classList.remove("excluded");
-                    wrapper.title = photo.filename;
-                    icon.innerHTML = '<i class="fa-solid fa-check"></i>';
-                } else {
-                    excludedPhotos.add(photo.filename);
-                    wrapper.classList.add("excluded");
-                    wrapper.title = `${photo.filename} — PŘESKOČIT`;
-                    icon.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-                }
-                updatePhotoCount(photos.length);
-            });
-
-            photoGalleryGrid.appendChild(wrapper);
-        });
-        updatePhotoCount(photos.length);
-    };
-
-    const updatePhotoCount = (total) => {
-        const included = total - excludedPhotos.size;
-        photoCountLabel.textContent = `${included} / ${total} fotek bude nahráno`;
-        photoCountLabel.style.color = excludedPhotos.size > 0 ? "var(--warning, #f39c12)" : "var(--text-muted)";
-    };
 
     // Uložit změny v detailu inzerátu
     document.getElementById("btn-save-listing-changes").addEventListener("click", async () => {
@@ -1656,31 +1612,184 @@ document.addEventListener("DOMContentLoaded", () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action: "click", x: clickX, y: clickY })
             });
+
+            const hiddenInput = document.getElementById("screencast-hidden-input");
+            if (hiddenInput) {
+                hiddenInput.focus();
+            }
         };
 
         canvasElem.addEventListener("mousedown", handleCanvasClick);
 
-        document.addEventListener("keydown", (e) => {
+        // Plynulé skrolování kolečkem myši / touchpadem (Mouse Wheel Scroll)
+        canvasElem.addEventListener("wheel", (e) => {
             const toggleInteractive = document.getElementById("vnc-interactive-toggle");
             const browserTab = document.getElementById("tab-browser");
             if (!toggleInteractive || !toggleInteractive.checked || !browserTab || !browserTab.classList.contains("active")) return;
-            
-            if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
-            
-            if (e.key.length === 1) {
+
+            e.preventDefault();
+            const rect = canvasElem.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+
+            const scaleX = canvasWidth / rect.width;
+            const scaleY = canvasHeight / rect.height;
+            const scrollX = Math.round((e.clientX - rect.left) * scaleX);
+            const scrollY = Math.round((e.clientY - rect.top) * scaleY);
+
+            fetch("/api/screencast/input", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "scroll",
+                    x: scrollX,
+                    y: scrollY,
+                    deltaX: Math.round(e.deltaX),
+                    deltaY: Math.round(e.deltaY)
+                })
+            });
+        }, { passive: false });
+
+        // Nativní zachytávání psaní přes skryté fokusační pole (Invisible Input Capture Layer)
+        const hiddenInput = document.getElementById("screencast-hidden-input");
+        if (hiddenInput) {
+            hiddenInput.addEventListener("input", (e) => {
+                const toggleInteractive = document.getElementById("vnc-interactive-toggle");
+                const browserTab = document.getElementById("tab-browser");
+                if (!toggleInteractive || !toggleInteractive.checked || !browserTab || !browserTab.classList.contains("active")) return;
+
+                const textVal = hiddenInput.value;
+                if (!textVal) return;
+                hiddenInput.value = "";
+
                 fetch("/api/screencast/input", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "type", text: e.key })
+                    body: JSON.stringify({ action: "type", text: textVal })
                 });
-            } else if (["Backspace", "Enter", "Tab", "Escape"].includes(e.key)) {
+            });
+
+            hiddenInput.addEventListener("keydown", (e) => {
+                const toggleInteractive = document.getElementById("vnc-interactive-toggle");
+                const browserTab = document.getElementById("tab-browser");
+                if (!toggleInteractive || !toggleInteractive.checked || !browserTab || !browserTab.classList.contains("active")) return;
+
+                if (["Backspace", "Enter", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Delete"].includes(e.key)) {
+                    e.preventDefault();
+                    fetch("/api/screencast/input", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "key", key: e.key })
+                    });
+                }
+            });
+        }
+
+        // Postranní posuvník a skrolovací tlačítka
+        const btnScrollUp = document.getElementById("btn-scroll-up");
+        const btnScrollDown = document.getElementById("btn-scroll-down");
+        const scrollTrack = document.getElementById("screencast-scroll-track");
+        const scrollThumb = document.getElementById("screencast-scroll-thumb");
+
+        const sendScrollCmd = (dy) => {
+            fetch("/api/screencast/input", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "scroll", x: 600, y: 400, deltaX: 0, deltaY: dy })
+            });
+        };
+
+        if (btnScrollUp) {
+            btnScrollUp.onclick = (e) => { e.preventDefault(); sendScrollCmd(-300); };
+        }
+        if (btnScrollDown) {
+            btnScrollDown.onclick = (e) => { e.preventDefault(); sendScrollCmd(300); };
+        }
+
+        if (scrollTrack && scrollThumb) {
+            let isDragging = false;
+            let startY = 0;
+            let startThumbTop = 0;
+
+            scrollTrack.onclick = (e) => {
+                if (e.target === scrollThumb) return;
+                const rect = scrollTrack.getBoundingClientRect();
+                const clickRatio = (e.clientY - rect.top) / rect.height;
+                const targetTop = Math.max(0, Math.min(rect.height - scrollThumb.offsetHeight, clickRatio * rect.height));
+                scrollThumb.style.top = `${targetTop}px`;
+                sendScrollCmd((clickRatio - 0.5) * 600);
+            };
+
+            scrollThumb.onmousedown = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                isDragging = true;
+                startY = e.clientY;
+                startThumbTop = scrollThumb.offsetTop;
+            };
+
+            document.addEventListener("mousemove", (e) => {
+                if (!isDragging || !scrollTrack || !scrollThumb) return;
+                const rect = scrollTrack.getBoundingClientRect();
+                const dy = e.clientY - startY;
+                const maxTop = rect.height - scrollThumb.offsetHeight;
+                const newTop = Math.max(0, Math.min(maxTop, startThumbTop + dy));
+                scrollThumb.style.top = `${newTop}px`;
+                sendScrollCmd(dy * 4);
+                startY = e.clientY;
+                startThumbTop = newTop;
+            });
+
+            document.addEventListener("mouseup", () => {
+                isDragging = false;
+            });
+        }
+
+        // Quick Text / SMS bar handler
+        const sendQuickText = () => {
+            const input = document.getElementById("screencast-quick-text");
+            if (!input || !input.value) return;
+            const textVal = input.value.trim();
+            if (!textVal) return;
+            input.value = "";
+            
+            // Try direct SMS code submission endpoint first
+            fetch("/api/sms_code", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code: textVal })
+            }).then(r => r.json()).then(res => {
+                if (!res.submitted) {
+                    fetch("/api/screencast/input", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "type", text: textVal })
+                    });
+                }
+            }).catch(() => {
                 fetch("/api/screencast/input", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "key", key: e.key })
+                    body: JSON.stringify({ action: "type", text: textVal })
                 });
-            }
-        });
+            });
+        };
+
+        const btnQuickText = document.getElementById("btn-send-quick-text");
+        if (btnQuickText) {
+            btnQuickText.onclick = (e) => {
+                e.preventDefault();
+                sendQuickText();
+            };
+        }
+        const inputQuickText = document.getElementById("screencast-quick-text");
+        if (inputQuickText) {
+            inputQuickText.onkeydown = (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    sendQuickText();
+                }
+            };
+        }
     }
 
     const btnReloadVnc = document.getElementById("btn-reload-vnc");
@@ -1717,6 +1826,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Systémová notifikace (luxusní toast)
     const showNotification = (message, type = "info") => {
+        let container = document.getElementById("toast-container");
+        if (!container) {
+            container = document.createElement("div");
+            container.id = "toast-container";
+            Object.assign(container.style, {
+                position: "fixed",
+                top: "1.5rem",
+                right: "1.5rem",
+                zIndex: "99999",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                pointerEvents: "none",
+                maxWidth: "420px"
+            });
+            document.body.appendChild(container);
+        }
+
         const toast = document.createElement("div");
         toast.className = `toast-notification ${type}`;
         
@@ -1730,31 +1857,25 @@ document.addEventListener("DOMContentLoaded", () => {
             <span>${message}</span>
         `;
 
-        // Stylování a vložení toastu na stránku
         Object.assign(toast.style, {
-            position: "fixed",
-            top: "2rem",
-            right: "2rem",
-            background: "rgba(15, 12, 32, 0.9)",
-            border: `1px solid ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--primary)'}`,
-            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
+            background: "rgba(15, 23, 42, 0.95)",
+            border: `1px solid ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'}`,
+            boxShadow: "0 10px 25px rgba(0, 0, 0, 0.5)",
             backdropFilter: "blur(10px)",
             color: "#fff",
-            padding: "1rem 1.5rem",
-            borderRadius: "12px",
+            padding: "0.85rem 1.25rem",
+            borderRadius: "10px",
             display: "flex",
             alignItems: "center",
-            gap: "0.85rem",
-            zIndex: "9999",
+            gap: "0.75rem",
             opacity: "0",
-            transform: "translateY(-20px)",
+            transform: "translateY(-15px)",
             transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
-            pointerEvents: "none",
-            fontSize: "0.9rem",
+            fontSize: "0.88rem",
             fontWeight: "500"
         });
 
-        document.body.appendChild(toast);
+        container.appendChild(toast);
 
         // Animace naběhnutí
         setTimeout(() => {
@@ -1765,7 +1886,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Animace odstranění
         setTimeout(() => {
             toast.style.opacity = "0";
-            toast.style.transform = "translateY(-20px)";
+            toast.style.transform = "translateY(-15px)";
             setTimeout(() => {
                 toast.remove();
             }, 300);
@@ -1983,14 +2104,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Pomocná funkce pro bezpečné parsování HTML
-    const escapeHtml = (unsafe) => {
-        return unsafe
+    function escapeHtml(unsafe) {
+        if (!unsafe) return "";
+        return String(unsafe)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
-    };
+    }
 
     // --- Start up ---
     loadApp();

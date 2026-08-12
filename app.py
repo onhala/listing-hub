@@ -15,7 +15,7 @@ import threading
 import asyncio
 
 from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, LISTINGS_PATH, session_manager
-from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH
+from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH, PHOTOS_DIR, PROJECT_ROOT
 import uuid
 import listing_hub.core.db as db
 from listing_hub.ai.gemini import improve_text_with_gemini
@@ -196,10 +196,106 @@ def screencast_input():
             key = data.get("key", "")
             success = session_manager.send_cdp_key(key)
             return jsonify({"status": "ok" if success else "error", "action": "key", "key": key})
+        elif action == "scroll":
+            x = data.get("x", 0)
+            y = data.get("y", 0)
+            delta_x = data.get("deltaX", 0)
+            delta_y = data.get("deltaY", 0)
+            success = session_manager.send_cdp_scroll(x, y, delta_x, delta_y)
+            return jsonify({"status": "ok" if success else "error", "action": "scroll"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
         
-    return jsonify({"status": "ignored"}), 400
+@app.route("/api/sms_code", methods=["POST"])
+def submit_sms_code():
+    data = request.json or {}
+    code = data.get("code", "").strip()
+    if not code:
+        return jsonify({"status": "error", "message": "SMS kód je prázdný"}), 400
+        
+    def _fill_sms(page, *args):
+        selectors = [
+            "input[name='kodd']",
+            "input[name='klic']",
+            "input[name='cr']",
+            "input[name='kod']",
+            "input[name='overkod']",
+            "input[maxlength='6']",
+            "input[placeholder*='kód']",
+            "input[placeholder*='kod']",
+        ]
+        code_input = None
+        for sel in selectors:
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                code_input = loc.first
+                break
+                
+        if not code_input:
+            for inp in page.locator("input[type='text'], input[type='number'], input:not([type])").all():
+                try:
+                    name = (inp.get_attribute("name") or "").lower()
+                    if inp.is_visible() and name not in ("hledat", "hlokalita", "mail", "email", "telefon", "telefoni", "cena", "nadpis"):
+                        code_input = inp
+                        break
+                except Exception:
+                    pass
+
+        if not code_input:
+            overit_btn = page.locator("input[type='submit'][value='Ověřit'], input[type='submit'][value*='Ověř']")
+            if overit_btn.count() > 0 and overit_btn.first.is_visible():
+                overit_btn.first.click()
+                time.sleep(1.5)
+                for sel in selectors:
+                    loc = page.locator(sel)
+                    if loc.count() > 0 and loc.first.is_visible():
+                        code_input = loc.first
+                        break
+
+        if code_input:
+            code_input.fill(code)
+            time.sleep(0.5)
+            submit_btn = page.locator("input[type='submit'][value*='Vypsat'], input[type='submit'][value*='Ověř'], input[type='submit'][value*='Potvrd'], form:has(input[name='kodd']) input[type='submit']")
+            if submit_btn.count() > 0 and submit_btn.first.is_visible():
+                submit_btn.first.click()
+            else:
+                page.keyboard.press("Enter")
+            return True
+        return False
+        
+    try:
+        success = session_manager.run_on_worker(_fill_sms)
+        return jsonify({"status": "ok" if success else "error", "submitted": success})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/debug/page")
+def debug_page():
+    def _inspect(page, *args):
+        if not page or page.is_closed():
+            return {"status": "closed"}
+        url = page.url
+        title = page.title()
+        inputs = []
+        try:
+            for inp in page.locator("input, textarea, select").all():
+                try:
+                    inputs.append({
+                        "name": inp.get_attribute("name"),
+                        "type": inp.get_attribute("type"),
+                        "value": inp.get_attribute("value"),
+                        "visible": inp.is_visible()
+                    })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return {"url": url, "title": title, "inputs": inputs}
+    try:
+        res = session_manager.run_on_worker(_inspect)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 def count_photos(photos_dir, excluded_list=None):
     if not photos_dir or not os.path.isdir(photos_dir):
@@ -248,6 +344,17 @@ def get_listings():
         elif aukro_state:
             status = aukro_state.get("status", "Aktivní")
             
+        photos_dir = ad.get("local_photos_dir")
+        p_count = 0
+        if photos_dir:
+            try:
+                p_path = Path(photos_dir) if Path(photos_dir).is_absolute() else (PROJECT_ROOT / photos_dir)
+                if p_path.exists():
+                    all_imgs = [f for f in os.listdir(p_path) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+                    p_count = len(all_imgs)
+            except Exception:
+                pass
+
         ad_dict = {
             "id": ad.get("id"),
             "title": ad.get("title"),
@@ -256,6 +363,8 @@ def get_listings():
             "category": ad.get("category"),
             "condition": ad.get("condition"),
             "local_photos_dir": ad.get("local_photos_dir"),
+            "photos_count": p_count,
+            "photos_upload_count": min(p_count, 10),
             "location": ad.get("location"),
             "notes": ad.get("notes"),
             "target_bazos": ad.get("target_bazos"),
@@ -278,15 +387,24 @@ def get_listings():
         "sold_listings": sold_listings
     })
 
+def resolve_photos_dir(raw_photos_dir: str) -> str:
+    if not raw_photos_dir:
+        return str(PHOTOS_DIR)
+    p = Path(raw_photos_dir)
+    if p.is_absolute():
+        return str(p)
+    return str(PROJECT_ROOT / p)
+
 @app.route("/api/photos", methods=["GET"])
 def get_photos():
-    photos_dir = request.args.get("photos_dir", "")
+    raw_dir = request.args.get("photos_dir", "")
+    photos_dir = resolve_photos_dir(raw_dir)
     if not photos_dir or not os.path.isdir(photos_dir):
         return jsonify({"photos": []})
     try:
         raw_files = os.listdir(photos_dir)
         img_files = sorted(
-            [f for f in raw_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))],
+            [f for f in raw_files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))],
             key=lambda x: (not x.startswith("foto_"), x)
         )
         photos = []
@@ -296,7 +414,7 @@ def get_photos():
                 with open(fpath, "rb") as f:
                     data = base64.b64encode(f.read()).decode("utf-8")
                 ext = fname.rsplit(".", 1)[-1].lower()
-                mime = "image/jpeg" if ext in ("jpg", "jpeg") else "image/png"
+                mime = "image/jpeg" if ext in ("jpg", "jpeg") else ("image/webp" if ext == "webp" else "image/png")
                 photos.append({"filename": fname, "data_url": f"data:{mime};base64,{data}"})
             except Exception:
                 photos.append({"filename": fname, "data_url": ""})
@@ -307,7 +425,8 @@ def get_photos():
 @app.route("/api/photos/upload", methods=["POST"])
 def upload_photos():
     try:
-        photos_dir = request.form.get("photos_dir", "").strip()
+        raw_dir = request.form.get("photos_dir", "").strip()
+        photos_dir = resolve_photos_dir(raw_dir)
         if not photos_dir:
             return jsonify({"status": "error", "message": "Chybí složka pro fotky."}), 400
             
@@ -326,6 +445,10 @@ def upload_photos():
                 ext = orig_filename.rsplit(".", 1)[-1].lower() if "." in orig_filename else "jpg"
                 if ext not in ("jpg", "jpeg", "png", "webp"):
                     ext = "jpg"
+                
+                while os.path.exists(os.path.join(photos_dir, f"foto_{counter}.{ext}")):
+                    counter += 1
+
                 filename = f"foto_{counter}.{ext}"
                 counter += 1
                 save_path = os.path.join(photos_dir, filename)
@@ -340,7 +463,8 @@ def upload_photos():
 def delete_photo():
     try:
         data = request.json or {}
-        photos_dir = data.get("photos_dir", "").strip()
+        raw_dir = data.get("photos_dir", "").strip()
+        photos_dir = resolve_photos_dir(raw_dir)
         filename = data.get("filename", "").strip()
         if not photos_dir or not filename:
             return jsonify({"status": "error", "message": "Chybí složka nebo název fotky."}), 400
@@ -357,7 +481,8 @@ def delete_photo():
 def rotate_photo():
     try:
         data = request.json or {}
-        photos_dir = data.get("photos_dir", "").strip()
+        raw_dir = data.get("photos_dir", "").strip()
+        photos_dir = resolve_photos_dir(raw_dir)
         filename = data.get("filename", "").strip()
         angle = int(data.get("angle", 90))
         if not photos_dir or not filename:
@@ -365,7 +490,7 @@ def rotate_photo():
 
         file_path = os.path.join(photos_dir, filename)
         if not os.path.exists(file_path):
-            return jsonify({"status": "error", "message": "Fotka nenalezena."}), 404
+            return jsonify({"status": "error", "message": f"Fotka '{filename}' nenalezena ve složce '{photos_dir}'."}), 404
 
         try:
             from PIL import Image, ImageOps
@@ -383,7 +508,8 @@ def rotate_photo():
 def reorder_photos():
     try:
         data = request.json or {}
-        photos_dir = data.get("photos_dir", "").strip()
+        raw_dir = data.get("photos_dir", "").strip()
+        photos_dir = resolve_photos_dir(raw_dir)
         filenames = data.get("filenames", [])
         if not photos_dir or not os.path.isdir(photos_dir) or not filenames:
             return jsonify({"status": "error", "message": "Chybí složka nebo seznam fotek."}), 400
@@ -433,11 +559,12 @@ def check_version():
     import subprocess
     
     # 1. Zjistíme lokální commit hash
-    local_hash = "unknown"
-    try:
-        local_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    except Exception:
-        pass
+    local_hash = os.environ.get("GIT_COMMIT_SHA", "unknown").strip()
+    if local_hash == "unknown":
+        try:
+            local_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        except Exception:
+            pass
         
     # 2. Zjistíme nejnovější commit hash z GitHubu
     latest_hash = "unknown"
@@ -703,12 +830,16 @@ def action_status():
 def cancel_action():
     global playwright_process
     try:
-        if playwright_process and playwright_process.is_alive():
-            log_debug("CANCEL: Cancelling active worker thread")
-            # Zapíšeme, že operace byla přerušena
-            with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
-                f.write("Operace byla přerušena uživatelem.")
-                
+        log_debug("CANCEL: Cancelling active worker thread and closing browser session")
+        with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
+            f.write("Operace byla přerušena uživatelem.")
+        
+        try:
+            session_manager.cancel_current_action()
+        except Exception as sm_e:
+            log_debug(f"CANCEL: session_manager.cancel_current_action error: {sm_e}")
+
+        playwright_process = None
         return jsonify({"status": "success", "message": "Operace byla přerušena."})
     except Exception as e:
         log_debug(f"CANCEL ERR: {e}")
