@@ -389,10 +389,17 @@
                             </div>
                         </div>
                         <div class="form-group full-width">
-                            <label>
-                                Fotky k nahrání na Bazoš
-                                <span id="photo-count-label" class="input-hint" style="margin-left:8px;"></span>
+                            <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                <span>Fotky k nahrání na Bazoš <span id="photo-count-label" class="input-hint" style="margin-left:8px;"></span></span>
+                                <label for="edit-photo-file-input" class="btn btn-secondary btn-sm" style="margin: 0; padding: 4px 10px; font-size: 0.8rem; cursor: pointer;">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Nahrát fotky
+                                </label>
                             </label>
+                            <input type="file" id="edit-photo-file-input" multiple accept="image/*" style="display: none;">
+                            <div id="photo-dropzone" class="photo-dropzone" style="border: 2px dashed var(--border-color, #cbd5e1); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; margin-bottom: 12px; background: rgba(255,255,255,0.03); transition: all 0.2s;">
+                                <i class="fa-solid fa-images" style="font-size: 1.2rem; color: var(--primary-color, #3b82f6); margin-bottom: 4px;"></i>
+                                <p style="margin: 0; font-size: 0.82rem; color: var(--text-color, #94a3b8);">Přetáhni sem fotky z počítače nebo klikni pro výběr</p>
+                            </div>
                             <div id="photo-gallery-grid" class="photo-gallery-grid">
                                 <p class="photo-gallery-empty">Načítám fotky ze složky...</p>
                             </div>

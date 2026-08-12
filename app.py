@@ -304,6 +304,38 @@ def get_photos():
     except Exception as e:
         return jsonify({"error": str(e), "photos": []}), 500
 
+@app.route("/api/photos/upload", methods=["POST"])
+def upload_photos():
+    try:
+        photos_dir = request.form.get("photos_dir", "").strip()
+        if not photos_dir:
+            return jsonify({"status": "error", "message": "Chybí složka pro fotky."}), 400
+            
+        os.makedirs(photos_dir, exist_ok=True)
+        uploaded_files = request.files.getlist("photos") or request.files.getlist("files")
+        if not uploaded_files:
+            return jsonify({"status": "error", "message": "Nebyly přiloženy žádné fotky."}), 400
+
+        existing = [f for f in os.listdir(photos_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+        counter = len(existing) + 1
+        saved = []
+
+        for file in uploaded_files:
+            if file and file.filename:
+                orig_filename = file.filename
+                ext = orig_filename.rsplit(".", 1)[-1].lower() if "." in orig_filename else "jpg"
+                if ext not in ("jpg", "jpeg", "png", "webp"):
+                    ext = "jpg"
+                filename = f"foto_{counter}.{ext}"
+                counter += 1
+                save_path = os.path.join(photos_dir, filename)
+                file.save(save_path)
+                saved.append(filename)
+
+        return jsonify({"status": "success", "message": f"Úspěšně nahráno {len(saved)} fotek.", "saved_files": saved})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route("/api/config", methods=["GET"])
 def get_config():

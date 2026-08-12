@@ -107,7 +107,8 @@ document.addEventListener("DOMContentLoaded", () => {
         addAd: "/api/listings/add",
         action: "/api/action",
         cancel: "/api/action/cancel",
-        aiImprove: "/api/ai/improve"
+        aiImprove: "/api/ai/improve",
+        uploadPhotos: "/api/photos/upload"
     };
 
     // ==========================================
@@ -564,6 +565,73 @@ document.addEventListener("DOMContentLoaded", () => {
             photoGalleryGrid.innerHTML = '<p class="photo-gallery-empty">Nepodařilo se načíst fotky.</p>';
         }
     };
+
+    const handlePhotoUpload = async (files) => {
+        const photosDir = editPhotosDir.value;
+        if (!photosDir) {
+            showNotification("Složka pro fotky není nastavená.", "error");
+            return;
+        }
+        if (!files || files.length === 0) return;
+
+        const formData = new FormData();
+        formData.append("photos_dir", photosDir);
+        for (let i = 0; i < files.length; i++) {
+            formData.append("photos", files[i]);
+        }
+
+        showNotification("Nahrávám fotky na server...", "info");
+        try {
+            const res = await fetch(API.uploadPhotos, {
+                method: "POST",
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                showNotification(data.message || "Fotky byly úspěšně nahrány!", "success");
+                loadPhotoGallery(photosDir);
+            } else {
+                showNotification(data.message || "Chyba při nahrávání fotek.", "error");
+            }
+        } catch (err) {
+            showNotification("Chyba při nahrávání fotek.", "error");
+        }
+    };
+
+    const photoDropzone = document.getElementById("photo-dropzone");
+    const editPhotoFileInput = document.getElementById("edit-photo-file-input");
+
+    if (photoDropzone && editPhotoFileInput) {
+        photoDropzone.addEventListener("click", () => editPhotoFileInput.click());
+
+        editPhotoFileInput.addEventListener("change", (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handlePhotoUpload(e.target.files);
+                e.target.value = "";
+            }
+        });
+
+        photoDropzone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            photoDropzone.style.background = "rgba(59, 130, 246, 0.15)";
+            photoDropzone.style.borderColor = "var(--primary-color, #3b82f6)";
+        });
+
+        photoDropzone.addEventListener("dragleave", (e) => {
+            e.preventDefault();
+            photoDropzone.style.background = "rgba(255, 255, 255, 0.03)";
+            photoDropzone.style.borderColor = "var(--border-color, #cbd5e1)";
+        });
+
+        photoDropzone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            photoDropzone.style.background = "rgba(255, 255, 255, 0.03)";
+            photoDropzone.style.borderColor = "var(--border-color, #cbd5e1)";
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handlePhotoUpload(e.dataTransfer.files);
+            }
+        });
+    }
 
     const renderPhotoGallery = (photos) => {
         photoGalleryGrid.innerHTML = "";
