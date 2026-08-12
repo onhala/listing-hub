@@ -81,11 +81,12 @@ class BazosPortal(AbstractPortal):
         """
         def _fetch_html_on_worker(page, cfg):
             page.goto("https://www.bazos.cz/moje-inzeraty.php")
-            
+            page.wait_for_timeout(1000)
+
             email_input = page.locator("input[name='mail']")
             phone_input = page.locator("input[name='telefon']")
             code_input = page.locator("input[name='kodd']")
-            
+
             if email_input.is_visible(timeout=2000) is True:
                 user_dict = cfg.get("user", cfg) if isinstance(cfg, dict) else {}
                 email_val = str(user_dict.get("email") or (cfg.get("email") if isinstance(cfg, dict) else "") or "").strip()
@@ -100,19 +101,18 @@ class BazosPortal(AbstractPortal):
                 list_btn = page.locator("input[type='submit'][value='Vypsat inzeráty']")
                 if list_btn.is_visible(timeout=2000) is True:
                     list_btn.click()
-                    page.wait_for_timeout(1000)
-                
-                submit_btn = page.locator("input[type='submit'][value='Ověřit']")
-                if submit_btn.is_visible(timeout=2000) is True or code_input.is_visible(timeout=2000) is True:
-                    try:
-                        # Čekáme na zadání SMS kódu v živém prohlížeči (až 60 sec)
-                        code_input.wait_for(timeout=3000)
-                        page.wait_for_selector("input[name='kodd']", state="hidden", timeout=60000)
-                    except Exception:
-                        raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
+                    page.wait_for_timeout(1500)
 
-            # Ověříme, zda nejsme stále na přihlašovací stránce
-            if email_input.is_visible(timeout=1000) is True or code_input.is_visible(timeout=1000) is True:
+            submit_btn = page.locator("input[type='submit'][value='Ověřit']")
+            if submit_btn.is_visible(timeout=2000) is True or code_input.is_visible(timeout=2000) is True:
+                try:
+                    # Čekáme na zadání SMS kódu v živém prohlížeči (až 60 sec)
+                    code_input.wait_for(timeout=3000)
+                    page.wait_for_selector("input[name='kodd']", state="hidden", timeout=60000)
+                except Exception:
+                    raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
+
+            if code_input.is_visible(timeout=1000) is True:
                 raise Exception("Přihlášení k Bazoši selhalo. Zadej SMS kód v záložce Živý prohlížeč nebo zkontroluj přihlašovací údaje.")
 
             # Uložíme platné session cookies pro příští rychlé přihlášení
