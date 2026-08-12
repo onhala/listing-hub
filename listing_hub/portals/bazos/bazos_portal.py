@@ -103,17 +103,18 @@ class BazosPortal(AbstractPortal):
                     list_btn.click()
                     page.wait_for_timeout(1500)
 
-            submit_btn = page.locator("input[type='submit'][value='Ověřit']")
-            if submit_btn.is_visible(timeout=2000) is True or code_input.is_visible(timeout=2000) is True:
-                try:
-                    # Čekáme na zadání SMS kódu v živém prohlížeči (až 60 sec)
-                    code_input.wait_for(timeout=3000)
-                    page.wait_for_selector("input[name='kodd']", state="hidden", timeout=60000)
-                except Exception:
-                    raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
+            # 2. Kontrola, zda Bazoš vyžaduje SMS kód
+            try:
+                page.wait_for_selector("input[name='kodd']", timeout=3000)
+                # Pokud se pole pro SMS kód objeví, čekáme až 90s, než ho uživatel zadá v Živém prohlížeči
+                page.wait_for_selector("input[name='kodd']", state="hidden", timeout=90000)
+            except Exception:
+                # SMS kód nebyl vyžadován (uživatel je přihlášen) nebo vypršel krátký 3s check
+                pass
 
-            if code_input.is_visible(timeout=1000) is True:
-                raise Exception("Přihlášení k Bazoši selhalo. Zadej SMS kód v záložce Živý prohlížeč nebo zkontroluj přihlašovací údaje.")
+            # 3. Kontrola: Pokud na stránce stále zůstalo pole pro SMS kód (vypršel timeout 90s)
+            if page.locator("input[name='kodd']").is_visible(timeout=1000) is True:
+                raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
 
             # Uložíme platné session cookies pro příští rychlé přihlášení
             try:
