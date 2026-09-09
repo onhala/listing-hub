@@ -27,6 +27,8 @@ from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH
 
 
 from listing_hub.portals.bazos.session import session_manager, PlaywrightSessionManager
+from listing_hub.portals.bazos.categories import normalize_cz, match_best_category_option
+
 
 
 
@@ -1089,8 +1091,13 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
     
     ad_id = extract_ad_id(url)
     subdomain = extract_subdomain(url)
-    password_b64 = ad.get("ad_password_b64") or user_config.get("default_ad_password_b64") or "aGVzbG8xMjM="
-    password = base64.b64decode(password_b64).decode("utf-8")
+    password_b64 = ad.get("ad_password_b64") or user_config.get("default_ad_password_b64") or ""
+    try:
+        password = base64.b64decode(password_b64).decode("utf-8") if password_b64 else ""
+    except Exception:
+        password = ""
+    if not password:
+        password = user_config.get("bazos_password") or "lak0mec"
     
     # Zkrácení nadpisu na limit Bazoše
     if len(title) > 50:
@@ -1127,9 +1134,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
             
             try:
                 # Vyplníme heslo
-                password_input = page.locator("input[name='heslo'], input[type='password']")
-                password_input.wait_for(timeout=5000)
-                password_input.fill(password)
+                password_input = page.locator("input[name='heslobazar'], #heslobazar, input[name='heslo'], #heslo, input[type='password'], input[name*='hesl']")
+                password_input.first.wait_for(timeout=5000)
+                password_input.first.scroll_into_view_if_needed(timeout=1000)
+                password_input.first.fill(password)
                 print(f"  {Colors.GREEN}✓ Heslo inzerátu předvyplněno.{Colors.ENDC}")
                 
                 # Zaškrtneme Smazat (pokud jsou radio buttons)
@@ -1139,7 +1147,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                     print(f"  {Colors.GREEN}✓ Možnost 'Smazat' vybrána.{Colors.ENDC}")
                 
                 # Klikneme na odeslat/potvrdit
-                submit_btn = page.locator("form:has(input[name='heslo']) input[type='submit'], form:has(input[name='heslo']) button[type='submit']")
+                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], form:has(input[name*='hesl']) button[type='submit']")
                 if submit_btn.count() > 0:
                     submit_btn.first.click()
                 else:
@@ -1168,13 +1176,9 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 if not is_web:
                     print("stiskni [Enter] v terminálu pro pokračování...")
                     input()
-                try:
-                    context.storage_state(path=str(SESSION_STATE_PATH))
-                except Exception:
-                    pass
-                return True
-
-        # --- AKCE: EDITACE CENY (EDIT PRICE) ---
+                return False
+                
+        # --- AKCE: ZMĚNA CENY / EDITACE ---
         elif action == "edit_price":
             if not ad_id:
                 print(f"{Colors.FAIL}Chyba: Chybí ID inzerátu pro editaci!{Colors.ENDC}")
@@ -1185,9 +1189,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
             
             try:
                 # Vyplníme heslo
-                password_input = page.locator("input[name='heslo'], input[type='password']")
-                password_input.wait_for(timeout=5000)
-                password_input.fill(password)
+                password_input = page.locator("input[name='heslobazar'], #heslobazar, input[name='heslo'], #heslo, input[type='password'], input[name*='hesl']")
+                password_input.first.wait_for(timeout=5000)
+                password_input.first.scroll_into_view_if_needed(timeout=1000)
+                password_input.first.fill(password)
                 
                 # Vybereme editaci
                 radio_edit = page.locator("input[type='radio'][value='edit'], input[value='1']")
@@ -1195,7 +1200,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                     radio_edit.click()
                     print(f"  {Colors.GREEN}✓ Vybrána editace inzerátu.{Colors.ENDC}")
                     
-                submit_btn = page.locator("form:has(input[name='heslo']) input[type='submit'], form:has(input[name='heslo']) button[type='submit']")
+                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], form:has(input[name*='hesl']) button[type='submit']")
                 if submit_btn.count() > 0:
                     submit_btn.first.click()
                 else:
@@ -1242,24 +1247,41 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
             print(f"\n{Colors.BLUE}Směřuji na přidání inzerátu: https://{target_domain}/pridat-inzerat.php{Colors.ENDC}")
             page.goto(f"https://{target_domain}/pridat-inzerat.php")
             
-            def find_and_fill(label, selectors, value):
+            def find_and_fill(label, selectors, value, fill_all=False):
+                value_str = str(value) if value is not None else ""
+                filled = False
                 for selector in selectors:
                     try:
                         loc = page.locator(selector)
-                        if loc.is_visible(timeout=500):
-                            loc.fill(value)
-                            print(f"  {Colors.GREEN}✓ {label}{Colors.ENDC} vyplněno (selektor '{selector}')")
+                        count = loc.count()
+                        if count == 0:
+                            continue
+                        for i in range(count):
+                            el = loc.nth(i)
+                            try:
+                                if el.is_visible(timeout=800):
+                                    el.scroll_into_view_if_needed(timeout=1000)
+                                    el.fill(value_str)
+                                    el.dispatch_event("input")
+                                    el.dispatch_event("change")
+                                    filled = True
+                                    print(f"  {Colors.GREEN}✓ {label}{Colors.ENDC} vyplněno (selektor '{selector}' #{i})")
+                                    if not fill_all:
+                                        return True
+                            except Exception:
+                                continue
+                        if filled and not fill_all:
                             return True
                     except Exception:
                         continue
-                return False
+                return filled
 
             def select_rubrika_first():
                 try:
                     selector = "select[name='rubrikyvybrat']"
                     select_loc = page.locator(selector)
-                    if select_loc.count() > 0 and select_loc.is_visible(timeout=500):
-                        options_elements = select_loc.locator("option").all()
+                    if select_loc.count() > 0 and select_loc.first.is_visible(timeout=500):
+                        options_elements = select_loc.first.locator("option").all()
                         best_value = None
                         best_score = -1
                         best_label = ""
@@ -1289,11 +1311,11 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                                 best_label = opt.inner_text().strip()
                         
                         if best_value and best_score > 0:
-                            current_value = select_loc.evaluate("el => el.value")
+                            current_value = select_loc.first.evaluate("el => el.value")
                             if current_value != best_value:
                                 print(f"  {Colors.BLUE}Změna rubriky na '{best_label}'...{Colors.ENDC}")
                                 old_url = page.url
-                                select_loc.select_option(value=best_value)
+                                select_loc.first.select_option(value=best_value)
                                 try:
                                     page.wait_for_function(f"() => window.location.href !== '{old_url}'", timeout=5000)
                                 except Exception:
@@ -1311,60 +1333,72 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
 
             def select_kategorie_second():
                 try:
-                    selector = "select[name='category'], select#category"
-                    select_loc = page.locator(selector)
-                    if select_loc.count() > 0 and select_loc.is_visible(timeout=500):
-                        options_elements = select_loc.locator("option").all()
-                        best_value = None
-                        best_score = -1
-                        best_label = ""
-                        
-                        title_lower = title.lower()
-                        description_lower = description.lower()
-                        ad_category = ad.get("category", "").strip().lower()
-                        
-                        for opt in options_elements:
-                            val = opt.get_attribute("value")
-                            if not val or val == "" or val == "0":
+                    category_selectors = [
+                        "form:has(input[name='nadpis']) select",
+                        "//div[contains(@class,'maincontent')]//form//select",
+                        "select[name='category']", "select#category",
+                        "select[name='kategorie']", "select#kategorie",
+                        "select[name='rubrika']", "select#rubrika",
+                        "select[name='podkategorie']", "select#podkategorie",
+                        "select[name='idkateg']", "select#idkateg",
+                        "select[name='cat']", "select#cat",
+                        "select:not([name='rubriky']):not([title*='Vyber'])"
+                    ]
+                    for sel_str in category_selectors:
+                        try:
+                            loc = page.locator(sel_str)
+                            cnt = loc.count()
+                            if cnt == 0:
                                 continue
-                            label = opt.inner_text().strip().lower()
-                            
-                            score = 0
-                            # Nejvyšší priorita: přesná shoda s kategorií zadanou uživatelem
-                            if ad_category and (ad_category in label or label in ad_category):
-                                score += 100
-                            if label in title_lower:
-                                score += 10
-                            if label in description_lower:
-                                score += 2
-                            
-                            # Specifické Bazoš podkategorie
-                            if "sekack" in val or "sekačk" in label:
-                                if "sekačk" in title_lower or "vyžínač" in title_lower or "strunov" in title_lower:
-                                    score += 20
-                            if "drtic" in val or "drtič" in label:
-                                if "drtič" in title_lower or "štěpkovač" in title_lower:
-                                    score += 20
-                            if "stol" in val or "stůl" in label:
-                                if "stůl" in title_lower or "stoly" in title_lower:
-                                    score += 20
-                            if "židl" in label or "zidl" in val:
-                                if "židl" in title_lower or "židle" in title_lower:
-                                    score += 20
+                            for idx in range(cnt):
+                                select_loc = loc.nth(idx)
+                                try:
+                                    if not select_loc.is_visible(timeout=800):
+                                        continue
+                                    attr_name = select_loc.get_attribute("name") or ""
+                                    attr_title = select_loc.get_attribute("title") or ""
+                                    if attr_name == "rubriky" or "Vyber rubriku" in attr_title:
+                                        continue
                                     
-                            if score > best_score:
-                                best_score = score
-                                best_value = val
-                                best_label = opt.inner_text().strip()
-                        
-                        if best_value and best_score > 0:
-                            current_value = select_loc.evaluate("el => el.value")
-                            if current_value != best_value:
-                                print(f"  {Colors.BLUE}Volba kategorie '{best_label}'...{Colors.ENDC}")
-                                select_loc.select_option(value=best_value)
-                                time.sleep(0.5)
-                                print(f"  {Colors.GREEN}✓ Kategorie vybrána: '{best_label}'{Colors.ENDC}")
-                                return True
+                                    select_loc.scroll_into_view_if_needed(timeout=1000)
+                                    opt_locs = select_loc.locator("option").all()
+                                    if not opt_locs:
+                                        continue
+                                    
+                                    raw_options = []
+                                    for opt in opt_locs:
+                                        val = opt.get_attribute("value") or ""
+                                        text = opt.inner_text().strip()
+                                        if val:
+                                            raw_options.append((val, text))
+                                    
+                                    if not raw_options:
+                                        continue
+                                    
+                                    best_value, best_label, best_score = match_best_category_option(
+                                        raw_options,
+                                        title=title,
+                                        description=description,
+                                        category=ad.get("category", "")
+                                    )
+                                    
+                                    if best_value:
+                                        current_value = select_loc.evaluate("el => el.value")
+                                        if current_value != best_value:
+                                            print(f"  {Colors.BLUE}Volba kategorie '{best_label}'...{Colors.ENDC}")
+                                            select_loc.select_option(value=best_value)
+                                            select_loc.dispatch_event("input")
+                                            select_loc.dispatch_event("change")
+                                            time.sleep(0.5)
+                                            print(f"  {Colors.GREEN}✓ Kategorie vybrána: '{best_label}'{Colors.ENDC}")
+                                            return True
+                                        else:
+                                            print(f"  {Colors.GREEN}✓ Kategorie již nastavena: '{best_label}'{Colors.ENDC}")
+                                            return True
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
                 except Exception:
                     pass
                 return False
@@ -1453,9 +1487,48 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         find_and_fill("Cena", ["input[name='cena']", "#cena"], price)
                         find_and_fill("Jméno", ["input[name='jmeno']", "#jmeno"], user_config.get("name", "Tvoje Jméno"))
                         find_and_fill("Telefon", ["input[name='telefoni']", "#telefoni"], user_config.get("phone", "777123456"))
-                        find_and_fill("E-mail", ["input[name='mail']", "input[name='email']", "input[type='email']", "#mail"], user_config.get("email", "tuj_email@example.com"))
+                        find_and_fill("E-mail", ["input[name='mail']", "input[name='maili']", "input[name='email']", "input[type='email']", "#mail", "#maili"], user_config.get("email", "tuj_email@example.com"))
                         find_and_fill("PSČ", ["input[name='lokalita']", "#lokalita", "input[name='psc']"], user_config.get("zip_code", "10000"))
-                        find_and_fill("Heslo", ["input[name='heslo']", "#heslo"], password)
+                        
+                        # Bazoš používá specificky name='heslobazar' a id='heslobazar'
+                        heslo_selectors = [
+                            "#heslobazar",
+                            "input[name='heslobazar']",
+                            "input[name='heslo']",
+                            "#heslo",
+                            "input[type='password']",
+                            "input[name='heslo2']",
+                            "input[name='heslod']",
+                            "input[name='hesloc']",
+                            "input[name*='hesl']",
+                            "input[id*='hesl']",
+                            "input[placeholder*='heslo' i]",
+                            "input[placeholder*='Heslo' i]"
+                        ]
+                        find_and_fill("Heslo", heslo_selectors, password, fill_all=True)
+                        
+                        # Pojistka pro heslo: zkontrolujeme, zda nezůstal žádný viditelný password/hesl input prázdný
+                        try:
+                            empty_pwd = page.locator("input[type='password'], input[name*='hesl'], input[id*='hesl']")
+                            cnt_pwd = empty_pwd.count()
+                            for k in range(cnt_pwd):
+                                p_el = empty_pwd.nth(k)
+                                try:
+                                    if p_el.is_visible(timeout=300):
+                                        val = p_el.input_value()
+                                        if not val:
+                                            p_el.scroll_into_view_if_needed(timeout=1000)
+                                            p_el.fill(password)
+                                            p_el.dispatch_event("input")
+                                            p_el.dispatch_event("change")
+                                            print(f"  {Colors.GREEN}✓ Heslo doplněno přes pojistku (pole #{k}){Colors.ENDC}")
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                            
+                        # Dvojitá kontrola kategorie po vyplnění polí
+                        select_kategorie_second()
                         
                         # 4. Nahrání fotek
                         if photos:
