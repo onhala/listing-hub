@@ -33,14 +33,17 @@ Uživateli stačí vzít telefon, nafotit prodávanou věc ze všech úhlů (vč
   - Model vygeneruje 3 až 5 atraktivních variant nadpisů.
   - Garance limitu do 50 znaků s vizuálním čítačem (např. `42/50 znaků`).
   - Výběr a dosazení nadpisu jedním kliknutím na interaktivní štítek (chip).
-- **Živý tržní cenový radar (Bazoš.cz Scraper):**
-  - Propojení s reálnými inzeráty na Bazoši – okamžitý výpočet mediánu cen.
-  - Tři doporučené cenové úrovně:
+- **Multi-Source tržní cenový radar (Bazoš + Sbazar + Web + Gemini):**
+  - Propojení s reálnými inzeráty na Bazoši, veřejným API Sbazaru i webem – okamžitý výpočet mediánu cen s automatickým vyřazením vlastního inzerátu ze srovnání.
+  - Tři doporučené cenové úrovně předvyplněné v interaktivních kartách:
     1. 🔴 **Rychlý prodej (-10 %)**: Pro okamžité oslovení kupců a rychlé uvolnění místa.
-    2. 🟣 **Férová tržní cena**: Medián aktuální nabídky na trhu.
+    2. 🟣 **Férová tržní cena**: Medián aktuální nabídky na trhu (výchozí zvolená hodnota).
     3. 🟢 **Prémiový stav (+10 %)**: Pro zboží v záruce, kompletním balení nebo bezvadném stavu.
-- **Věcný technický popis bez klišé:**
-  - AI generuje strukturovaný, věcný a profesionální text (odrážky s parametry, stavem, možnostmi osobního předání a dopravy přes Zásilkovnu).
+  - Tlačítko **„Přepočítat trh“** pro okamžité přehodnocení cen po změně názvu či parametrů.
+- **Věcný inženýrský popis bez hvězdiček a klišé (Clean Plaintext):**
+  - AI generuje strukturovaný, věcný a profesionální text bez nepodporovaných markdown hvězdiček (`*`, `**`).
+  - Odrážky jsou formátovány jako čisté pomlčky (`- `), sekce nadepsány velkými písmeny (`PARAMETRY:`, `STAV:`, `PŘÍSLUŠENSTVÍ:`).
+  - Vždy zakomponovány solidní informace o možnostech osobního předání a bezpečné přepravě.
   - Žádný laciný marketingový balast typu *"TOP STAV!!!!"* nebo *"NEVÁHEJTE!!!"*.
 - **Výběr titulní fotografie:**
   - AI doporučí fotografii s nejlepším úhlem a čistým pozadím (označí ji hvězdičkou).

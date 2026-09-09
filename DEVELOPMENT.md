@@ -134,14 +134,18 @@ pytest tests/unit/test_db.py        # Testy CRUD operací SQLite databáze
 - `POST /api/listings/delete/<listing_id>`
   - Smaže inzerát z lokální evidence (případně odešle povel k výmazu na portál).
 
-### AI Analýza & Gemini:
+### AI Analýza, Gemini & Tržní Radar:
 - `POST /api/ai/analyze-photos` *(Multipart form-data)*
-  - Multimodální analýza až 10 fotek přes Gemini 2.5 Flash + Bazoš cenový radar.
-  - Vrací: `recommended_title`, `titles` (3-5 variant), `description`, `condition`, `market_prices`.
+  - Multimodální analýza až 10 fotek přes Gemini 2.5 Flash + multi-source cenový radar.
+  - Vrací: `recommended_title`, `titles` (3-5 variant), `description` (vyčištěný bez hvězdiček), `condition`, `market_analysis`, `estimated_price_czk`.
 - `POST /api/ai/analyze-existing/<listing_id>`
   - Spustí AI Vision analýzu na existujících fotografiích již uloženého inzerátu.
 - `POST /api/ai/improve`
-  - Jazyková korektura a optimalizace stávajícího textu inzerátu.
+  - Jazyková korektura a optimalizace stávajícího textu inzerátu (čistý text bez markdownu).
+- `POST /api/advisor/market-search` *(JSON payload: `{query, brand, model, condition, fallback_price}`)*
+  - Spustí multi-source tržní analýzu (Bazoš.cz + Sbazar.cz API + Web + Gemini fallback).
+- `GET /api/advisor/price/<listing_id>`
+  - Spustí cenového poradce pro existující inzerát (automaticky vylučuje vlastní nabídku).
 
 ### Verze & Systémové funkce:
 - `GET /api/version/check` *(volitelný parametr `?force=1`)*
