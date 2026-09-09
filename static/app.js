@@ -2119,6 +2119,9 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        // Ujistit se, že Playwright worker na backendu běží
+        fetch("/api/screencast/start", { method: "POST" }).catch(() => {});
+
         const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${wsProtocol}//${window.location.host}/api/screencast/ws`;
         
@@ -2432,7 +2435,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnReloadVnc) {
         btnReloadVnc.addEventListener("click", () => {
             if (screencastWs) screencastWs.close();
-            initScreencast();
+            fetch("/api/screencast/start", { method: "POST" }).finally(() => {
+                initScreencast();
+            });
         });
     }
 

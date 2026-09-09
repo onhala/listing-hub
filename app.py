@@ -159,6 +159,10 @@ sock = Sock(app)
 @sock.route("/api/screencast/ws")
 def screencast_ws(ws):
     """Stream live Playwright browser frames to HTML5 Canvas via thread-safe CDP frame buffer."""
+    # Ensure Playwright browser session is running so frames start streaming
+    if not session_manager.running or not session_manager.page or session_manager.page.is_closed():
+        session_manager.start_worker()
+
     last_frame_bytes = None
     while True:
         try:
@@ -169,6 +173,15 @@ def screencast_ws(ws):
             time.sleep(0.08) # ~12 FPS
         except Exception:
             break
+
+@app.route("/api/screencast/start", methods=["POST", "GET"])
+def screencast_start():
+    """Explicitly start or ping the Playwright browser worker."""
+    try:
+        session_manager.start_worker()
+        return jsonify({"status": "ok", "running": session_manager.running})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/screencast/input", methods=["POST"])
 def screencast_input():

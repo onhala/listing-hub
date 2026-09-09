@@ -20,5 +20,5 @@ services:
       # Host folder mount for export (configurable via env var)
       - ${BAZOS_EXPORT_DIR:-./export}:/app/export
     environment:
-      - DISPLAY=:99
+      - HEADLESS=true
       - PYTHONUNBUFFERED=1

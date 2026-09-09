@@ -46,9 +46,14 @@ class PlaywrightSessionManager:
             self.playwright = sync_playwright().start()
 
             headless_env = os.environ.get("HEADLESS")
-            is_headless = headless_env.lower() in ("true", "1", "yes") if headless_env else ("DISPLAY" not in os.environ)
+            if headless_env is not None:
+                is_headless = headless_env.lower() in ("true", "1", "yes")
+            else:
+                display = os.environ.get("DISPLAY")
+                is_headless = not (display and os.path.exists(f"/tmp/.X11-unix/X{display.replace(':', '')}"))
+
             exec_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
-            launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
 
             if exec_path and os.path.exists(exec_path):
                 self.browser = self.playwright.chromium.launch(executable_path=exec_path, headless=is_headless, args=launch_args)
