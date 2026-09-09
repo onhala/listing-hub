@@ -1121,13 +1121,26 @@ input:focus, textarea:focus {
 
 .wizard-photo-thumb {
     position: relative;
-    border-radius: 8px;
+    border-radius: 10px;
     overflow: hidden;
-    aspect-ratio: 1;
-    background: #000;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    transition: all 0.2s ease;
+    height: 120px;
+    background: #090714;
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    cursor: pointer;
+    user-select: none;
+}
+
+.wizard-photo-thumb:hover {
+    transform: translateY(-2px);
+    border-color: rgba(131, 92, 223, 0.6);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.wizard-photo-thumb.is-cover {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 14px rgba(245, 158, 11, 0.45) !important;
 }
 
 .wizard-photo-thumb img {
@@ -1137,55 +1150,88 @@ input:focus, textarea:focus {
     display: block;
 }
 
-.wizard-photo-thumb.is-cover {
-    border: 2px solid #f59e0b;
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+.wizard-photo-thumb .thumb-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    color: #e2e8f0;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.wizard-photo-thumb .thumb-badge.badge-cover {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #000;
+    border-color: #fbbf24;
+    font-weight: 800;
 }
 
 .wizard-photo-thumb .btn-set-cover {
     position: absolute;
-    bottom: 4px;
-    left: 4px;
-    background: rgba(0, 0, 0, 0.75);
-    border: none;
-    border-radius: 4px;
+    bottom: 6px;
+    left: 6px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
     color: #cbd5e1;
-    font-size: 0.7rem;
-    padding: 2px 6px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 2px 7px;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 4px;
     transition: all 0.15s ease;
+    z-index: 2;
+    white-space: nowrap;
+}
+
+.wizard-photo-thumb .btn-set-cover:hover {
+    background: rgba(245, 158, 11, 0.3);
+    border-color: #f59e0b;
+    color: #fff;
 }
 
 .wizard-photo-thumb.is-cover .btn-set-cover {
     background: #f59e0b;
+    border-color: #fbbf24;
     color: #000;
     font-weight: 700;
 }
 
 .wizard-photo-thumb .btn-remove-thumb {
     position: absolute;
-    top: 4px;
-    right: 4px;
-    background: rgba(0, 0, 0, 0.75);
-    border: none;
+    top: 6px;
+    right: 6px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(239, 68, 68, 0.35);
     border-radius: 50%;
-    color: #ef4444;
+    color: #fca5a5;
     width: 22px;
     height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     cursor: pointer;
     transition: all 0.15s ease;
+    z-index: 3;
 }
 
 .wizard-photo-thumb .btn-remove-thumb:hover {
     background: #ef4444;
     color: #fff;
+    border-color: #ef4444;
+    transform: scale(1.1);
 }
 
 /* ==========================================================

@@ -1288,12 +1288,18 @@ document.addEventListener("DOMContentLoaded", () => {
             const isCover = index === wizardCoverIndex;
             const thumbCard = document.createElement("div");
             thumbCard.className = `wizard-photo-thumb ${isCover ? "is-cover" : ""}`;
+            thumbCard.title = isCover ? "Hlavní titulní fotografie" : `Fotka #${index + 1} (kliknutím zvolíte jako hlavní)`;
 
             const img = document.createElement("img");
             img.src = URL.createObjectURL(file);
             img.alt = file.name;
 
-            // Remove button
+            // Index / cover badge (top-left)
+            const badge = document.createElement("div");
+            badge.className = `thumb-badge ${isCover ? "badge-cover" : ""}`;
+            badge.innerHTML = isCover ? '<i class="fa-solid fa-star"></i> Hlavní' : `#${index + 1}`;
+
+            // Remove button (top-right)
             const removeBtn = document.createElement("button");
             removeBtn.type = "button";
             removeBtn.className = "btn-remove-thumb";
@@ -1308,13 +1314,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderWizardPhotoPreviews();
             });
 
-            // Set cover button
+            // Set cover button (bottom-left)
             const coverBtn = document.createElement("button");
             coverBtn.type = "button";
             coverBtn.className = "btn-set-cover";
             coverBtn.innerHTML = isCover
                 ? '<i class="fa-solid fa-star"></i> Titulní'
-                : '<i class="fa-regular fa-star"></i> Nastavit titulní';
+                : '<i class="fa-regular fa-star"></i> Jako hlavní';
             coverBtn.title = isCover ? "Hlavní titulní fotografie" : "Zvolit jako hlavní fotku";
             coverBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -1322,7 +1328,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderWizardPhotoPreviews();
             });
 
+            // Clicking the card itself also selects it as cover
+            thumbCard.addEventListener("click", () => {
+                if (wizardCoverIndex !== index) {
+                    wizardCoverIndex = index;
+                    renderWizardPhotoPreviews();
+                }
+            });
+
             thumbCard.appendChild(img);
+            thumbCard.appendChild(badge);
             thumbCard.appendChild(removeBtn);
             thumbCard.appendChild(coverBtn);
             newPhotoPreviewGrid.appendChild(thumbCard);
@@ -1508,6 +1523,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         selectPrice(stats.suggested_fair || stats.median, cardPriceFair);
                         newPriceRadarContainer.style.display = "block";
                     }
+                } else if (visionData.estimated_price_czk) {
+                    newPrice.value = visionData.estimated_price_czk;
                 } else if (visionData.pricing && visionData.pricing.estimated_fair_czk) {
                     newPrice.value = visionData.pricing.estimated_fair_czk;
                 }

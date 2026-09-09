@@ -94,3 +94,33 @@ def test_analyze_photos_api_error(mock_post):
     
     assert not success
     assert "Chyba Gemini Vision API" in msg
+
+def test_normalize_vision_data_flat_czech_keys():
+    from listing_hub.ai.vision import normalize_vision_data
+    raw = {
+        "znacka": "Bosch",
+        "model": "GSR 12V-15",
+        "stav": "Použité, funkční",
+        "nadpisy": ["Aku šroubovák Bosch GSR 12V-15"],
+        "popis": "Prodám aku vrtačku Bosch se dvěma bateriemi.",
+        "cena": "1200"
+    }
+    normalized = normalize_vision_data(raw, total_photos=3)
+    assert normalized["item_identification"]["brand"] == "Bosch"
+    assert normalized["item_identification"]["model"] == "GSR 12V-15"
+    assert normalized["item_identification"]["full_name"] == "Bosch GSR 12V-15"
+    assert normalized["item_identification"]["condition_cz"] == "Použité, funkční"
+    assert normalized["recommended_title"] == "Aku šroubovák Bosch GSR 12V-15"
+    assert "Aku šroubovák Bosch GSR 12V-15" in normalized["titles"]
+    assert "Prodám aku vrtačku" in normalized["description"]
+    assert normalized["estimated_price_czk"] == 1200
+    assert normalized["best_cover_photo_index"] == 0
+
+def test_normalize_vision_data_empty_fallback():
+    from listing_hub.ai.vision import normalize_vision_data
+    normalized = normalize_vision_data({}, total_photos=1)
+    assert normalized["item_identification"]["condition_cz"] == "Zachovalý stav"
+    assert len(normalized["titles"]) >= 1
+    assert normalized["recommended_title"] != ""
+    assert normalized["best_cover_photo_index"] == 0
+    assert len(normalized["photo_recommendations"]["quality_tips"]) > 0
