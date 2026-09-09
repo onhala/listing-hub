@@ -1300,6 +1300,51 @@ document.addEventListener("DOMContentLoaded", () => {
     const cardPriceFair = document.getElementById("card-price-fair");
     const cardPricePremium = document.getElementById("card-price-premium");
 
+    const populatePriceRadar = (stats, fallbackPrice, sources) => {
+        if (!newPriceRadarContainer) return;
+        
+        let validStats = (stats && stats.median && stats.median > 0) ? stats : null;
+        if (!validStats && fallbackPrice && fallbackPrice > 0) {
+            const fb = parseInt(fallbackPrice);
+            validStats = {
+                min: Math.round(fb * 0.8),
+                max: Math.round(fb * 1.2),
+                median: fb,
+                suggested_quick_sale: Math.round(fb * 0.9),
+                suggested_fair: fb,
+                suggested_premium: Math.round(fb * 1.1)
+            };
+        }
+
+        if (!validStats) return;
+
+        const quick = validStats.suggested_quick_sale || Math.round(validStats.median * 0.9);
+        const fair = validStats.suggested_fair || validStats.median;
+        const premium = validStats.suggested_premium || Math.round(validStats.median * 1.1);
+
+        if (valPriceQuick) valPriceQuick.textContent = `${quick.toLocaleString("cs-CZ")} Kč`;
+        if (valPriceFair) valPriceFair.textContent = `${fair.toLocaleString("cs-CZ")} Kč`;
+        if (valPricePremium) valPricePremium.textContent = `${premium.toLocaleString("cs-CZ")} Kč`;
+
+        const radarBadge = document.getElementById("radar-sources-badge");
+        if (radarBadge && sources && sources.length) {
+            radarBadge.textContent = sources.join(" + ");
+        }
+
+        const selectPrice = (val, cardEl) => {
+            if (newPrice) newPrice.value = val;
+            [cardPriceQuick, cardPriceFair, cardPricePremium].forEach(c => c && c.classList.remove("active"));
+            if (cardEl) cardEl.classList.add("active");
+        };
+
+        if (cardPriceQuick) cardPriceQuick.onclick = () => selectPrice(quick, cardPriceQuick);
+        if (cardPriceFair) cardPriceFair.onclick = () => selectPrice(fair, cardPriceFair);
+        if (cardPricePremium) cardPricePremium.onclick = () => selectPrice(premium, cardPricePremium);
+
+        selectPrice(fair, cardPriceFair);
+        newPriceRadarContainer.style.display = "block";
+    };
+
     const resetWizardState = () => {
         wizardSelectedFiles = [];
         wizardCoverIndex = 0;
@@ -1317,6 +1362,8 @@ document.addEventListener("DOMContentLoaded", () => {
             newTitlesChips.innerHTML = "";
         }
         if (newPriceRadarContainer) newPriceRadarContainer.style.display = "none";
+        const radarBadge = document.getElementById("radar-sources-badge");
+        if (radarBadge) radarBadge.textContent = "";
     };
 
     const renderWizardPhotoPreviews = () => {
@@ -1566,31 +1613,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     updateCounter(newDescription, newDescCounter);
                 }
 
-                // 5. Market Price Radar Cards
-                if (newPriceRadarContainer && visionData.market_analysis && visionData.market_analysis.statistics) {
-                    const stats = visionData.market_analysis.statistics;
-                    if (stats.median && stats.median > 0) {
-                        if (valPriceQuick) valPriceQuick.textContent = `${(stats.suggested_quick_sale || Math.round(stats.median * 0.9)).toLocaleString("cs-CZ")} Kč`;
-                        if (valPriceFair) valPriceFair.textContent = `${(stats.suggested_fair || stats.median).toLocaleString("cs-CZ")} Kč`;
-                        if (valPricePremium) valPricePremium.textContent = `${(stats.suggested_premium || Math.round(stats.median * 1.1)).toLocaleString("cs-CZ")} Kč`;
+                // 5. Market Price Radar Cards & Suggested Price
+                const stats = visionData.market_analysis && visionData.market_analysis.statistics;
+                const fbPrice = visionData.estimated_price_czk || (visionData.pricing && visionData.pricing.estimated_fair_czk) || 0;
+                const sources = (visionData.market_analysis && visionData.market_analysis.sources_checked) || ["Bazoš.cz", "Sbazar.cz"];
+                
+                populatePriceRadar(stats, fbPrice, sources);
 
-                        const selectPrice = (val, cardEl) => {
-                            newPrice.value = val;
-                            [cardPriceQuick, cardPriceFair, cardPricePremium].forEach(c => c && c.classList.remove("active"));
-                            if (cardEl) cardEl.classList.add("active");
-                        };
-
-                        if (cardPriceQuick) cardPriceQuick.onclick = () => selectPrice(stats.suggested_quick_sale || Math.round(stats.median * 0.9), cardPriceQuick);
-                        if (cardPriceFair) cardPriceFair.onclick = () => selectPrice(stats.suggested_fair || stats.median, cardPriceFair);
-                        if (cardPricePremium) cardPricePremium.onclick = () => selectPrice(stats.suggested_premium || Math.round(stats.median * 1.1), cardPricePremium);
-
-                        selectPrice(stats.suggested_fair || stats.median, cardPriceFair);
-                        newPriceRadarContainer.style.display = "block";
-                    }
-                } else if (visionData.estimated_price_czk) {
-                    newPrice.value = visionData.estimated_price_czk;
-                } else if (visionData.pricing && visionData.pricing.estimated_fair_czk) {
-                    newPrice.value = visionData.pricing.estimated_fair_czk;
+                // Fallback guarantee: if price is still empty or 0, set fbPrice
+                if ((!newPrice.value || parseInt(newPrice.value) <= 0) && fbPrice > 0) {
+                    newPrice.value = fbPrice;
                 }
 
                 // 6. Cover photo recommendation
@@ -1607,6 +1639,44 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (visionAiLoading) visionAiLoading.style.display = "none";
                 if (newAiActionBar) newAiActionBar.style.display = "block";
                 btnRunVisionAi.disabled = false;
+            }
+        });
+    }
+
+    const btnRefreshPriceRadar = document.getElementById("btn-refresh-price-radar");
+    if (btnRefreshPriceRadar) {
+        btnRefreshPriceRadar.addEventListener("click", async () => {
+            const query = (newTitle && newTitle.value) ? newTitle.value.trim() : "";
+            if (!query) {
+                showNotification("Nejprve zadejte název inzerátu.", "error");
+                return;
+            }
+            const origHtml = btnRefreshPriceRadar.innerHTML;
+            btnRefreshPriceRadar.disabled = true;
+            btnRefreshPriceRadar.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Hledám...';
+            try {
+                const res = await fetch("/api/advisor/market-search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        query: query,
+                        fallback_price: parseInt(newPrice ? newPrice.value : 0) || 0
+                    })
+                });
+                const json = await res.json();
+                if (json.status === "success" && json.data) {
+                    const stats = json.data.statistics;
+                    const sources = json.data.sources_checked || ["Bazoš.cz", "Sbazar.cz"];
+                    populatePriceRadar(stats, parseInt(newPrice ? newPrice.value : 0) || 0, sources);
+                    showNotification(`Nalezeno ${json.data.total_found || 0} inzerátů (${sources.join(', ')}).`, "success");
+                } else {
+                    showNotification(json.message || "Nepodařilo se načíst tržní data.", "error");
+                }
+            } catch (err) {
+                showNotification("Chyba při hledání tržních cen: " + err.message, "error");
+            } finally {
+                btnRefreshPriceRadar.disabled = false;
+                btnRefreshPriceRadar.innerHTML = origHtml;
             }
         });
     }
@@ -2762,11 +2832,14 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("advisor-listing-title").innerText = ad.title;
         document.getElementById("advisor-current-price").innerText = `${ad.price.toLocaleString("cs-CZ")} Kč`;
         
+        const sourcesListEl = document.getElementById("advisor-sources-list");
+        if (sourcesListEl) sourcesListEl.innerText = "";
+
         const statusAlert = document.getElementById("advisor-status-alert");
         statusAlert.className = "alert alert-warning";
         statusAlert.style.background = "rgba(255, 193, 7, 0.1)";
         statusAlert.style.color = "#ffc107";
-        document.getElementById("advisor-message").innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzuji konkurenční nabídky na Bazoši...';
+        document.getElementById("advisor-message").innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzuji konkurenční nabídky (Bazoš, Sbazar, Web)...';
         
         document.getElementById("advisor-opt-quick").innerText = "- Kč";
         document.getElementById("advisor-opt-fair").innerText = "- Kč";
@@ -2777,7 +2850,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("advisor-range-avg").innerText = "- Kč";
         document.getElementById("advisor-range-max").innerText = "- Kč";
         
-        document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1.5rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Hledám inzeráty...</div>';
+        document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1.5rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Hledám inzeráty na portálech...</div>';
         document.getElementById("advisor-selected-price").value = ad.price;
         
         advisorModal.classList.add("active");
@@ -2795,6 +2868,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = json.data;
             const stats = data.statistics;
             
+            if (sourcesListEl && data.sources_checked && data.sources_checked.length) {
+                sourcesListEl.innerText = `Zdroje: ${data.sources_checked.join(", ")}`;
+            }
+
             // Vyhodnocení stavu a nastavení alertu
             statusAlert.className = "alert";
             if (data.status === "OVERPRICED") {
@@ -2810,7 +2887,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusAlert.style.color = "var(--accent)";
                 statusAlert.style.border = "1px solid rgba(131, 92, 223, 0.3)";
             }
-            document.getElementById("advisor-message").innerText = data.message;
+            
+            const fullMsg = data.reasoning ? `${data.message} ${data.reasoning}` : data.message;
+            document.getElementById("advisor-message").innerText = fullMsg;
             
             if (data.status === "NO_COMPETITION") {
                 document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i> Nebyla nalezena žádná konkurence.</div>';
@@ -2854,12 +2933,31 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 const topText = item.is_top ? '<span style="color: #ffc107; font-weight: bold; margin-left: 0.25rem;">[TOP]</span>' : '';
                 
+                const sourceName = item.source || "Bazoš.cz";
+                let badgeStyle = "background: rgba(255, 152, 0, 0.15); color: #ff9800; border: 1px solid rgba(255, 152, 0, 0.3);";
+                if (sourceName.toLowerCase().includes("sbazar")) {
+                    badgeStyle = "background: rgba(220, 53, 69, 0.15); color: #ea868f; border: 1px solid rgba(220, 53, 69, 0.3);";
+                } else if (sourceName.toLowerCase().includes("web")) {
+                    badgeStyle = "background: rgba(13, 110, 253, 0.15); color: #6ea8fe; border: 1px solid rgba(13, 110, 253, 0.3);";
+                } else if (sourceName.toLowerCase().includes("gemini")) {
+                    badgeStyle = "background: rgba(131, 92, 223, 0.15); color: #c29ffa; border: 1px solid rgba(131, 92, 223, 0.3);";
+                }
+                const sourceBadge = `<span style="display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; margin-right: 0.4rem; ${badgeStyle}">${escapeHtml(sourceName)}</span>`;
+
+                const extraMeta = [];
+                if (item.location) extraMeta.push(escapeHtml(item.location));
+                if (item.views) extraMeta.push(`👀 ${item.views} zhlédnutí`);
+                if (item.date) extraMeta.push(`📅 ${item.date}`);
+                
                 itemEl.innerHTML = `
                     <div style="display: flex; flex-direction: column; gap: 0.15rem; max-width: 75%;">
-                        <a href="${item.link}" target="_blank" style="color: #a5d6ff; text-decoration: none; font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHtml(item.title)}</a>
-                        <span style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(item.location)} | 👀 ${item.views} zhlédnutí</span>
+                        <div style="display: flex; align-items: center; gap: 0.25rem; overflow: hidden;">
+                            ${sourceBadge}
+                            <a href="${item.link}" target="_blank" style="color: #a5d6ff; text-decoration: none; font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHtml(item.title)}</a>
+                        </div>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">${extraMeta.join(" | ")}</span>
                     </div>
-                    <strong style="color: #fff;">${item.price_text}${topText}</strong>
+                    <strong style="color: #fff; white-space: nowrap; margin-left: 0.5rem;">${item.price_text || (item.price ? `${item.price.toLocaleString("cs-CZ")} Kč` : "Cena neuvedena")}${topText}</strong>
                 `;
                 competitorsContainer.appendChild(itemEl);
             });

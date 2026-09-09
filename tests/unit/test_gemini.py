@@ -135,4 +135,23 @@ def test_improve_text_with_gemini_custom_model(mock_post):
     called_url = mock_post.call_args[0][0]
     assert "models/gemini-2.5-pro:generateContent" in called_url
 
+from listing_hub.ai.gemini import clean_bazos_text
+
+def test_clean_bazos_text_strips_asterisks_and_bullets():
+    raw_text = (
+        "**POPIS PŘEDMĚTU:**\n"
+        "* položka 1 s hvězdičkou\n"
+        "* položka 2 s **tučným** textem\n"
+        "• položka s puntíkem\n"
+        "Běžný text s *kurzívou* a hvězdičkou na konci*\n"
+    )
+    cleaned = clean_bazos_text(raw_text)
+    assert "*" not in cleaned
+    assert "•" not in cleaned
+    assert "POPIS PŘEDMĚTU:" in cleaned
+    assert "- položka 1 s hvězdičkou" in cleaned
+    assert "- položka 2 s tučným textem" in cleaned
+    assert "- položka s puntíkem" in cleaned
+    assert "Běžný text s kurzívou a hvězdičkou na konci" in cleaned
+
 

@@ -458,9 +458,17 @@
 
                     <!-- PRICING RADAR CARDS -->
                     <div id="new-price-radar-container" style="display: none; margin-bottom: 1.25rem;">
-                        <label style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.4rem; display: block;">
-                            <i class="fa-solid fa-chart-line" style="color: var(--accent);"></i> Tržní ceny na Bazoši (kliknutím nastav cenu):
-                        </label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                            <label style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0; display: block;">
+                                <i class="fa-solid fa-chart-line" style="color: var(--accent);"></i> Tržní radar & doporučená cena (Bazoš, Sbazar & Web):
+                            </label>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span id="radar-sources-badge" style="font-size: 0.72rem; color: var(--text-muted);"></span>
+                                <button type="button" id="btn-refresh-price-radar" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.55rem; cursor: pointer;">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Přepočítat trh
+                                </button>
+                            </div>
+                        </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;" id="new-price-cards">
                             <div class="price-suggest-card" id="card-price-quick" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(239, 68, 68, 0.3); border-left: 4px solid #ef4444; border-radius: 8px; padding: 0.75rem; cursor: pointer; transition: all 0.15s;">
                                 <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Rychlý prodej (-10%)</span>
@@ -861,7 +869,7 @@
 
                     <!-- Right side: Market pricing range info -->
                     <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.25rem; border-radius: 8px;">
-                        <h5 style="margin-bottom: 1rem; color: #fff; font-size: 0.95rem; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;"><i class="fa-solid fa-chart-line"></i> Přehled rozpětí na Bazoši</h5>
+                        <h5 style="margin-bottom: 1rem; color: #fff; font-size: 0.95rem; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem;"><i class="fa-solid fa-chart-line"></i> Přehled tržního rozpětí cen</h5>
                         
                         <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); height: 2.2rem;">
@@ -886,8 +894,11 @@
 
                 <!-- Competitive Listings Section -->
                 <div>
-                    <h5 style="margin-bottom: 0.75rem; color: #fff; font-size: 0.95rem; font-weight: 600;"><i class="fa-solid fa-list"></i> Top 5 nejbližších konkurenčních nabídek na trhu</h5>
-                    <div id="advisor-competitors-container" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 180px; overflow-y: auto; padding-right: 5px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <h5 style="margin-bottom: 0; color: #fff; font-size: 0.95rem; font-weight: 600;"><i class="fa-solid fa-list"></i> Konkurenční nabídky na trhu (Bazoš, Sbazar & Web)</h5>
+                        <span id="advisor-sources-list" style="font-size: 0.75rem; color: var(--text-muted);"></span>
+                    </div>
+                    <div id="advisor-competitors-container" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 220px; overflow-y: auto; padding-right: 5px;">
                         <!-- List populated by JavaScript -->
                     </div>
                 </div>

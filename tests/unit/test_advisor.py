@@ -86,3 +86,54 @@ def test_get_price_recommendation_bargain(mock_db):
         # 2000 je o 33% méně než medián 3000
         assert res["diff_percent"] == -33
         assert "výhodná" in res["message"]
+
+from listing_hub.ai.advisor import extract_search_keywords, analyze_market_prices
+
+def test_extract_search_keywords():
+    # Test stripping listing stopwords
+    res = extract_search_keywords("Prodám aku vrtačku DeWalt DCD796 v TOP stavu sleva")
+    assert "prodam" not in res.lower()
+    assert "top stavu" not in res.lower()
+    assert "sleva" not in res.lower()
+    assert "dewalt" in res.lower()
+    assert "dcd796" in res.lower()
+
+    # Test prioritizing brand and model
+    res_bm = extract_search_keywords("Nějaký dlouhý nadpis na bazoši", brand="Makita", model="DHP484")
+    assert "Makita DHP484" in res_bm
+
+def test_analyze_market_prices_multi_source():
+    bazos_items = [
+        {"title": "DeWalt DCD796", "price": 2000, "link": "http://bazos/1", "source": "Bazoš.cz"},
+        {"title": "DeWalt DCD796 vrtačka", "price": 2400, "link": "http://bazos/2", "source": "Bazoš.cz"}
+    ]
+    sbazar_items = [
+        {"title": "Aku vrtačka DeWalt DCD796", "price": 2800, "link": "http://sbazar/1", "source": "Sbazar.cz"}
+    ]
+
+    with patch("listing_hub.ai.advisor.search_bazos_prices", return_value=bazos_items), \
+         patch("listing_hub.ai.advisor.search_sbazar_prices", return_value=sbazar_items):
+        
+        analysis = analyze_market_prices("DeWalt DCD796")
+        assert analysis["total_found"] == 3
+        assert analysis["prices_count"] == 3
+        # Medián ze 2000, 2400, 2800 je 2400
+        assert analysis["statistics"]["median"] == 2400
+        assert analysis["statistics"]["min"] == 2000
+        assert analysis["statistics"]["max"] == 2800
+        assert analysis["statistics"]["suggested_quick_sale"] == round(2400 * 0.9)
+        assert analysis["statistics"]["suggested_fair"] == 2400
+        assert "Bazoš.cz" in analysis["sources_checked"]
+        assert "Sbazar.cz" in analysis["sources_checked"]
+
+def test_analyze_market_prices_fallback_price():
+    with patch("listing_hub.ai.advisor.search_bazos_prices", return_value=[]), \
+         patch("listing_hub.ai.advisor.search_sbazar_prices", return_value=[]), \
+         patch("listing_hub.ai.advisor.search_web_listings", return_value=[]):
+        
+        analysis = analyze_market_prices("Raritní starožitnost", fallback_price=3000)
+        assert analysis["statistics"]["median"] == 3000
+        assert analysis["statistics"]["suggested_quick_sale"] == 2700
+        assert analysis["statistics"]["suggested_fair"] == 3000
+        assert analysis["statistics"]["suggested_premium"] == 3300
+        assert "Gemini Vision" in analysis["sources_checked"]

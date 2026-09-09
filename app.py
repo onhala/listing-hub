@@ -1304,9 +1304,43 @@ def api_create_listing_with_photos():
 def api_get_price_recommendation(listing_id):
     try:
         from listing_hub.ai.advisor import get_price_recommendation
-        res = get_price_recommendation(listing_id)
+        _, user_config = load_data()
+        api_key = user_config.get("gemini_api_key", "")
+        gemini_model = user_config.get("gemini_model") or "gemini-2.5-flash"
+        res = get_price_recommendation(listing_id, api_key=api_key, gemini_model=gemini_model)
         if "error" in res:
             return jsonify({"status": "error", "message": res["error"]}), 400
+        return jsonify({"status": "success", "data": res})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/advisor/market-search", methods=["POST"])
+def api_advisor_market_search():
+    try:
+        payload = request.get_json(silent=True) or {}
+        query = payload.get("query", "").strip()
+        brand = payload.get("brand", "").strip()
+        model = payload.get("model", "").strip()
+        condition = payload.get("condition", "used")
+        fallback_price = int(payload.get("fallback_price") or 0)
+        
+        if not query and not (brand or model):
+            return jsonify({"status": "error", "message": "Zadejte dotaz pro vyhledání."}), 400
+
+        from listing_hub.ai.advisor import analyze_market_prices
+        _, user_config = load_data()
+        api_key = user_config.get("gemini_api_key", "")
+        gemini_model = user_config.get("gemini_model") or "gemini-2.5-flash"
+
+        res = analyze_market_prices(
+            item_name=query,
+            brand=brand,
+            model=model,
+            condition=condition,
+            api_key=api_key,
+            gemini_model=gemini_model,
+            fallback_price=fallback_price
+        )
         return jsonify({"status": "success", "data": res})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

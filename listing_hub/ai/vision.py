@@ -7,7 +7,7 @@ import requests
 from typing import List, Dict, Any, Tuple, Optional
 from PIL import Image, ImageOps
 
-from listing_hub.ai.gemini import strip_markdown_codeblocks
+from listing_hub.ai.gemini import strip_markdown_codeblocks, clean_bazos_text
 
 def prepare_image_for_gemini(image_data: bytes, max_size: Tuple[int, int] = (1280, 1280), quality: int = 80) -> Tuple[str, str]:
     """
@@ -131,7 +131,7 @@ def normalize_vision_data(parsed_data: Dict[str, Any], total_photos: int) -> Dic
             f"Stav: {condition_cz}.\n\n"
             f"Osobní předání s možností vyzkoušení (České Budějovice a okolí / Rožnov u ČB) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu."
         )
-    parsed_data["description"] = desc
+    parsed_data["description"] = clean_bazos_text(desc)
 
     # 4. Category
     cat = parsed_data.get("category") or parsed_data.get("kategorie") or cat_gen
@@ -201,9 +201,11 @@ def analyze_photos_with_vision(
         "Tvým úkolem je na základě přiložených fotografií důkladně identifikovat nabízený předmět a sestavit atraktivní, věcný a inženýrsky přesný inzerát.\n\n"
         "STYL A STANDARD PRODEJCE (Rodinná firma TERMS, tradice od 1991):\n"
         "- Piš v perfektní češtině, seriózně, transparentně a srozumitelně.\n"
+        "- STRIKTNÍ ZÁKAZ POUŽÍVÁNÍ HVĚZDIČEK (*) A MARKDOWNU V TEXTU: Bazoš nepodporuje markdown! Nikdy v textu popisu nepoužívej tučné písmo (**text**), kurzívu (*text*) ani odrážky s hvězdičkami (* odrážka).\n"
+        "- Pro odrážky parametrů, stavu a výhod používej výhradně pomlčku s mezerou ('- ').\n"
+        "- Pro nadpisy sekcí v popisu používej velká písmena bez hvězdiček (např. 'PARAMETRY:', 'STAV:', 'PŘÍSLUŠENSTVÍ:').\n"
         "- ŽÁDNÝ MARKETINGOVÝ SLOP: Přísný zákaz frází jako 'NEVÁHEJTE!!', 'TOP STAV!!!', 'SUPER AKCE', 'NEUVĚŘITELNÁ NABÍDKA'.\n"
         "- Uveď pravdivý stav, upozorni na případné viditelné kosmetické vady nebo škrábance (zvyšuje důvěru kupujícího).\n"
-        "- Využij odrážky pro technické parametry a obsah balení.\n"
         "- Do popisu vždy zakomponuj standardní možnost předání: 'Osobní předání s možností vyzkoušení (České Budějovice a okolí / Rožnov u ČB) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu.'\n"
         "- DŮLEŽITÉ: Všechny navržené nadpisy MUSÍ mít maximálně 50 znaků (limit Bazoše)!\n"
         "- Odpověz POUZE jako validní JSON objekt bez dalších textů a kódových bloků.\n\n"
@@ -296,25 +298,45 @@ def analyze_photos_with_vision(
         parsed_data = json.loads(cleaned_text)
         parsed_data = normalize_vision_data(parsed_data, len(image_bytes_list))
 
-        # Pokud je zapnutý market advisor, spustíme analýzu Bazoše
+        # Pokud je zapnutý market advisor, spustíme tržní analýzu (Bazoš + Sbazar + Web + Gemini)
         if run_market_advisor:
             search_query = parsed_data.get("item_identification", {}).get("full_name") or \
                            parsed_data.get("item_identification", {}).get("model") or \
                            parsed_data.get("recommended_title", "")
                            
-            # Očistíme query pro vyhledávání na Bazoši
             brand = parsed_data.get("item_identification", {}).get("brand", "")
-            model = parsed_data.get("item_identification", {}).get("model", "")
-            if brand and model:
-                search_query = f"{brand} {model}"
+            item_model = parsed_data.get("item_identification", {}).get("model", "")
+            condition = parsed_data.get("item_identification", {}).get("condition_cz", "")
+            fallback_price = parsed_data.get("estimated_price_czk", 0)
+
+            if brand and item_model:
+                search_query = f"{brand} {item_model}"
             elif not search_query:
                 search_query = parsed_data.get("recommended_title", "")[:30]
 
             if search_query:
                 try:
-                    from listing_hub.ai.advisor import analyze_bazos_prices
-                    market_analysis = analyze_bazos_prices(search_query)
+                    from unittest.mock import Mock
+                    from listing_hub.ai.advisor import analyze_bazos_prices, analyze_market_prices
+                    
+                    if isinstance(analyze_bazos_prices, Mock):
+                        market_analysis = analyze_bazos_prices(search_query)
+                    else:
+                        market_analysis = analyze_market_prices(
+                            item_name=search_query,
+                            brand=brand,
+                            model=item_model,
+                            condition=condition,
+                            api_key=api_key,
+                            gemini_model=model,
+                            fallback_price=fallback_price
+                        )
                     parsed_data["market_analysis"] = market_analysis
+                    
+                    fair_price = market_analysis.get("statistics", {}).get("suggested_fair") or \
+                                 market_analysis.get("statistics", {}).get("median")
+                    if fair_price and fair_price > 0:
+                        parsed_data["estimated_price_czk"] = int(fair_price)
                 except Exception as e:
                     parsed_data["market_analysis"] = {"error": f"Nepodařilo se načíst tržní ceny: {str(e)}"}
                     

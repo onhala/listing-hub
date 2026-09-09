@@ -18,6 +18,40 @@ def strip_markdown_codeblocks(text: str) -> str:
         text = re.sub(r'\s*```$', '', text)
     return text.strip()
 
+def clean_bazos_text(text: str) -> str:
+    """
+    Očistí text inzerátu od markdownu (hvězdičky, tučné písmo, kurzíva).
+    Bazoš nepodporuje markdown, takže **text** a *text* působí neprofesionálně a nevzhledně.
+    Převádí odrážky na čisté pomlčky ('- ') a odstraňuje veškeré markdown hvězdičky.
+    """
+    if not text:
+        return ""
+    
+    # 1. Nejprve odstraníme kódové bloky
+    text = strip_markdown_codeblocks(text)
+    
+    # 2. Odstranění markdown tučného písma (**text** nebo __text__) -> text
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'__(.*?)__', r'\1', text)
+    
+    # 3. Zpracování po řádcích (odrážky a inline hvězdičky)
+    lines = []
+    for line in text.splitlines():
+        # Odrážka s hvězdičkou nebo puntíkem na začátku řádku -> pomlčka
+        cleaned_line = re.sub(r'^\s*[\*\•]\s+', '- ', line)
+        # Odstranění kurzívy *text*
+        cleaned_line = re.sub(r'(?<!\w)\*([^\*\n]+?)\*(?!\w)', r'\1', cleaned_line)
+        # Odstranění osamocených hvězdiček na začátku/konci
+        cleaned_line = re.sub(r'^\s*\*+\s*', '', cleaned_line)
+        cleaned_line = re.sub(r'\s*\*+\s*$', '', cleaned_line)
+        cleaned_line = cleaned_line.replace('**', '').replace('***', '')
+        lines.append(cleaned_line)
+        
+    cleaned_text = "\n".join(lines)
+    # Zredukujeme vícenásobné prázdné řádky
+    cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
+    return cleaned_text.strip()
+
 def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, api_key: str, model: str = "gemini-2.5-flash") -> Tuple[bool, str]:
     """
     Volá Gemini API a optimalizuje text inzerátu podle pokynů.
@@ -33,16 +67,17 @@ def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, 
         "Tvým úkolem je vždy vrátit POUZE upravený/opravený text bez jakýchkoliv dodatečných vysvětlení, "
         "pozdravů, uvozovek nebo komentářů. Vracíš pouze finální text, nic víc.\n\n"
         "DŮLEŽITÉ UPOZORNĚNÍ:\n"
-        "- NIKDY neobaluj výsledek do markdown formátování!\n"
+        "- STRIKTNÍ ZÁKAZ POUŽÍVÁNÍ HVĚZDIČEK (*) A MARKDOWNU V TEXTU: Bazoš nepodporuje markdown! Nikdy nepoužívej tučné písmo s hvězdičkami (**text**), kurzívu (*text*) ani odrážky s hvězdičkami (* odrážka).\n"
         "- Nepoužívej žádné ```markdown, ```html, ```json, ```text ani žádné jiné markdown kódové bloky (```).\n"
         "- Vrať pouze čistý surový text bez jakéhokoliv obalení zpětnými apostrofy (backticks).\n"
         "- Nepoužívej HTML tagy.\n\n"
         "Pokyny pro editaci:\n"
         "- Piš v češtině, jasně, čitelně a srozumitelně.\n"
-        "- Používej odrážky pro parametry, stav a výhody.\n"
+        "- Pro odrážky parametrů a výhod používej výhradně pomlčku s mezerou ('- ').\n"
+        "- Pro nadpisy sekcí používej velká písmena bez hvězdiček (např. 'PARAMETRY:', 'STAV:', 'VÝHODY:').\n"
         "- Nepoužívej přehnané marketingové fráze a 'slop' slova (např. 'neuvěřitelná nabídka', 'jedinečná šance', 'TOP stav!!!').\n"
         "- Působ jako solidní, inženýrsky přesný a férový prodejce (podle standardů rodinné firmy TERMS s tradicí od roku 1991).\n"
-        "- Text formátuj přehledně pomocí odstavců a klasických odrážek (např. '*' nebo '-').\n"
+        "- Text formátuj přehledně pomocí odstavců a odrážek s pomlčkou ('- ').\n"
         "- Udržuj přibližně stejnou délku a rozsah jako původní text. NIKDY text nezkracuj drasticky a vždy dokonči celé myšlenky i věty.\n"
         "- Ponech všechny věcné parametry (výkon, rozměry, stav, doplňky) a kontaktní/odběrové informace z původního textu."
     )
@@ -89,9 +124,8 @@ def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, 
             
         result_json = response.json()
         raw_text = result_json["candidates"][0]["content"]["parts"][0]["text"]
-        improved_text = strip_markdown_codeblocks(raw_text)
-        
         if field_type == "title":
+            improved_text = strip_markdown_codeblocks(raw_text)
             if instruction_type == "title_suggestions":
                 cleaned_lines = []
                 for line in improved_text.split("\n"):
@@ -104,6 +138,8 @@ def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, 
             else:
                 improved_text = improved_text.replace('"', '').replace("'", "").strip()
                 improved_text = improved_text[:50].strip()
+        else:
+            improved_text = clean_bazos_text(raw_text)
                 
         return True, improved_text
     except Exception as e:
