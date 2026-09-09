@@ -100,120 +100,159 @@ class PlaywrightSessionManager:
         # Continuous Input Processing Loop on Worker Thread
         while self.running and self.browser and self.browser.is_connected():
             try:
-                has_events = False
-                while not self.input_queue.empty():
-                    try:
-                        evt = self.input_queue.get_nowait()
-                        has_events = True
-                        act = evt.get("action")
-                        if act == "click":
-                            cx, cy = evt["x"], evt["y"]
-                            if self.page and not self.page.is_closed():
-                                try:
-                                    self.page.mouse.click(cx, cy)
-                                except Exception as ex:
-                                    print(f"page.mouse.click error: {ex}")
-                            if self.cdp_session:
-                                try:
-                                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
-                                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "buttons": 1, "clickCount": 1})
-                                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": cx, "y": cy, "button": "left", "buttons": 0, "clickCount": 1})
-                                except Exception:
-                                    pass
-                        elif act == "type":
-                            text_val = evt.get("text", "")
-                            if self.page and not self.page.is_closed():
-                                try:
-                                    # Automaticky zaměříme pole pro SMS kód (kodd / klic) pokud existuje
-                                    code_input = self.page.locator("input[name='kodd'], input[name='klic']")
-                                    if code_input.count() > 0 and code_input.first.is_visible():
-                                        curr_val = code_input.first.input_value() or ""
-                                        new_val = curr_val + text_val if len(text_val) == 1 else text_val
-                                        code_input.first.fill(new_val)
-                                    else:
-                                        self.page.evaluate('''() => {
-                                            let el = document.activeElement;
-                                            if (!el || el.tagName === "BODY" || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
-                                                let input = document.querySelector("input[type='text']") || 
-                                                            document.querySelector("input[type='number']") ||
-                                                            document.querySelector("input:not([type='hidden'])");
-                                                if (input) input.focus();
-                                            }
-                                        }''')
-                                        self.page.keyboard.type(text_val)
-                                except Exception as ex:
-                                    print(f"Type error: {ex}")
-                                    if self.cdp_session:
-                                        try:
-                                            self.cdp_session.send("Input.insertText", {"text": text_val})
-                                        except Exception:
-                                            pass
-                        elif act == "key":
-                            key_name = evt.get("key", "")
-                            if self.page and not self.page.is_closed():
-                                try:
-                                    code_input = self.page.locator("input[name='kodd'], input[name='klic']")
-                                    if key_name == "Backspace" and code_input.count() > 0 and code_input.first.is_visible():
-                                        curr_val = code_input.first.input_value() or ""
-                                        code_input.first.fill(curr_val[:-1])
-                                    elif key_name == "Enter" and code_input.count() > 0 and code_input.first.is_visible():
-                                        submit_btn = self.page.locator("input[type='submit'][value*='Vypsat'], input[type='submit'][value*='Ověř'], form:has(input[name='kodd']) input[type='submit']")
-                                        if submit_btn.count() > 0 and submit_btn.first.is_visible():
-                                            submit_btn.first.click()
-                                        else:
-                                            self.page.keyboard.press("Enter")
-                                    else:
-                                        self.page.keyboard.press(key_name)
-                                except Exception as ex:
-                                    print(f"Key error: {ex}")
-                        elif act == "scroll":
-                            cx, cy = evt["x"], evt["y"]
-                            dx, dy = evt.get("deltaX", 0), evt.get("deltaY", 0)
-                            if self.cdp_session:
-                                try:
-                                    self.cdp_session.send("Input.dispatchMouseEvent", {
-                                        "type": "mouseWheel",
-                                        "x": cx,
-                                        "y": cy,
-                                        "deltaX": dx,
-                                        "deltaY": dy
-                                    })
-                                except Exception as ex:
-                                    print(f"Scroll CDP error: {ex}")
-                            elif self.page and not self.page.is_closed():
-                                try:
-                                    self.page.mouse.wheel(dx, dy)
-                                except Exception:
-                                    pass
-                            url = evt.get("url")
-                            if url and self.page and not self.page.is_closed():
-                                self.page.goto(url)
-                        elif act == "call":
-                            func = evt["func"]
-                            args = evt.get("args", ())
-                            kwargs = evt.get("kwargs", {})
-                            try:
-                                res = func(self.page, *args, **kwargs)
-                                evt["result_queue"].put((res, None))
-                            except Exception as ex:
-                                evt["result_queue"].put((None, ex))
-                    except queue.Empty:
-                        break
-                    except Exception as ex:
-                        print(f"Error handling event in worker: {ex}")
-
-                if has_events and self.cdp_session:
-                    try:
-                        self.cdp_session.send("Runtime.evaluate", {
-                            "expression": "document.body.style.opacity = '0.999'; setTimeout(() => document.body.style.opacity = '1.0', 10);"
-                        })
-                    except Exception:
-                        pass
-
+                self.process_events()
                 time.sleep(0.05)
             except Exception as loop_e:
                 print(f"Worker loop error: {loop_e}")
                 time.sleep(0.1)
+
+    def _dispatch_event(self, evt):
+        """Dispatches a single input or call event on the Playwright worker thread."""
+        act = evt.get("action")
+        if act == "click":
+            cx, cy = evt["x"], evt["y"]
+            if self.page and not self.page.is_closed():
+                try:
+                    self.page.mouse.click(cx, cy)
+                except Exception as ex:
+                    print(f"page.mouse.click error: {ex}")
+            if self.cdp_session:
+                try:
+                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
+                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "buttons": 1, "clickCount": 1})
+                    self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": cx, "y": cy, "button": "left", "buttons": 0, "clickCount": 1})
+                except Exception:
+                    pass
+        elif act == "type":
+            text_val = evt.get("text", "")
+            if self.page and not self.page.is_closed():
+                try:
+                    # Automaticky zaměříme pole pro SMS kód (kodd / klic / kod / cr) pokud existuje
+                    code_input = self.page.locator("input[name='kodd'], input[name='klic'], input[name='cr'], input[name='kod'], input[name='overkod']")
+                    if code_input.count() > 0 and code_input.first.is_visible():
+                        curr_val = code_input.first.input_value() or ""
+                        new_val = curr_val + text_val if len(text_val) == 1 else text_val
+                        code_input.first.fill(new_val)
+                    else:
+                        self.page.evaluate('''() => {
+                            let el = document.activeElement;
+                            if (!el || el.tagName === "BODY" || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
+                                let input = document.querySelector("input[name='kodd']") ||
+                                            document.querySelector("input[name='klic']") ||
+                                            document.querySelector("input[name='cr']") ||
+                                            document.querySelector("input[name='kod']") ||
+                                            document.querySelector("input[type='text']") || 
+                                            document.querySelector("input[type='number']") ||
+                                            document.querySelector("input:not([type='hidden'])");
+                                if (input) input.focus();
+                            }
+                        }''')
+                        self.page.keyboard.type(text_val)
+                except Exception as ex:
+                    print(f"Type error: {ex}")
+                    if self.cdp_session:
+                        try:
+                            self.cdp_session.send("Input.insertText", {"text": text_val})
+                        except Exception:
+                            pass
+        elif act == "key":
+            key_name = evt.get("key", "")
+            if self.page and not self.page.is_closed():
+                try:
+                    code_input = self.page.locator("input[name='kodd'], input[name='klic'], input[name='cr'], input[name='kod'], input[name='overkod']")
+                    if key_name == "Backspace" and code_input.count() > 0 and code_input.first.is_visible():
+                        curr_val = code_input.first.input_value() or ""
+                        code_input.first.fill(curr_val[:-1])
+                    elif key_name == "Enter" and code_input.count() > 0 and code_input.first.is_visible():
+                        submit_btn = self.page.locator(
+                            "input[type='submit'][value*='Vypsat'], "
+                            "input[type='submit'][value*='Ověř'], "
+                            "input[type='submit'][value*='Potvrd'], "
+                            "input[type='submit'][value*='Odeslat'], "
+                            "button[type='submit'], "
+                            "form:has(input[name='kodd']) input[type='submit'], "
+                            "form:has(input[name='klic']) input[type='submit']"
+                        )
+                        if submit_btn.count() > 0 and submit_btn.first.is_visible():
+                            submit_btn.first.click()
+                        else:
+                            self.page.keyboard.press("Enter")
+                    else:
+                        self.page.keyboard.press(key_name)
+                except Exception as ex:
+                    print(f"Key error: {ex}")
+        elif act == "scroll":
+            cx, cy = evt["x"], evt["y"]
+            dx, dy = evt.get("deltaX", 0), evt.get("deltaY", 0)
+            if self.cdp_session:
+                try:
+                    self.cdp_session.send("Input.dispatchMouseEvent", {
+                        "type": "mouseWheel",
+                        "x": cx,
+                        "y": cy,
+                        "deltaX": dx,
+                        "deltaY": dy
+                    })
+                except Exception as ex:
+                    print(f"Scroll CDP error: {ex}")
+            elif self.page and not self.page.is_closed():
+                try:
+                    self.page.mouse.wheel(dx, dy)
+                except Exception:
+                    pass
+            url = evt.get("url")
+            if url and self.page and not self.page.is_closed():
+                self.page.goto(url)
+        elif act == "call":
+            func = evt["func"]
+            args = evt.get("args", ())
+            kwargs = evt.get("kwargs", {})
+            try:
+                res = func(self.page, *args, **kwargs)
+                evt["result_queue"].put((res, None))
+            except Exception as ex:
+                evt["result_queue"].put((None, ex))
+
+    def process_events(self):
+        """Processes all pending events from the input queue on the worker thread."""
+        has_events = False
+        while not self.input_queue.empty():
+            try:
+                evt = self.input_queue.get_nowait()
+                has_events = True
+                self._dispatch_event(evt)
+            except queue.Empty:
+                break
+            except Exception as ex:
+                print(f"Error handling event in worker: {ex}")
+
+        if has_events and self.cdp_session:
+            try:
+                self.cdp_session.send("Runtime.evaluate", {
+                    "expression": "document.body.style.opacity = '0.999'; setTimeout(() => document.body.style.opacity = '1.0', 10);"
+                })
+            except Exception:
+                pass
+        return has_events
+
+    def wait_while(self, condition_func, timeout=90, step=0.1):
+        """
+        Wait while condition_func() evaluates to True, continuously processing pending 
+        user input events (clicks, typing, SMS submission) on the worker thread.
+        Returns True if condition became False, False if timed out.
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if getattr(self, "cancel_requested", False):
+                break
+            self.process_events()
+            try:
+                if not condition_func():
+                    return True
+            except Exception:
+                return True
+            time.sleep(step)
+        return False
 
     def run_on_worker(self, func, *args, **kwargs):
         """Dispatches `func(self.page, *args, **kwargs)` to execute on the Playwright worker thread."""

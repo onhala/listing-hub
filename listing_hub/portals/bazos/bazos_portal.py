@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 import uuid
 import re
+import time
 from listing_hub.portals.base import AbstractPortal
 from listing_hub.portals.bazos.session import session_manager
 from listing_hub.portals.bazos.categories import extract_ad_id, extract_subdomain, get_target_domain
@@ -227,18 +228,29 @@ class BazosPortal(AbstractPortal):
                 if list_btn.is_visible(timeout=2000) is True:
                     list_btn.click()
                     page.wait_for_timeout(1500)
+                else:
+                    overit_btn = page.locator("input[type='submit'][value='Ověřit'], input[type='submit'][value*='Ověř']")
+                    if overit_btn.is_visible(timeout=2000) is True:
+                        overit_btn.click()
+                        page.wait_for_timeout(1500)
 
             # 2. Kontrola, zda Bazoš vyžaduje SMS kód
+            sms_input_loc = page.locator("input[name='kodd'], input[name='klic'], input[name='cr'], input[name='kod'], input[placeholder*='kód'], input[placeholder*='kod']")
             try:
-                page.wait_for_selector("input[name='kodd']", timeout=3000)
-                # Pokud se pole pro SMS kód objeví, čekáme až 90s, než ho uživatel zadá v Živém prohlížeči
-                page.wait_for_selector("input[name='kodd']", state="hidden", timeout=90000)
+                sms_needed = bool(sms_input_loc.is_visible(timeout=1000) is True)
             except Exception:
-                # SMS kód nebyl vyžadován (uživatel je přihlášen) nebo vypršel krátký 3s check
-                pass
+                sms_needed = False
+
+            if sms_needed:
+                # Čekáme na zadání SMS kódu uživatelem přes UI a odeslání (průběžně obsluhujeme události)
+                session_manager.wait_while(
+                    lambda: bool(sms_input_loc.is_visible() is True),
+                    timeout=90
+                )
+                time.sleep(1.0)
 
             # 3. Kontrola: Pokud na stránce stále zůstalo pole pro SMS kód (vypršel timeout 90s)
-            if page.locator("input[name='kodd']").is_visible(timeout=1000) is True:
+            if sms_input_loc.is_visible() is True:
                 raise Exception("Vypršel čas pro zadání SMS kódu. Zadej jej prosím v záložce Živý prohlížeč a zkus synchronizaci znovu.")
 
             # Uložíme platné session cookies pro příští rychlé přihlášení

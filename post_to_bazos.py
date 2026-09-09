@@ -655,8 +655,11 @@ def cli_update_listings_from_bazos(data, is_web=False, is_auto_refresh=False):
                 if is_web:
                     print(f"  {Colors.WARNING}💬 [WEB] Přihlášení vyžaduje SMS kód. Zadej ho prosím přímo v otevřeném okně prohlížeče a klikni na 'Vypsat inzeráty'...{Colors.ENDC}")
                     try:
-                        # Čekáme na zmizení formuláře (tzn. úspěšné přihlášení a přesměrování) po dobu až 60 sekund
-                        page.wait_for_selector("input[name='kodd']", state="hidden", timeout=60000)
+                        # Čekáme na zmizení formuláře s průběžnou obsluhou událostí z webu
+                        session_manager.wait_while(
+                            lambda: bool(page.locator("input[name='kodd']").is_visible() is True),
+                            timeout=90
+                        )
                         time.sleep(2)
                     except Exception:
                         print(f"  {Colors.WARNING}Vypršel časový limit pro zadání SMS kódu v prohlížeči.{Colors.ENDC}")
@@ -1133,7 +1136,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 else:
                     print(f"\n{Colors.BLUE}💬 [WEB] Čekám na dokončení smazání uživatelem v prohlížeči...{Colors.ENDC}")
                     try:
-                        page.wait_for_url(lambda u: "delete.php" not in u, timeout=300000)
+                        session_manager.wait_while(lambda: "delete.php" in page.url, timeout=300)
                         print(f"  {Colors.GREEN}✓ Detekováno dokončení smazání (změna URL). Relace se zavře za 5 sekund...{Colors.ENDC}")
                         time.sleep(5)
                     except Exception as e:
@@ -1195,7 +1198,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 else:
                     print(f"\n{Colors.BLUE}💬 [WEB] Čekám na uložení změn uživatelem v prohlížeči...{Colors.ENDC}")
                     try:
-                        page.wait_for_url(lambda u: "delete.php" not in u, timeout=300000)
+                        session_manager.wait_while(lambda: "delete.php" in page.url, timeout=300)
                         print(f"  {Colors.GREEN}✓ Detekováno uložení změn (změna URL). Relace se zavře za 5 sekund...{Colors.ENDC}")
                         time.sleep(5)
                     except Exception as e:
@@ -1442,8 +1445,11 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         if is_web:
                             print(f"\n{Colors.BLUE}💬 [WEB] Čekám na ruční odeslání inzerátu uživatelem v prohlížeči...{Colors.ENDC}")
                             try:
-                                # Čekáme až 5 minut (300 sekund) na to, než se změní URL (nebude obsahovat pridat-inzerat.php)
-                                page.wait_for_url(lambda u: "pridat-inzerat.php" not in u, timeout=300000)
+                                # Čekáme až 5 minut (300 sekund) s průběžnou obsluhou událostí z webu
+                                session_manager.wait_while(
+                                    lambda: "pridat-inzerat.php" in page.url,
+                                    timeout=300
+                                )
                                 print(f"  {Colors.GREEN}✓ Detekováno odeslání inzerátu (změna URL). Relace bude uzavřena za 5 sekund...{Colors.ENDC}")
                                 time.sleep(5)
                             except Exception as wait_err:

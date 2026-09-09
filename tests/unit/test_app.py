@@ -352,3 +352,29 @@ def test_photo_edit_save(client, tmp_path):
         assert data["status"] == "success"
         assert test_file.is_file()
 
+def test_submit_sms_code_empty(client):
+    res = client.post("/api/sms_code", json={"code": ""})
+    assert res.status_code == 400
+    data = json.loads(res.data)
+    assert data["status"] == "error"
+
+def test_submit_sms_code_success(client):
+    with patch("app.session_manager.run_on_worker", return_value=True), \
+         patch("app.session_manager.running", True), \
+         patch("app.session_manager.page", MagicMock(is_closed=lambda: False)):
+        res = client.post("/api/sms_code", json={"code": "123 456"})
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "ok"
+        assert data["submitted"] is True
+
+def test_submit_sms_code_unfound(client):
+    with patch("app.session_manager.run_on_worker", return_value=False), \
+         patch("app.session_manager.running", True), \
+         patch("app.session_manager.page", MagicMock(is_closed=lambda: False)):
+        res = client.post("/api/sms_code", json={"code": "999888"})
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "error"
+        assert data["submitted"] is False
+

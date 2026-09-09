@@ -2528,8 +2528,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
             e.preventDefault();
             const rect = canvasElem.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) return;
-
+            const canvasWidth = canvasElem.width || 1280;
+            const canvasHeight = canvasElem.height || 800;
             const scaleX = canvasWidth / rect.width;
             const scaleY = canvasHeight / rect.height;
             const scrollX = Math.round((e.clientX - rect.left) * scaleX);
@@ -2644,33 +2644,64 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // Quick Text / SMS bar handler
-        const sendQuickText = () => {
+        const sendQuickText = async () => {
             const input = document.getElementById("screencast-quick-text");
+            const btn = document.getElementById("btn-send-quick-text");
             if (!input || !input.value) return;
             const textVal = input.value.trim();
             if (!textVal) return;
-            input.value = "";
-            
-            // Try direct SMS code submission endpoint first
-            fetch("/api/sms_code", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ code: textVal })
-            }).then(r => r.json()).then(res => {
-                if (!res.submitted) {
-                    fetch("/api/screencast/input", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ action: "type", text: textVal })
-                    });
-                }
-            }).catch(() => {
-                fetch("/api/screencast/input", {
+
+            // Očistíme SMS kód od mezer pokud jde o číslo
+            const cleanCode = textVal.replace(/\s+/g, "");
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Odesílám...`;
+            }
+            input.disabled = true;
+
+            showNotification("Odesílám kód do prohlížeče...", "info");
+
+            try {
+                // Nejprve zkusíme specializovaný endpoint pro Bazoš SMS kód
+                const res = await fetch("/api/sms_code", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "type", text: textVal })
+                    body: JSON.stringify({ code: cleanCode })
                 });
-            });
+                const data = await res.json();
+
+                if (res.ok && data.submitted) {
+                    showNotification("SMS kód byl úspěšně zadán a odeslán do Bazoše.", "success");
+                    input.value = "";
+                } else {
+                    // Fallback: vepsat jako text přes CDP a stisknout Enter
+                    await fetch("/api/screencast/input", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "type", text: cleanCode })
+                    });
+                    await fetch("/api/screencast/input", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "key", key: "Enter" })
+                    });
+                    showNotification("Text byl zapsán do pole v prohlížeči a odeslán (Enter).", "info");
+                    input.value = "";
+                }
+            } catch (err) {
+                console.error("Chyba při odesílání textu do prohlížeče:", err);
+                showNotification("Chyba při komunikaci: " + err.message, "error");
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Odeslat text`;
+                }
+                if (input) {
+                    input.disabled = false;
+                    input.focus();
+                }
+            }
         };
 
         const btnQuickText = document.getElementById("btn-send-quick-text");

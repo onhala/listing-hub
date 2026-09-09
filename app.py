@@ -227,19 +227,39 @@ def screencast_input():
 def submit_sms_code():
     data = request.json or {}
     code = data.get("code", "").strip()
+    # Očistíme kód od mezer a pomlček, pokud obsahuje číslice
+    digits_only = "".join(ch for ch in code if ch.isdigit())
+    if len(digits_only) >= 4:
+        code = digits_only
     if not code:
         return jsonify({"status": "error", "message": "SMS kód je prázdný"}), 400
+
+    if not session_manager.running or not session_manager.page or session_manager.page.is_closed():
+        try:
+            session_manager.start_worker()
+            session_manager.get_session()
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Nelze inicializovat prohlížeč: {e}"}), 500
         
     def _fill_sms(page, *args):
+        if not page or page.is_closed():
+            return False
+
         selectors = [
             "input[name='kodd']",
             "input[name='klic']",
             "input[name='cr']",
             "input[name='kod']",
             "input[name='overkod']",
+            "input[id='kodd']",
+            "input[id*='kod']",
+            "input[name*='kod']",
+            "input[name*='sms']",
             "input[maxlength='6']",
             "input[placeholder*='kód']",
             "input[placeholder*='kod']",
+            "input[placeholder*='SMS']",
+            "input[placeholder*='sms']",
         ]
         code_input = None
         for sel in selectors:
@@ -251,8 +271,15 @@ def submit_sms_code():
         if not code_input:
             for inp in page.locator("input[type='text'], input[type='number'], input:not([type])").all():
                 try:
+                    if not inp.is_visible():
+                        continue
                     name = (inp.get_attribute("name") or "").lower()
-                    if inp.is_visible() and name not in ("hledat", "hlokalita", "mail", "email", "telefon", "telefoni", "cena", "nadpis"):
+                    inp_id = (inp.get_attribute("id") or "").lower()
+                    placeholder = (inp.get_attribute("placeholder") or "").lower()
+                    if any(x in name or x in inp_id or x in placeholder for x in ("kod", "kód", "klic", "klíč", "sms", "cr", "over")):
+                        code_input = inp
+                        break
+                    if name not in ("hledat", "hlokalita", "mail", "email", "telefon", "telefoni", "cena", "nadpis", "rubrika", "kategorie"):
                         code_input = inp
                         break
                 except Exception:
@@ -270,19 +297,33 @@ def submit_sms_code():
                         break
 
         if code_input:
+            try:
+                code_input.click()
+            except Exception:
+                pass
             code_input.fill(code)
-            time.sleep(0.5)
-            submit_btn = page.locator("input[type='submit'][value*='Vypsat'], input[type='submit'][value*='Ověř'], input[type='submit'][value*='Potvrd'], form:has(input[name='kodd']) input[type='submit']")
+            time.sleep(0.3)
+            submit_btn = page.locator(
+                "input[type='submit'][value*='Vypsat'], "
+                "input[type='submit'][value*='Ověř'], "
+                "input[type='submit'][value*='Potvrd'], "
+                "input[type='submit'][value*='Odeslat'], "
+                "button[type='submit'], "
+                "form:has(input[name='kodd']) input[type='submit'], "
+                "form:has(input[name='klic']) input[type='submit']"
+            )
             if submit_btn.count() > 0 and submit_btn.first.is_visible():
                 submit_btn.first.click()
             else:
-                page.keyboard.press("Enter")
+                code_input.press("Enter")
+            time.sleep(1.0)
+            session_manager.save_state()
             return True
         return False
         
     try:
         success = session_manager.run_on_worker(_fill_sms)
-        return jsonify({"status": "ok" if success else "error", "submitted": success})
+        return jsonify({"status": "ok" if success else "error", "submitted": bool(success)})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

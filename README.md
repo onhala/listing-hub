@@ -1,4 +1,4 @@
-# 🤖 Listing Hub & AI Editor v3.8.0
+# 🤖 Listing Hub & AI Editor v3.8.1
 
 Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, AI Bokeh/SPZ editorem fotografií a automatickou synchronizací do Google Kalendáře.
 
@@ -56,7 +56,7 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
    - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
 
 8. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
-   - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.0 • [hash]`).
+   - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.1 • [hash]`).
    - Nenásilný plovoucí toast s možností odložení do `localStorage` (žádné rušivé celoobrazovkové bannery).
    - Dialog srovnání nainstalované verze a hashe proti GitHubu s přímým odkazem na diff změn a 1-click upgradem na TrueNAS.
 
