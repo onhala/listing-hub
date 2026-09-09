@@ -9,7 +9,7 @@ from listing_hub.core.version import (
 )
 
 def test_app_version_defined():
-    assert APP_VERSION == "3.8.2"
+    assert APP_VERSION == "3.8.3"
 
 def test_get_local_commit_sha_from_env():
     with patch.dict("os.environ", {"GIT_COMMIT_SHA": "abc1234567890"}):

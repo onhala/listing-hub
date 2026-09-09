@@ -127,8 +127,12 @@ class PlaywrightSessionManager:
             text_val = evt.get("text", "")
             if self.page and not self.page.is_closed():
                 try:
-                    # Automaticky zaměříme pole pro SMS kód (kodd / klic / kod / cr) pokud existuje
-                    code_input = self.page.locator("input[name='kodd'], input[name='klic'], input[name='cr'], input[name='kod'], input[name='overkod']")
+                    # Automaticky zaměříme pole pro SMS kód – teloverit (nový inzerát) nebo kodd/klic/kod/cr (přihlášení)
+                    code_input = self.page.locator(
+                        "input[name='teloverit'], input[id='teloverit'], "
+                        "input[name='kodd'], input[name='klic'], input[name='cr'], "
+                        "input[name='kod'], input[name='overkod']"
+                    )
                     if code_input.count() > 0 and code_input.first.is_visible():
                         curr_val = code_input.first.input_value() or ""
                         new_val = curr_val + text_val if len(text_val) == 1 else text_val
@@ -137,7 +141,9 @@ class PlaywrightSessionManager:
                         self.page.evaluate('''() => {
                             let el = document.activeElement;
                             if (!el || el.tagName === "BODY" || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
-                                let input = document.querySelector("input[name='kodd']") ||
+                                let input = document.querySelector("input[name='teloverit']") ||
+                                            document.querySelector("input[id='teloverit']") ||
+                                            document.querySelector("input[name='kodd']") ||
                                             document.querySelector("input[name='klic']") ||
                                             document.querySelector("input[name='cr']") ||
                                             document.querySelector("input[name='kod']") ||
@@ -159,7 +165,11 @@ class PlaywrightSessionManager:
             key_name = evt.get("key", "")
             if self.page and not self.page.is_closed():
                 try:
-                    code_input = self.page.locator("input[name='kodd'], input[name='klic'], input[name='cr'], input[name='kod'], input[name='overkod']")
+                    code_input = self.page.locator(
+                        "input[name='teloverit'], input[id='teloverit'], "
+                        "input[name='kodd'], input[name='klic'], input[name='cr'], "
+                        "input[name='kod'], input[name='overkod']"
+                    )
                     if key_name == "Backspace" and code_input.count() > 0 and code_input.first.is_visible():
                         curr_val = code_input.first.input_value() or ""
                         code_input.first.fill(curr_val[:-1])
@@ -170,6 +180,7 @@ class PlaywrightSessionManager:
                             "input[type='submit'][value*='Potvrd'], "
                             "input[type='submit'][value*='Odeslat'], "
                             "button[type='submit'], "
+                            "form:has(input[name='teloverit']) input[type='submit'], "
                             "form:has(input[name='kodd']) input[type='submit'], "
                             "form:has(input[name='klic']) input[type='submit']"
                         )

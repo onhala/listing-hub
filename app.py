@@ -246,6 +246,8 @@ def submit_sms_code():
             return False
 
         selectors = [
+            "input[name='teloverit']",   # SMS kód pro přidání nového inzerátu (pridat-inzerat.php)
+            "input[id='teloverit']",
             "input[name='kodd']",
             "input[name='klic']",
             "input[name='cr']",
@@ -255,6 +257,7 @@ def submit_sms_code():
             "input[id*='kod']",
             "input[name*='kod']",
             "input[name*='sms']",
+            "input[name*='verit']",      # teloverit, overit apod.
             "input[maxlength='6']",
             "input[placeholder*='kód']",
             "input[placeholder*='kod']",
