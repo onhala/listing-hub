@@ -36,8 +36,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const configPhone = document.getElementById("config-phone");
     const configZip = document.getElementById("config-zip");
     const configPassword = document.getElementById("config-password");
+    const configGeminiModel = document.getElementById("config-gemini-model");
     const configGeminiKey = document.getElementById("config-gemini-key");
     const toggleGeminiKeyBtn = document.getElementById("toggle-gemini-key");
+    const btnTestGemini = document.getElementById("btn-test-gemini");
+    const geminiTestStatus = document.getElementById("gemini-test-status");
+    const geminiTestStatusIcon = document.getElementById("gemini-test-status-icon");
+    const geminiTestStatusText = document.getElementById("gemini-test-status-text");
 
     // TrueNAS elements
     const configTruenasUrl = document.getElementById("config-truenas-url");
@@ -540,9 +545,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 configAutoRefresh.checked = config.auto_refresh_enabled || false;
                 configRefreshInterval.value = config.auto_refresh_interval || "720";
                 
-                // Gemini API klíč se nenačítá celý z bezpečnostních důvodů (pokud je, dáme tam placeholder)
+                // Google AI (Gemini)
+                if (configGeminiModel) {
+                    configGeminiModel.value = config.gemini_model || "gemini-2.5-flash";
+                }
                 if (config.gemini_api_key) {
                     configGeminiKey.placeholder = "••••••••••••••••••••••••••••••••";
+                } else {
+                    configGeminiKey.placeholder = "AIza... (ponech prázdné pro beze změny)";
                 }
 
                 // TrueNAS nastavení
@@ -2034,6 +2044,10 @@ document.addEventListener("DOMContentLoaded", () => {
             updatedConfig.gemini_api_key = geminiKeyVal;
         }
 
+        if (configGeminiModel) {
+            updatedConfig.gemini_model = configGeminiModel.value;
+        }
+
         if (configTruenasUrl) updatedConfig.truenas_url = configTruenasUrl.value.trim();
         if (configTruenasAppName) updatedConfig.truenas_app_name = configTruenasAppName.value.trim();
         if (configTruenasApiKey && configTruenasApiKey.value.trim()) {
@@ -2067,6 +2081,72 @@ document.addEventListener("DOMContentLoaded", () => {
         configGeminiKey.setAttribute("type", type);
         toggleGeminiKeyBtn.querySelector("i").className = type === "password" ? "fa-solid fa-eye" : "fa-solid fa-eye-slash";
     });
+
+    // Test spojení s Google AI (Gemini)
+    if (btnTestGemini) {
+        btnTestGemini.addEventListener("click", async () => {
+            const model = configGeminiModel ? configGeminiModel.value : "gemini-2.5-flash";
+            const apiKey = configGeminiKey.value.trim();
+
+            if (geminiTestStatus) {
+                geminiTestStatus.style.display = "flex";
+                if (geminiTestStatusIcon) {
+                    geminiTestStatusIcon.className = "fa-solid fa-circle-notch fa-spin";
+                    geminiTestStatusIcon.style.color = "var(--accent)";
+                }
+                if (geminiTestStatusText) {
+                    geminiTestStatusText.style.color = "var(--text-muted)";
+                    geminiTestStatusText.textContent = `Testuji spojení s modelem ${model}...`;
+                }
+            }
+            btnTestGemini.disabled = true;
+
+            try {
+                const res = await fetch("/api/ai/test", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        model: model,
+                        api_key: apiKey
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    if (geminiTestStatusIcon) {
+                        geminiTestStatusIcon.className = "fa-solid fa-circle-check";
+                        geminiTestStatusIcon.style.color = "#2ecc71";
+                    }
+                    if (geminiTestStatusText) {
+                        geminiTestStatusText.style.color = "#2ecc71";
+                        geminiTestStatusText.textContent = `Spojení úspěšné! Odezva: ${data.latency_ms} ms (${data.model})`;
+                    }
+                    showNotification(`Google AI (${data.model}) je aktivní a funkční (${data.latency_ms} ms).`, "success");
+                } else {
+                    if (geminiTestStatusIcon) {
+                        geminiTestStatusIcon.className = "fa-solid fa-circle-xmark";
+                        geminiTestStatusIcon.style.color = "#e74c3c";
+                    }
+                    if (geminiTestStatusText) {
+                        geminiTestStatusText.style.color = "#e74c3c";
+                        geminiTestStatusText.textContent = `${data.message || "Nepodařilo se připojit k modelu."}`;
+                    }
+                    showNotification(data.message || "Test spojení selhal.", "error");
+                }
+            } catch (err) {
+                if (geminiTestStatusIcon) {
+                    geminiTestStatusIcon.className = "fa-solid fa-circle-xmark";
+                    geminiTestStatusIcon.style.color = "#e74c3c";
+                }
+                if (geminiTestStatusText) {
+                    geminiTestStatusText.style.color = "#e74c3c";
+                    geminiTestStatusText.textContent = `Chyba sítě: ${err.message}`;
+                }
+                showNotification("Chyba při komunikaci se serverem.", "error");
+            } finally {
+                btnTestGemini.disabled = false;
+            }
+        });
+    }
 
     if (toggleTruenasKeyBtn && configTruenasApiKey) {
         toggleTruenasKeyBtn.addEventListener("click", () => {

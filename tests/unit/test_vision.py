@@ -124,3 +124,26 @@ def test_normalize_vision_data_empty_fallback():
     assert normalized["recommended_title"] != ""
     assert normalized["best_cover_photo_index"] == 0
     assert len(normalized["photo_recommendations"]["quality_tips"]) > 0
+
+@patch("requests.post")
+@patch("listing_hub.ai.advisor.analyze_bazos_prices")
+def test_analyze_photos_custom_model(mock_advisor, mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "candidates": [{
+            "content": {
+                "parts": [{"text": json.dumps({"recommended_title": "Test", "titles": ["Test"]})}]
+            }
+        }]
+    }
+    mock_post.return_value = mock_response
+    mock_advisor.return_value = {"status": "ok"}
+
+    img_bytes = create_dummy_image_bytes()
+    success, data, msg = analyze_photos_with_vision([img_bytes], api_key="dummy_key", model="gemini-2.0-flash")
+    assert success
+    assert mock_post.called
+    called_url = mock_post.call_args[0][0]
+    assert "models/gemini-2.0-flash:generateContent" in called_url
+

@@ -18,13 +18,15 @@ def strip_markdown_codeblocks(text: str) -> str:
         text = re.sub(r'\s*```$', '', text)
     return text.strip()
 
-def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, api_key: str) -> Tuple[bool, str]:
+def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, api_key: str, model: str = "gemini-2.5-flash") -> Tuple[bool, str]:
     """
     Volá Gemini API a optimalizuje text inzerátu podle pokynů.
     Vrací tuple (success_boolean, result_text_or_error_message).
     """
     if not api_key:
         return False, "Chybí Gemini API klíč v nastavení."
+        
+    model = model or "gemini-2.5-flash"
         
     system_prompt = (
         "Jsi AI asistent na úpravu prodejních textů pro Bazoš a Aukro.\n"
@@ -61,7 +63,7 @@ def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, 
         elif instruction_type == "lengthen":
             user_prompt = f"Rozšiř tento popis inzerátu o více detailů a detailní rozbor parametrů. VRAŤ POUZE ROZŠÍŘENÝ POPIS BEZ KOMENTÁŘŮ A BEZ MARKDOWN FORMÁTOVÁNÍ/KÓDOVÝCH BLOKŮ:\n\n{text}"
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     data = {
         "contents": [{

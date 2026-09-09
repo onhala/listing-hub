@@ -178,10 +178,11 @@ def analyze_photos_with_vision(
     image_bytes_list: List[bytes],
     user_notes: str = "",
     api_key: str = "",
-    run_market_advisor: bool = True
+    run_market_advisor: bool = True,
+    model: str = "gemini-2.5-flash"
 ) -> Tuple[bool, Dict[str, Any], str]:
     """
-    Multimodální analýza fotografií předmětu pomocí Gemini 2.5 Flash.
+    Multimodální analýza fotografií předmětu pomocí Gemini Vision API.
     Rozpozná předmět, model, stav, příslušenství, navrhne nadpisy (max 50 znaků),
     vygeneruje přesvědčivý inženýrský popis a volitelně dotáže Bazoš na tržní ceny.
     
@@ -189,6 +190,8 @@ def analyze_photos_with_vision(
     """
     if not api_key:
         return False, {}, "Chybí Gemini API klíč v nastavení."
+        
+    model = model or "gemini-2.5-flash"
         
     if not image_bytes_list:
         return False, {}, "Nebyly přiloženy žádné fotografie k analýze."
@@ -263,7 +266,7 @@ def analyze_photos_with_vision(
     # Přidáme textový prompt
     contents_parts.append({"text": user_prompt})
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{

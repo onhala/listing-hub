@@ -51,12 +51,16 @@ def load_user_config() -> dict:
             "phone": "",
             "psc": "",
             "default_ad_password_b64": "aGVzbG8xMjM=",
-            "gemini_api_key": ""
+            "gemini_api_key": "",
+            "gemini_model": "gemini-2.5-flash"
         }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data.get("user", data)
+            cfg = data.get("user", data)
+            if isinstance(cfg, dict) and not cfg.get("gemini_model"):
+                cfg["gemini_model"] = "gemini-2.5-flash"
+            return cfg
     except Exception:
         return {}
 

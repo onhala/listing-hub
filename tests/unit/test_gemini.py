@@ -120,3 +120,19 @@ def test_improve_text_with_gemini_payload_config(mock_post):
     assert gen_config["temperature"] == 0.4
     assert gen_config["maxOutputTokens"] == 4096
 
+@patch("requests.post")
+def test_improve_text_with_gemini_custom_model(mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "candidates": [{"content": {"parts": [{"text": "Odpověď"}]}}]
+    }
+    mock_post.return_value = mock_response
+
+    success, result = improve_text_with_gemini("text", "title", "improve", "dummy_key", model="gemini-2.5-pro")
+    assert success
+    assert mock_post.called
+    called_url = mock_post.call_args[0][0]
+    assert "models/gemini-2.5-pro:generateContent" in called_url
+
+

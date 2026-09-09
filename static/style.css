@@ -534,7 +534,7 @@ label {
     align-items: center;
 }
 
-input, textarea {
+input, textarea, select {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
     padding: 0.85rem 1rem;
@@ -545,7 +545,12 @@ input, textarea {
     transition: var(--transition-smooth);
 }
 
-input:focus, textarea:focus {
+select option {
+    background: #1a1a24;
+    color: #ffffff;
+}
+
+input:focus, textarea:focus, select:focus {
     outline: none;
     border-color: var(--primary);
     background: rgba(255, 255, 255, 0.07);

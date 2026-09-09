@@ -673,6 +673,9 @@ def save_config_endpoint():
         if not new_user_config.get("gemini_api_key") and old_user.get("gemini_api_key"):
             merged_user["gemini_api_key"] = old_user["gemini_api_key"]
             
+        if not merged_user.get("gemini_model"):
+            merged_user["gemini_model"] = "gemini-2.5-flash"
+            
         full_config["user"] = merged_user
         
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -880,6 +883,59 @@ def cancel_action():
         log_debug(f"CANCEL ERR: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/ai/test", methods=["POST"])
+def api_test_gemini():
+    try:
+        import time
+        payload = request.get_json(silent=True) or {}
+        _, user_config = load_data()
+        
+        api_key = payload.get("api_key", "").strip() or user_config.get("gemini_api_key", "").strip()
+        model = payload.get("model", "").strip() or user_config.get("gemini_model", "").strip() or "gemini-2.5-flash"
+        
+        if not api_key:
+            return jsonify({
+                "status": "error",
+                "message": "Chybí Gemini API klíč. Zadejte jej do pole a klikněte na Otestovat spojení."
+            }), 400
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        test_payload = {
+            "contents": [{
+                "parts": [{"text": "Odpověz jedním slovem: OK"}]
+            }],
+            "generationConfig": {
+                "maxOutputTokens": 10,
+                "temperature": 0.0
+            }
+        }
+        
+        start_time = time.time()
+        response = requests.post(url, headers=headers, json=test_payload, timeout=10)
+        latency_ms = int((time.time() - start_time) * 1000)
+        
+        if response.status_code == 200:
+            return jsonify({
+                "status": "success",
+                "model": model,
+                "latency_ms": latency_ms,
+                "message": f"Spojení s modelem {model} je funkční ({latency_ms} ms)."
+            })
+        else:
+            err_msg = f"Chyba Google AI (Status {response.status_code})"
+            try:
+                err_data = response.json()
+                if "error" in err_data and "message" in err_data["error"]:
+                    err_msg += f": {err_data['error']['message']}"
+            except Exception:
+                err_msg += f": {response.text[:200]}"
+            return jsonify({"status": "error", "message": err_msg, "model": model}), 400
+    except requests.Timeout:
+        return jsonify({"status": "error", "message": "Časový limit vypršel (Google AI neodpovědělo do 10 sekund)."}), 504
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Chyba testu: {str(e)}"}), 500
+
 @app.route("/api/ai/improve", methods=["POST"])
 def ai_improve():
     try:
@@ -890,42 +946,12 @@ def ai_improve():
         
         _, user_config = load_data()
         api_key = user_config.get("gemini_api_key", "")
+        model = user_config.get("gemini_model") or "gemini-2.5-flash"
         
         if not api_key:
             return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
             
-        # Sestavíme system prompt pro optimalizaci prodejního textu na Bazoši
-        system_prompt = (
-            "Jsi AI asistent na úpravu prodejních textů pro Bazoš. "
-            "Tvým úkolem je vždy vrátit POUZE upravený/opravený text bez jakýchkoliv dodatečných vysvětlení, "
-            "pozdravů, uvozovek nebo komentářů. Vracíš pouze finální text, nic víc.\n\n"
-            "Pokyny pro editaci:\n"
-            "- Piš v češtině, jasně, čitelně a srozumitelně.\n"
-            "- Používej odrážky pro parametry, stav a výhody.\n"
-            "- Nepoužívej přehnané marketingové fráze a 'slop' slova (např. 'neuvěřitelná nabídka', 'jedinečná šance', 'TOP stav!!!').\n"
-            "- Působ jako solidní, inženýrsky přesný a férový prodejce (podle standardů rodinné firmy TERMS s tradicí od roku 1991).\n"
-            "- Text formátuj přehledně pomocí odstavců a klasických odrážek (např. '*' nebo '-').\n"
-            "- Udržuj přibližně stejnou délku a rozsah jako původní text. NIKDY text nezkracuj drasticky a vždy dokonči celé myšlenky i věty.\n"
-            "- Ponech všechny věcné parametry (výkon, rozměry, stav, doplňky) a kontaktní/odběrové informace z původního textu."
-        )
-        
-        user_prompt = ""
-        if field_type == "title":
-            if instruction_type == "title_suggestions":
-                user_prompt = f"Navrhni 5 různých atraktivních a chytlavých nadpisů pro inzerát na základě tohoto původního nadpisu: '{text}'. Nadpisy musí mít maximálně 50 znaků. VRAŤ POUZE TĚCHTO 5 NADPISŮ, KAŽDÝ NA NOVÉM ŘÁDKU, BEZ ODPOVĚDI OKOLO:"
-            else:
-                user_prompt = f"Vylepši tento nadpis inzerátu na Bazoš (max 50 znaků). VRAŤ POUZE VÝSLEDNÝ NADPIS BEZ UVOZOWEK A VYSVĚTLENÍ:\n\n{text}"
-        else:
-            if instruction_type == "improve":
-                user_prompt = f"Vylepši tón a formátování tohoto popisu inzerátu. Zachovej všechny věcné parametry, doplňky a detaily z původního textu. Délka musí odpovídat původnímu rozsahu. VRAŤ POUZE VYLEPŠENÝ POPIS BEZ KOMENTÁŘŮ:\n\n{text}"
-            elif instruction_type == "fix":
-                user_prompt = f"Oprav gramatiku, překlepy a stylistiku v tomto popisu inzerátu. Zachovej všechny původní parametry a délku. VRAŤ POUZE OPRAVENÝ POPIS:\n\n{text}"
-            elif instruction_type == "shorten":
-                user_prompt = f"Zkrať tento popis inzerátu, udělej ho stručný a výstižný, ale zachovej klíčové parametry. VRAŤ POUZE STRUČNÝ POPIS:\n\n{text}"
-            elif instruction_type == "lengthen":
-                user_prompt = f"Rozšiř tento popis inzerátu o více detailů a detailní rozbor parametrů. VRAŤ POUZE ROZŠÍŘENÝ POPIS BEZ KOMENTÁŘŮ:\n\n{text}"
-        
-        success, result_text = improve_text_with_gemini(text, field_type, instruction_type, api_key)
+        success, result_text = improve_text_with_gemini(text, field_type, instruction_type, api_key, model=model)
         if not success:
             status_code = 500
             match = re.search(r"Status (\d+)", result_text)
@@ -942,6 +968,7 @@ def api_analyze_photos():
     try:
         _, user_config = load_data()
         api_key = user_config.get("gemini_api_key", "")
+        model = user_config.get("gemini_model") or "gemini-2.5-flash"
         if not api_key:
             return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
 
@@ -979,7 +1006,8 @@ def api_analyze_photos():
             image_bytes_list=image_bytes_list,
             user_notes=user_notes,
             api_key=api_key,
-            run_market_advisor=True
+            run_market_advisor=True,
+            model=model
         )
 
         if not success:
@@ -994,6 +1022,7 @@ def api_analyze_existing_listing(listing_id):
     try:
         _, user_config = load_data()
         api_key = user_config.get("gemini_api_key", "")
+        model = user_config.get("gemini_model") or "gemini-2.5-flash"
         if not api_key:
             return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
 
@@ -1034,7 +1063,8 @@ def api_analyze_existing_listing(listing_id):
             image_bytes_list=image_bytes_list,
             user_notes=user_notes,
             api_key=api_key,
-            run_market_advisor=True
+            run_market_advisor=True,
+            model=model
         )
 
         if not success:

@@ -112,7 +112,8 @@ def load_data():
                     "default_ad_password_b64": "aGVzbG8xMjM=",
                     "name": "Tvoje Jméno",
                     "zip_code": "10000",
-                    "location": "Praha 100 00"
+                    "location": "Praha 100 00",
+                    "gemini_model": "gemini-2.5-flash"
                 }
             }
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -145,6 +146,10 @@ def load_data():
             user_config["location"] = f"Město {user_config['zip_code']}"
         if os.environ.get("GEMINI_API_KEY"):
             user_config["gemini_api_key"] = os.environ.get("GEMINI_API_KEY").strip()
+        if os.environ.get("GEMINI_MODEL"):
+            user_config["gemini_model"] = os.environ.get("GEMINI_MODEL").strip()
+        elif not user_config.get("gemini_model"):
+            user_config["gemini_model"] = "gemini-2.5-flash"
             
         if os.environ.get("AUTO_REFRESH_ENABLED") is not None:
             user_config["auto_refresh_enabled"] = os.environ.get("AUTO_REFRESH_ENABLED").lower() in ("true", "1", "yes")

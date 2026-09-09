@@ -102,6 +102,53 @@ def test_ai_improve_api_error(mock_post, mock_load_data, client):
     assert "Chyba Gemini API" in data["message"]
 
 @patch("app.load_data")
+def test_api_test_gemini_missing_key(mock_load_data, client):
+    mock_load_data.return_value = ({}, {"gemini_api_key": ""})
+    res = client.post("/api/ai/test", json={"model": "gemini-2.5-flash", "api_key": ""})
+    assert res.status_code == 400
+    data = json.loads(res.data)
+    assert "Chybí Gemini API klíč" in data["message"]
+
+@patch("app.load_data")
+@patch("requests.post")
+def test_api_test_gemini_success(mock_post, mock_load_data, client):
+    mock_load_data.return_value = ({}, {"gemini_api_key": "dummy_saved_key"})
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "candidates": [{"content": {"parts": [{"text": "OK"}]}}]
+    }
+    mock_post.return_value = mock_response
+
+    res = client.post("/api/ai/test", json={"model": "gemini-2.5-pro"})
+    assert res.status_code == 200
+    data = json.loads(res.data)
+    assert data["status"] == "success"
+    assert data["model"] == "gemini-2.5-pro"
+    assert "latency_ms" in data
+    assert mock_post.called
+    called_url = mock_post.call_args[0][0]
+    assert "models/gemini-2.5-pro:generateContent" in called_url
+
+@patch("app.load_data")
+@patch("requests.post")
+def test_api_test_gemini_error(mock_post, mock_load_data, client):
+    mock_load_data.return_value = ({}, {"gemini_api_key": "invalid_key"})
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.json.return_value = {
+        "error": {"message": "API key not valid. Please pass a valid API key."}
+    }
+    mock_post.return_value = mock_response
+
+    res = client.post("/api/ai/test", json={"model": "gemini-2.5-flash"})
+    assert res.status_code == 400
+    data = json.loads(res.data)
+    assert data["status"] == "error"
+    assert "API key not valid" in data["message"]
+
+
+@patch("app.load_data")
 def test_api_analyze_photos_missing_key(mock_load_data, client):
     mock_load_data.return_value = ({}, {"gemini_api_key": ""})
     res = client.post("/api/ai/analyze-photos", json={"photos_dir": "dummy"})

@@ -266,15 +266,40 @@
                             <label for="config-password">Výchozí heslo Bazoše</label>
                             <input type="password" id="config-password" placeholder="Heslo pro tvé inzeráty">
                         </div>
-                        <div class="form-group full-width">
-                            <label for="config-gemini-key">Gemini API Klíč (Google AI)</label>
+                        <!-- GOOGLE AI (GEMINI) KONFIGURACE -->
+                        <div class="form-group full-width" style="margin-top: 1rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                            <h4 style="margin-bottom: 0.5rem; color: var(--text-main);"><i class="fa-solid fa-brain" style="color: var(--accent);"></i> Google AI (Gemini) Konfigurace</h4>
+                            <p class="config-desc" style="margin-bottom: 0.5rem; font-size: 0.85rem;">Nastavení multimodálního AI modelu pro rozpoznávání fotografií, oceňování předmětů a generování prodejních textů.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-gemini-model">AI Model (Gemini)</label>
+                            <select id="config-gemini-model">
+                                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Doporučeno - nejrychlejší a nejchytřejší)</option>
+                                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Hluboká analýza a preciznost)</option>
+                                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Stabilní)</option>
+                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                            </select>
+                            <span class="input-hint">Vybraný model se použije pro AI Vision i textové optimalizace.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-gemini-key">Gemini API Klíč</label>
                             <div class="input-password-wrapper">
-                                <input type="password" id="config-gemini-key" placeholder="AI za-p-f... (ponech prázdné pro beze změny)">
-                                <button type="button" class="btn-toggle-password" id="toggle-gemini-key">
+                                <input type="password" id="config-gemini-key" placeholder="AIza... (ponech prázdné pro beze změny)">
+                                <button type="button" class="btn-toggle-password" id="toggle-gemini-key" title="Zobrazit/skrýt klíč">
                                     <i class="fa-solid fa-eye"></i>
                                 </button>
                             </div>
-                            <span class="input-hint">Klíč slouží pro inteligentní korekci a optimalizaci prodejních textů. Data jsou uložena pouze lokálně v `bazos_config.json`.</span>
+                            <span class="input-hint">Klíč získáte zdarma na Google AI Studio (aistudio.google.com).</span>
+                        </div>
+                        <div class="form-group full-width" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                            <button type="button" class="btn btn-secondary" id="btn-test-gemini">
+                                <i class="fa-solid fa-bolt"></i> Otestovat spojení s modelem
+                            </button>
+                            <div id="gemini-test-status" style="display: none; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                                <i id="gemini-test-status-icon" class="fa-solid fa-circle-notch fa-spin"></i>
+                                <span id="gemini-test-status-text">Testuji připojení k AI...</span>
+                            </div>
                         </div>
                         <div class="form-group full-width" style="margin-top: 1rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05);">
                             <h4 style="margin-bottom: 0.5rem; color: var(--text-main);">Automatická aktualizace dat</h4>
