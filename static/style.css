@@ -1063,3 +1063,172 @@ input:focus, textarea:focus {
 .text-preview-editor::-webkit-scrollbar-thumb:hover {
     background: var(--accent);
 }
+
+/* ==========================================
+   AI Smart Listing Wizard & Vision Styles
+   ========================================== */
+.title-chip {
+    background: rgba(131, 92, 223, 0.12);
+    border: 1px solid rgba(131, 92, 223, 0.35);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.84rem;
+    color: #f1f0f7;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+}
+
+.title-chip:hover {
+    background: rgba(131, 92, 223, 0.28);
+    border-color: var(--accent, #835cdf);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(131, 92, 223, 0.2);
+}
+
+.title-chip.selected {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.4), rgba(79, 70, 229, 0.4));
+    border-color: #a78bfa;
+    box-shadow: 0 0 10px rgba(131, 92, 223, 0.4);
+    font-weight: 600;
+}
+
+.title-chip-badge {
+    font-size: 0.72rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    color: #a78bfa;
+}
+
+.price-suggest-card {
+    transition: all 0.2s ease !important;
+}
+
+.price-suggest-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    filter: brightness(1.15);
+}
+
+.price-suggest-card.active {
+    box-shadow: 0 0 14px rgba(131, 92, 223, 0.5) !important;
+    border-width: 2px !important;
+}
+
+.wizard-photo-thumb {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 1;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    transition: all 0.2s ease;
+}
+
+.wizard-photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.wizard-photo-thumb.is-cover {
+    border: 2px solid #f59e0b;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+}
+
+.wizard-photo-thumb .btn-set-cover {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(0, 0, 0, 0.75);
+    border: none;
+    border-radius: 4px;
+    color: #cbd5e1;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+}
+
+.wizard-photo-thumb.is-cover .btn-set-cover {
+    background: #f59e0b;
+    color: #000;
+    font-weight: 700;
+}
+
+.wizard-photo-thumb .btn-remove-thumb {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.75);
+    border: none;
+    border-radius: 50%;
+    color: #ef4444;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.wizard-photo-thumb .btn-remove-thumb:hover {
+    background: #ef4444;
+    color: #fff;
+}
+
+/* ==========================================================
+   Version Inspector & Update Toast Styles
+   ========================================================== */
+.version-widget {
+    user-select: none;
+}
+.version-widget:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    color: #fff !important;
+}
+.version-widget:active {
+    transform: scale(0.98);
+}
+
+.app-update-toast {
+    animation: slideDownToast 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.4), 0 0 16px rgba(131, 92, 223, 0.2);
+}
+
+@keyframes slideDownToast {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+#btn-dismiss-app-update:hover {
+    color: #fff !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+#modal-latest-card {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#modal-compare-link:hover {
+    text-decoration: underline !important;
+    color: #a78bfa !important;
+}

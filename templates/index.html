@@ -60,7 +60,14 @@
                     <span class="pulse-dot"></span>
                     <span>Lokální server aktivní</span>
                 </div>
-                <div class="version" id="app-version-label" style="font-size: 0.75rem; color: var(--text-muted); opacity: 0.8;">Načítám verzi...</div>
+                <div class="version-widget" id="app-version-widget" title="Zobrazit podrobnosti o verzi a aktualizacích" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); font-size: 0.76rem; color: var(--text-muted); transition: all 0.2s;">
+                    <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <i class="fa-solid fa-code-branch" style="font-size: 0.72rem; color: var(--accent);"></i>
+                        <span id="app-version-label" style="font-weight: 600; color: var(--text-main);">v3.6.0</span>
+                        <code id="app-commit-hash" style="background: rgba(0,0,0,0.35); padding: 1px 4px; border-radius: 4px; font-size: 0.72rem; color: #a5d6ff;">...</code>
+                    </div>
+                    <span id="app-version-badge" style="display: none; background: #eab308; color: #000; font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 10px; margin-left: 4px; text-transform: uppercase;">Update</span>
+                </div>
             </div>
         </aside>
 
@@ -77,15 +84,25 @@
                 </button>
             </div>
 
-            <!-- App Update Banner -->
-            <div id="app-update-banner" style="display: none; background: rgba(131, 92, 223, 0.15); border: 1px solid var(--accent, #835cdf); padding: 0.85rem 1.25rem; border-radius: 12px; margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem;">
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <i class="fa-solid fa-cloud-arrow-down" style="color: var(--accent, #835cdf); font-size: 1.25rem;"></i>
-                    <span style="font-size: 0.9rem; color: var(--text-main);"><strong style="color: var(--accent, #835cdf);">Nová verze k dispozici!</strong> Na GitHubu je k dispozici aktualizace: <span id="app-update-msg" style="font-style: italic;">...</span></span>
+            <!-- Non-intrusive App Update Toast Notification -->
+            <div id="app-update-banner" class="app-update-toast" style="display: none; background: rgba(131, 92, 223, 0.12); border: 1px solid rgba(131, 92, 223, 0.35); padding: 0.65rem 1.15rem; border-radius: 10px; margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; backdrop-filter: blur(8px);">
+                <div style="display: flex; align-items: center; gap: 0.75rem; overflow: hidden;">
+                    <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(131, 92, 223, 0.2); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i class="fa-solid fa-cloud-arrow-down" style="color: var(--accent, #835cdf); font-size: 1rem;"></i>
+                    </div>
+                    <div style="font-size: 0.88rem; color: var(--text-main); line-height: 1.3;">
+                        <div><strong style="color: #fff;">Dostupná aktualizace na GitHubu</strong> <span id="app-update-version-diff" style="font-size: 0.78rem; background: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; margin-left: 4px; font-family: monospace; color: #a5d6ff;">...</span></div>
+                        <span id="app-update-msg" style="font-size: 0.8rem; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; overflow: hidden; display: block; max-width: 580px;">...</span>
+                    </div>
                 </div>
-                <button class="btn btn-primary" id="btn-app-update" style="padding: 0.4rem 0.85rem; font-size: 0.8rem; font-weight: 600;">
-                    <i class="fa-solid fa-download"></i> Aktualizovat
-                </button>
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+                    <button class="btn btn-primary" id="btn-app-update" style="padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 600;">
+                        <i class="fa-solid fa-circle-info"></i> Podrobnosti
+                    </button>
+                    <button type="button" id="btn-dismiss-app-update" title="Odložit upozornění" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 0.95rem; transition: color 0.2s;">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- Header bar -->
@@ -283,6 +300,28 @@
                                 <option value="1440">Každých 24 hodin</option>
                             </select>
                         </div>
+                        <div class="form-group full-width" style="margin-top: 1rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                            <h4 style="margin-bottom: 0.5rem; color: var(--text-main);"><i class="fa-solid fa-server" style="color: #0db7ed;"></i> TrueNAS SCALE Blesková Aktualizace</h4>
+                            <p class="config-desc" style="margin-bottom: 1rem; font-size: 0.85rem;">Nakonfigurujte přístup k TrueNAS REST API pro okamžitou 1-click aktualizaci bez čekání na 24hodinový kontrolní cyklus TrueNASu.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-truenas-url">TrueNAS URL / IP</label>
+                            <input type="text" id="config-truenas-url" placeholder="Např. http://192.168.1.50 nebo https://truenas.local">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-truenas-app-name">Název aplikace v TrueNAS</label>
+                            <input type="text" id="config-truenas-app-name" placeholder="Např. listing-hub nebo bazos-automat">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="config-truenas-api-key">TrueNAS API Klíč</label>
+                            <div class="input-password-wrapper">
+                                <input type="password" id="config-truenas-api-key" placeholder="1-xxxxxxxxxxxx (vygenerujte v TrueNAS -> Uživatel -> API Keys)">
+                                <button type="button" class="btn-toggle-password" id="toggle-truenas-key">
+                                    <i class="fa-solid fa-eye"></i>
+                                </button>
+                            </div>
+                            <span class="input-hint">Klíč slouží k tomu, aby Listing Hub mohl dát TrueNASu povel k okamžitému stažení nového image a restartu.</span>
+                        </div>
                         <div class="form-actions full-width">
                             <button type="submit" class="btn btn-primary" id="btn-save-config">
                                 <i class="fa-solid fa-floppy-disk"></i> Uložit nastavení
@@ -294,15 +333,79 @@
         </main>
     </div>
 
-    <!-- ADD LISTING MODAL -->
+    <!-- ADD LISTING MODAL (AI SMART LISTING WIZARD) -->
     <div class="modal-overlay" id="add-listing-modal">
-        <div class="modal">
+        <div class="modal modal-lg" style="max-width: 960px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
             <div class="modal-header">
-                <h3>Vytvořit nový inzerát</h3>
+                <h3><i class="fa-solid fa-wand-magic-sparkles" style="color: var(--accent);"></i> Vytvořit inzerát s AI Vision</h3>
                 <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="overflow-y: auto; padding: 1.5rem;">
+                <!-- KROK 1: HERO PHOTO DROPZONE & AI SCAN -->
+                <div class="wizard-section" style="background: rgba(131, 92, 223, 0.05); border: 1px dashed rgba(131, 92, 223, 0.4); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <h4 style="margin: 0; color: #fff; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="fa-solid fa-camera" style="color: var(--accent);"></i> 1. Nahrajte fotky předmětu
+                        </h4>
+                        <label for="new-photo-file-input" class="btn btn-secondary btn-sm" style="margin: 0; cursor: pointer;">
+                            <i class="fa-solid fa-folder-open"></i> Procházet soubory
+                        </label>
+                        <input type="file" id="new-photo-file-input" multiple accept="image/*" style="display: none;">
+                    </div>
+                    
+                    <div id="new-photo-dropzone" style="border: 2px dashed rgba(255,255,255,0.15); border-radius: 10px; padding: 1.5rem; text-align: center; cursor: pointer; background: rgba(0,0,0,0.2); transition: all 0.2s;">
+                        <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2rem; color: var(--accent); margin-bottom: 0.5rem;"></i>
+                        <p style="margin: 0; font-size: 0.95rem; color: #fff; font-weight: 500;">Přetáhněte sem fotky předmětu nebo vložte ze schránky (Ctrl+V / Cmd+V)</p>
+                        <span style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">Vyfoťte předmět, výrobní štítek a příslušenství. Gemini Vision rozpozná značku, model, stav a tržní cenu.</span>
+                    </div>
+
+                    <!-- Thumbnails grid for selected photos -->
+                    <div id="new-photo-preview-grid" style="display: none; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.75rem; margin-top: 1rem;"></div>
+
+                    <!-- Optional note & AI Action button -->
+                    <div id="new-ai-action-bar" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.08);">
+                        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                            <input type="text" id="new-user-notes" placeholder="Poznámka pro AI (volitelné): např. koupeno 2023, bez záruky, málo používané..." style="flex: 1; min-width: 260px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); padding: 0.6rem 0.85rem; border-radius: 8px; color: #fff; font-size: 0.88rem;">
+                            <button type="button" class="btn btn-primary" id="btn-run-vision-ai" style="padding: 0.6rem 1.25rem; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 0.5rem; background: linear-gradient(135deg, #7c3aed, #4f46e5); box-shadow: 0 4px 14px rgba(124, 58, 237, 0.4);">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Spustit AI Vision analýzu
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Animated loading bar -->
+                    <div id="vision-ai-loading" style="display: none; margin-top: 1rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(131, 92, 223, 0.3); border-radius: 8px; padding: 1rem; text-align: center;">
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 0.75rem; color: #fff; font-size: 0.95rem;">
+                            <i class="fa-solid fa-circle-notch fa-spin" style="color: var(--accent); font-size: 1.2rem;"></i>
+                            <span id="vision-loading-text">Gemini 2.5 Flash detailně analyzuje fotografie předmětu...</span>
+                        </div>
+                        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);" id="vision-loading-subtext">Rozpoznávám značku, výrobní štítek, model a opotřebení...</div>
+                    </div>
+                </div>
+
+                <!-- KROK 2: INTERAKTIVNÍ FORMULÁŘ S AI NÁVRHY -->
                 <form id="add-listing-form">
+                    <!-- AI QUALITY RADAR & DETECTED ITEM BANNER -->
+                    <div id="new-ai-detected-banner" style="display: none; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 0.85rem 1.15rem; margin-bottom: 1.25rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <i class="fa-solid fa-circle-check" style="color: #10b981; font-size: 1.1rem;"></i>
+                                <span style="font-weight: 600; color: #fff;" id="detected-item-name">Identifikováno: -</span>
+                                <span class="badge" id="detected-condition-badge" style="background: rgba(255,255,255,0.1); color: #cbd5e1; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;">-</span>
+                            </div>
+                            <span id="detected-confidence-text" style="font-size: 0.8rem; color: var(--text-muted);">AI Vision</span>
+                        </div>
+                        <div id="ai-quality-tips" style="margin-top: 0.4rem; font-size: 0.82rem; color: #94a3b8; line-height: 1.4;"></div>
+                    </div>
+
+                    <!-- TITLES SUGGESTIONS CHIPS -->
+                    <div id="new-titles-chips-container" style="display: none; margin-bottom: 1rem;">
+                        <label style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.4rem; display: block;">
+                            <i class="fa-solid fa-lightbulb" style="color: #ffc107;"></i> Navržené nadpisy pro Bazoš (kliknutím vyber):
+                        </label>
+                        <div id="new-titles-chips" style="display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+                    </div>
+
+                    <!-- TITLE INPUT -->
                     <div class="form-group">
                         <label for="new-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                             <span>Název věci (Nadpis)</span>
@@ -310,21 +413,47 @@
                         </label>
                         <input type="text" id="new-title" maxlength="50" required placeholder="Zadej stručný a jasný název (max 50 znaků)">
                     </div>
-                    <div class="form-group">
-                        <label for="new-price">Inzerovaná cena (Kč)</label>
-                        <input type="number" id="new-price" min="0" required placeholder="Např. 1500">
+
+                    <!-- PRICING RADAR CARDS -->
+                    <div id="new-price-radar-container" style="display: none; margin-bottom: 1.25rem;">
+                        <label style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.4rem; display: block;">
+                            <i class="fa-solid fa-chart-line" style="color: var(--accent);"></i> Tržní ceny na Bazoši (kliknutím nastav cenu):
+                        </label>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;" id="new-price-cards">
+                            <div class="price-suggest-card" id="card-price-quick" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(239, 68, 68, 0.3); border-left: 4px solid #ef4444; border-radius: 8px; padding: 0.75rem; cursor: pointer; transition: all 0.15s;">
+                                <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Rychlý prodej (-10%)</span>
+                                <strong id="val-price-quick" style="font-size: 1.1rem; color: #fff;">- Kč</strong>
+                            </div>
+                            <div class="price-suggest-card" id="card-price-fair" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(131, 92, 223, 0.4); border-left: 4px solid var(--accent); border-radius: 8px; padding: 0.75rem; cursor: pointer; transition: all 0.15s;">
+                                <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Tržní medián (Férová)</span>
+                                <strong id="val-price-fair" style="font-size: 1.1rem; color: #fff;">- Kč</strong>
+                            </div>
+                            <div class="price-suggest-card" id="card-price-premium" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(16, 185, 129, 0.3); border-left: 4px solid #10b981; border-radius: 8px; padding: 0.75rem; cursor: pointer; transition: all 0.15s;">
+                                <span style="font-size: 0.75rem; color: var(--text-muted); display: block;">Prémiový stav (+10%)</span>
+                                <strong id="val-price-premium" style="font-size: 1.1rem; color: #fff;">- Kč</strong>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="new-category">Kategorie na Bazoši (nepovinné)</label>
-                        <input type="text" id="new-category" placeholder="Např. Sekačky, Ledničky, Stoly">
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label for="new-price">Inzerovaná cena (Kč)</label>
+                            <input type="number" id="new-price" min="0" required placeholder="Např. 1500">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-category">Kategorie na Bazoši</label>
+                            <input type="text" id="new-category" placeholder="Např. Nářadí, Sekačky, Stoly">
+                        </div>
                     </div>
+
                     <div class="form-group">
                         <label for="new-description" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                            <span>Popis věci</span>
+                            <span>Popis inzerátu</span>
                             <span id="new-desc-counter" class="input-hint" style="font-weight: normal; font-size: 0.75rem; color: var(--text-muted);">0 znaků</span>
                         </label>
-                        <textarea id="new-description" rows="6" required placeholder="Popiš věc, její stav, důvod prodeje a podrobnosti..."></textarea>
+                        <textarea id="new-description" rows="8" required placeholder="Popiš věc, její stav, parametry, důvod prodeje a možnosti předání..."></textarea>
                     </div>
+
                     <div class="form-group">
                         <label style="margin-bottom: 0.5rem; display: block;">Cílové portály</label>
                         <div style="display: flex; gap: 1.5rem; align-items: center;">
@@ -338,9 +467,12 @@
                             </label>
                         </div>
                     </div>
+
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary btn-close-modal">Zrušit</button>
-                        <button type="submit" class="btn btn-primary">Vytvořit inzerát</button>
+                        <button type="submit" class="btn btn-primary" id="btn-submit-new-listing">
+                            <i class="fa-solid fa-rocket"></i> Vytvořit inzerát
+                        </button>
                     </div>
                 </form>
             </div>
@@ -414,9 +546,14 @@
                         <div class="form-group full-width">
                             <label style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                                 <span>Fotky k nahrání na Bazoš <span id="photo-count-label" class="input-hint" style="margin-left:8px;"></span></span>
-                                <label for="edit-photo-file-input" class="btn btn-secondary btn-sm" style="margin: 0; padding: 4px 10px; font-size: 0.8rem; cursor: pointer;">
-                                    <i class="fa-solid fa-cloud-arrow-up"></i> Nahrát fotky
-                                </label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <button type="button" class="btn btn-ai-sparkle btn-sm" id="btn-reanalyze-existing-photos" title="Spustit Gemini Vision na těchto fotkách a aktualizovat inzerát">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i> AI Vision z fotek
+                                    </button>
+                                    <label for="edit-photo-file-input" class="btn btn-secondary btn-sm" style="margin: 0; padding: 4px 10px; font-size: 0.8rem; cursor: pointer;">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i> Nahrát fotky
+                                    </label>
+                                </div>
                             </label>
                             <input type="file" id="edit-photo-file-input" multiple accept="image/*" style="display: none;">
                             <div id="photo-dropzone" class="photo-dropzone" style="border: 2px dashed var(--border-color, #cbd5e1); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; margin-bottom: 8px; background: rgba(255,255,255,0.03); transition: all 0.2s;">
@@ -540,39 +677,86 @@
         <i class="fa-solid fa-wand-magic-sparkles"></i> Přepsat s AI
     </button>
 
-    <!-- Docker Update Instruction Modal -->
+    <!-- Version & Update Inspector Modal -->
     <div class="modal" id="docker-update-modal" style="display: none;">
-        <div class="modal-content" style="max-width: 580px;">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-docker" style="color: #0db7ed;"></i> Aktualizace Docker Kontejneru</h3>
-                <button class="btn-close" id="btn-close-docker-update"><i class="fa-solid fa-xmark"></i></button>
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header" style="border-bottom: 1px solid var(--border); padding-bottom: 0.85rem;">
+                <div style="display: flex; align-items: center; gap: 0.65rem;">
+                    <i class="fa-solid fa-code-branch" style="color: var(--accent); font-size: 1.25rem;"></i>
+                    <h3 style="margin: 0; font-size: 1.15rem;">Stav verze & Aktualizace</h3>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <button class="btn btn-sm btn-secondary" id="btn-recheck-version" title="Zkontrolovat znovu na GitHubu" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Zkontrolovat
+                    </button>
+                    <button class="btn-close" id="btn-close-docker-update"><i class="fa-solid fa-xmark"></i></button>
+                </div>
             </div>
             <div class="modal-body" style="color: var(--text-main); font-size: 0.9rem; line-height: 1.5; padding: 1.25rem;">
-                <p style="margin-bottom: 1rem;">Aplikace běží v <strong>Docker kontejneru</strong>. Kvůli zachování bezpečnosti a neměnnosti (immutability) kontejnerů nelze aktualizaci provést zevnitř aplikace.</p>
-                
-                <p style="margin-bottom: 0.5rem; font-weight: 600;">Pro ruční aktualizaci spusťte na vašem serveru:</p>
-                <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border); padding: 0.75rem 1rem; border-radius: 8px; font-family: monospace; font-size: 0.85rem; color: #fff; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-                    <code>docker compose pull && docker compose up -d</code>
-                    <button class="btn-copy-code" id="btn-copy-docker-cmd" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; font-size: 1.1rem;"><i class="fa-regular fa-copy"></i></button>
+                <!-- Side-by-side version cards -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                    <!-- Local installed card -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+                            <i class="fa-solid fa-hard-drive"></i> Nainstalováno
+                        </div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-local-version">v3.6.0</div>
+                        <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.45rem;">
+                            Commit: <code id="modal-local-hash" style="background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 4px; color: #a5d6ff; font-family: monospace;">...</code>
+                        </div>
+                        <div style="font-size: 0.76rem; color: #94a3b8;" id="modal-environment-label">
+                            <i class="fa-brands fa-docker"></i> Docker kontejner
+                        </div>
+                    </div>
+
+                    <!-- Remote latest card -->
+                    <div id="modal-latest-card" style="background: rgba(131, 92, 223, 0.06); border: 1px solid rgba(131, 92, 223, 0.35); border-radius: 10px; padding: 1rem;">
+                        <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 0.4rem; display: flex; align-items: center; justify-content: space-between;">
+                            <span><i class="fa-brands fa-github"></i> Nejnovější na GitHubu</span>
+                            <span id="modal-update-badge" style="background: #10b981; color: #000; font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 8px;">Aktuální</span>
+                        </div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-latest-version">v3.6.0</div>
+                        <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.45rem;">
+                            Commit: <code id="modal-latest-hash" style="background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 4px; color: #a5d6ff; font-family: monospace;">...</code>
+                        </div>
+                        <div style="font-size: 0.76rem; color: var(--text-muted);" id="modal-latest-date">
+                            Zjišťuji...
+                        </div>
+                    </div>
                 </div>
 
-                <p style="margin-bottom: 0.5rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
-                    <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--accent);"></i>
-                    Doporučení: Automatické aktualizace (Watchtower)
-                </p>
-                <p style="margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-muted);">Pro plně automatické stahování a aktualizace bez nutnosti ručních zásahů můžete do svého <code>docker-compose.yml</code> přidat Watchtower:</p>
-                
-                <pre style="background: rgba(0,0,0,0.3); border: 1px solid var(--border); padding: 0.75rem 1rem; border-radius: 8px; font-family: monospace; font-size: 0.8rem; color: #a5d6ff; line-height: 1.3; overflow-x: auto; margin-bottom: 1rem;">
-services:
-  watchtower:
-    image: containrrr/watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 3600 --cleanup bazos-automat
-                </pre>
+                <!-- Latest commit message preview -->
+                <div id="modal-commit-details" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem;">
+                    <div style="font-size: 0.76rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 0.3rem;">Poslední commit zpráva:</div>
+                    <div id="modal-commit-message" style="font-family: monospace; font-size: 0.85rem; color: #e2e8f0; word-break: break-word;">...</div>
+                </div>
+
+                <!-- Compare Diff link -->
+                <div id="modal-diff-container" style="display: none; margin-bottom: 1.25rem; background: rgba(131, 92, 223, 0.08); border: 1px solid rgba(131, 92, 223, 0.2); padding: 0.65rem 1rem; border-radius: 8px;">
+                    <a href="#" id="modal-compare-link" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--accent); text-decoration: none; font-weight: 600;">
+                        <i class="fa-solid fa-code-compare"></i> Zobrazit porovnání změn kódu na GitHubu (Diff) <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.75rem;"></i>
+                    </a>
+                </div>
+
+                <!-- Docker commands & instructions -->
+                <div id="modal-docker-section">
+                    <p style="margin-bottom: 0.4rem; font-weight: 600; font-size: 0.85rem; color: var(--text-main);">Ruční aktualizace na serveru:</p>
+                    <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border); padding: 0.6rem 0.85rem; border-radius: 8px; font-family: monospace; font-size: 0.82rem; color: #fff; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                        <code>docker compose pull && docker compose up -d</code>
+                        <button class="btn-copy-code" id="btn-copy-docker-cmd" title="Kopírovat" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; font-size: 1rem;"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" id="btn-close-docker-update-ok">Rozumím</button>
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 0.85rem;">
+                <div style="display: flex; gap: 0.5rem;">
+                    <button type="button" class="btn btn-primary" id="btn-trigger-truenas-upgrade" style="background: linear-gradient(135deg, #0284c7, #0369a1); font-weight: 600; font-size: 0.85rem;">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Aktualizovat ihned na TrueNAS
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btn-dismiss-update-modal" style="font-size: 0.85rem;" title="Skryje notifikaci pro tuto verzi">
+                        <i class="fa-solid fa-bell-slash"></i> Odložit
+                    </button>
+                </div>
+                <button class="btn btn-secondary" id="btn-close-docker-update-ok" style="font-size: 0.85rem;">Zavřít</button>
             </div>
         </div>
     </div>
@@ -704,7 +888,7 @@ services:
     </div>
 
     <!-- Client application logic -->
-    <script src="/static/app.js?v=3.5.0"></script>
+    <script src="/static/app.js?v=3.6.0"></script>
 </body>
 </html>
 

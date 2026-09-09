@@ -39,6 +39,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const configGeminiKey = document.getElementById("config-gemini-key");
     const toggleGeminiKeyBtn = document.getElementById("toggle-gemini-key");
 
+    // TrueNAS elements
+    const configTruenasUrl = document.getElementById("config-truenas-url");
+    const configTruenasAppName = document.getElementById("config-truenas-app-name");
+    const configTruenasApiKey = document.getElementById("config-truenas-api-key");
+    const toggleTruenasKeyBtn = document.getElementById("toggle-truenas-key");
+    const btnTriggerTruenasUpgrade = document.getElementById("btn-trigger-truenas-upgrade");
+
     // Auto refresh elements
     const configAutoRefresh = document.getElementById("config-auto-refresh");
     const configRefreshInterval = document.getElementById("config-refresh-interval");
@@ -46,17 +53,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnSyncBanner = document.getElementById("btn-sync-banner");
     const lastSyncTimeLabel = document.getElementById("last-sync-time-label");
 
-    // App Update elements
+    // App Update & Version Inspector elements
     const appUpdateBanner = document.getElementById("app-update-banner");
     const appUpdateMsg = document.getElementById("app-update-msg");
+    const appUpdateVersionDiff = document.getElementById("app-update-version-diff");
     const btnAppUpdate = document.getElementById("btn-app-update");
+    const btnDismissAppUpdate = document.getElementById("btn-dismiss-app-update");
+    const appVersionWidget = document.getElementById("app-version-widget");
+    const appVersionLabel = document.getElementById("app-version-label");
+    const appCommitHash = document.getElementById("app-commit-hash");
+    const appVersionBadge = document.getElementById("app-version-badge");
     const dockerUpdateModal = document.getElementById("docker-update-modal");
     const btnCloseDockerUpdate = document.getElementById("btn-close-docker-update");
     const btnCloseDockerUpdateOk = document.getElementById("btn-close-docker-update-ok");
     const btnCopyDockerCmd = document.getElementById("btn-copy-docker-cmd");
+    const btnRecheckVersion = document.getElementById("btn-recheck-version");
+    const btnDismissUpdateModal = document.getElementById("btn-dismiss-update-modal");
+    const modalLocalVersion = document.getElementById("modal-local-version");
+    const modalLocalHash = document.getElementById("modal-local-hash");
+    const modalEnvironmentLabel = document.getElementById("modal-environment-label");
+    const modalLatestVersion = document.getElementById("modal-latest-version");
+    const modalLatestHash = document.getElementById("modal-latest-hash");
+    const modalLatestDate = document.getElementById("modal-latest-date");
+    const modalUpdateBadge = document.getElementById("modal-update-badge");
+    const modalCommitMessage = document.getElementById("modal-commit-message");
+    const modalDiffContainer = document.getElementById("modal-diff-container");
+    const modalCompareLink = document.getElementById("modal-compare-link");
     const restartOverlay = document.getElementById("restart-overlay");
     const restartStatus = document.getElementById("restart-status");
-    const appVersionLabel = document.getElementById("app-version-label");
 
     // Lightbox modal elements
     const lightboxModal = document.getElementById("lightbox-modal");
@@ -119,6 +143,9 @@ document.addEventListener("DOMContentLoaded", () => {
         versionUpdate: "/api/version/update",
         saveAd: "/api/listings/save",
         addAd: "/api/listings/add",
+        createWithPhotos: "/api/listings/create-with-photos",
+        aiAnalyzePhotos: "/api/ai/analyze-photos",
+        aiAnalyzeExisting: "/api/ai/analyze-existing",
         action: "/api/action",
         cancel: "/api/action/cancel",
         aiImprove: "/api/ai/improve",
@@ -209,52 +236,136 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    const checkAppVersion = async () => {
+    let currentVersionData = null;
+
+    const populateVersionModal = (data) => {
+        if (!data) return;
+        const appVer = data.app_version || "3.6.0";
+        const localHash = (data.local && data.local.hash) || data.local_hash || "unknown";
+        const latestHash = (data.latest && data.latest.hash) || data.latest_hash || "unknown";
+        const envName = (data.local && data.local.environment) || (data.is_docker ? "Docker kontejner" : "Lokální vývoj");
+
+        if (modalLocalVersion) modalLocalVersion.textContent = `v${appVer}`;
+        if (modalLocalHash) modalLocalHash.textContent = localHash;
+        if (modalEnvironmentLabel) {
+            const icon = data.is_docker ? 'fa-brands fa-docker' : 'fa-solid fa-laptop-code';
+            modalEnvironmentLabel.innerHTML = `<i class="${icon}"></i> ${envName}`;
+        }
+
+        if (modalLatestVersion) modalLatestVersion.textContent = `v${(data.latest && data.latest.version) || appVer}`;
+        if (modalLatestHash) modalLatestHash.textContent = latestHash;
+
+        if (modalUpdateBadge) {
+            if (data.update_available) {
+                modalUpdateBadge.textContent = "K dispozici";
+                modalUpdateBadge.style.background = "#eab308";
+                modalUpdateBadge.style.color = "#000";
+            } else {
+                modalUpdateBadge.textContent = "Aktuální";
+                modalUpdateBadge.style.background = "#10b981";
+                modalUpdateBadge.style.color = "#000";
+            }
+        }
+
+        if (modalLatestDate) {
+            if (data.latest && data.latest.date) {
+                try {
+                    const d = new Date(data.latest.date);
+                    modalLatestDate.textContent = isNaN(d) ? data.latest.date : d.toLocaleString("cs-CZ");
+                } catch (e) {
+                    modalLatestDate.textContent = data.latest.date;
+                }
+            } else {
+                modalLatestDate.textContent = "Datum neuvedeno";
+            }
+        }
+
+        if (modalCommitMessage) {
+            const msg = (data.latest && data.latest.message) || data.latest_message || "Žádné informace o commitu.";
+            modalCommitMessage.textContent = msg;
+        }
+
+        if (modalDiffContainer && modalCompareLink) {
+            if (data.compare_url) {
+                modalDiffContainer.style.display = "block";
+                modalCompareLink.href = data.compare_url;
+            } else if (data.latest && data.latest.url) {
+                modalDiffContainer.style.display = "block";
+                modalCompareLink.href = data.latest.url;
+            } else {
+                modalDiffContainer.style.display = "none";
+            }
+        }
+    };
+
+    const openVersionModal = () => {
+        if (dockerUpdateModal) {
+            dockerUpdateModal.style.display = "flex";
+            if (currentVersionData) {
+                populateVersionModal(currentVersionData);
+            }
+        }
+    };
+
+    const checkAppVersion = async (force = false) => {
         try {
-            const res = await fetch(API.versionCheck);
+            const url = force ? `${API.versionCheck}?force=1` : API.versionCheck;
+            const res = await fetch(url);
             if (res.ok) {
                 const data = await res.json();
+                currentVersionData = data;
                 
-                // Formátování textu verze v sidebaru
-                const commitHash = (data.local_hash && data.local_hash !== "unknown") 
-                    ? data.local_hash 
+                const appVer = data.app_version || "3.6.0";
+                const localHash = (data.local && data.local.hash !== "unknown") 
+                    ? data.local.hash 
+                    : (data.local_hash && data.local_hash !== "unknown" ? data.local_hash : "git");
+                const latestHash = (data.latest && data.latest.hash !== "unknown")
+                    ? data.latest.hash
                     : (data.latest_hash && data.latest_hash !== "unknown" ? data.latest_hash : "");
 
-                let versionText = "v3.2.0";
-                if (commitHash) {
-                    versionText += ` (${commitHash.substring(0, 7)})`;
+                // 1. Aktualizace sidebar widgetu
+                if (appVersionLabel) {
+                    appVersionLabel.textContent = `v${appVer}`;
                 }
-                if (data.is_docker) {
-                    versionText += " [Docker]";
-                } else {
-                    versionText += " [Local]";
+                if (appCommitHash) {
+                    appCommitHash.textContent = localHash;
                 }
-                if (data.update_available) {
-                    versionText += " ⚠️ update k dispozici";
-                    appVersionLabel.style.color = "var(--accent)";
-                } else {
-                    appVersionLabel.style.color = "var(--text-muted)";
-                }
-                appVersionLabel.textContent = versionText;
-
-                if (data.update_available) {
-                    appUpdateBanner.style.display = "flex";
-                    // Ukážeme zprávu posledního commitu, pokud je
-                    appUpdateMsg.textContent = data.latest_message ? `"${data.latest_message}"` : "Dostupný nový kód na GitHubu.";
-                    
-                    // Nabindujeme chování podle prostředí
-                    btnAppUpdate.onclick = () => {
-                        if (data.is_docker) {
-                            // Běží v Dockeru -> ukážeme modal s instrukcemi
-                            dockerUpdateModal.style.display = "flex";
-                        } else {
-                            // Lokální vývoj -> spustíme in-place aktualizaci
-                            triggerLocalAppUpdate();
+                if (appVersionBadge) {
+                    if (data.update_available) {
+                        appVersionBadge.style.display = "inline-block";
+                        if (appVersionWidget) {
+                            appVersionWidget.style.borderColor = "rgba(234, 179, 8, 0.4)";
+                            appVersionWidget.style.background = "rgba(234, 179, 8, 0.08)";
                         }
-                    };
-                } else {
-                    appUpdateBanner.style.display = "none";
+                    } else {
+                        appVersionBadge.style.display = "none";
+                        if (appVersionWidget) {
+                            appVersionWidget.style.borderColor = "rgba(255,255,255,0.06)";
+                            appVersionWidget.style.background = "rgba(255,255,255,0.03)";
+                        }
+                    }
                 }
+
+                // 2. Kontrola odložení notifikace v localStorage
+                const dismissedHash = localStorage.getItem("listing_hub_dismissed_update");
+                const isDismissed = (dismissedHash && latestHash && dismissedHash === latestHash);
+
+                // 3. Zobrazení decentního toastu/banneru
+                if (data.update_available && !isDismissed) {
+                    if (appUpdateBanner) appUpdateBanner.style.display = "flex";
+                    if (appUpdateVersionDiff) {
+                        appUpdateVersionDiff.textContent = `${localHash} → ${latestHash || "nový"}`;
+                    }
+                    if (appUpdateMsg) {
+                        const msg = (data.latest && data.latest.message) || data.latest_message;
+                        appUpdateMsg.textContent = msg ? `"${msg}"` : "Dostupný novější commit na GitHubu.";
+                    }
+                } else {
+                    if (appUpdateBanner) appUpdateBanner.style.display = "none";
+                }
+
+                // 4. Předvyplnění modalu verzí
+                populateVersionModal(data);
             }
         } catch (err) {
             console.error("Chyba při kontrole verze:", err);
@@ -327,6 +438,62 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
+        // Zprovoznit otevírání modalu verze ze sidebaru i z toast notifikace
+        if (appVersionWidget) {
+            appVersionWidget.addEventListener("click", openVersionModal);
+        }
+        if (btnAppUpdate) {
+            btnAppUpdate.addEventListener("click", openVersionModal);
+        }
+
+        // Odložení notifikace v toastu (uložení do localStorage)
+        if (btnDismissAppUpdate) {
+            btnDismissAppUpdate.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (currentVersionData) {
+                    const latestHash = (currentVersionData.latest && currentVersionData.latest.hash) || currentVersionData.latest_hash;
+                    if (latestHash) {
+                        localStorage.setItem("listing_hub_dismissed_update", latestHash);
+                    }
+                }
+                if (appUpdateBanner) appUpdateBanner.style.display = "none";
+                showNotification("Upozornění na novou verzi bylo odloženo.", "info");
+            });
+        }
+
+        // Odložení notifikace přímo z modalu
+        if (btnDismissUpdateModal) {
+            btnDismissUpdateModal.addEventListener("click", () => {
+                if (currentVersionData) {
+                    const latestHash = (currentVersionData.latest && currentVersionData.latest.hash) || currentVersionData.latest_hash;
+                    if (latestHash) {
+                        localStorage.setItem("listing_hub_dismissed_update", latestHash);
+                    }
+                }
+                if (appUpdateBanner) appUpdateBanner.style.display = "none";
+                if (dockerUpdateModal) dockerUpdateModal.style.display = "none";
+                showNotification("Upozornění na tuto verzi bylo odloženo.", "info");
+            });
+        }
+
+        // Znovu zkontrolovat na GitHubu (vynutit refresh bez cache)
+        if (btnRecheckVersion) {
+            btnRecheckVersion.addEventListener("click", async () => {
+                btnRecheckVersion.disabled = true;
+                const origHtml = btnRecheckVersion.innerHTML;
+                btnRecheckVersion.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Zjišťuji...';
+                try {
+                    await checkAppVersion(true);
+                    showNotification("Data o verzi byla úspěšně aktualizována z GitHubu.", "success");
+                } catch (e) {
+                    showNotification("Chyba při dotazu na GitHub.", "error");
+                } finally {
+                    btnRecheckVersion.disabled = false;
+                    btnRecheckVersion.innerHTML = origHtml;
+                }
+            });
+        }
+
         // Zprovoznit zavírání Docker Update modalu
         if (btnCloseDockerUpdate) {
             btnCloseDockerUpdate.addEventListener("click", () => {
@@ -365,6 +532,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 // Gemini API klíč se nenačítá celý z bezpečnostních důvodů (pokud je, dáme tam placeholder)
                 if (config.gemini_api_key) {
                     configGeminiKey.placeholder = "••••••••••••••••••••••••••••••••";
+                }
+
+                // TrueNAS nastavení
+                if (configTruenasUrl) configTruenasUrl.value = config.truenas_url || "";
+                if (configTruenasAppName) configTruenasAppName.value = config.truenas_app_name || "listing-hub";
+                if (config.truenas_api_key && configTruenasApiKey) {
+                    configTruenasApiKey.placeholder = "••••••••••••••••••••••••••••••••";
                 }
             }
         } catch (err) {
@@ -1031,11 +1205,323 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // ==========================================
-    // 4. VYTVOŘENÍ NOVÉHO INZERÁTU
+    // 4. VYTVOŘENÍ NOVÉHO INZERÁTU (AI SMART WIZARD)
     // ==========================================
+
+    let wizardSelectedFiles = [];
+    let wizardCoverIndex = 0;
+
+    const newPhotoDropzone = document.getElementById("new-photo-dropzone");
+    const newPhotoFileInput = document.getElementById("new-photo-file-input");
+    const newPhotoPreviewGrid = document.getElementById("new-photo-preview-grid");
+    const newAiActionBar = document.getElementById("new-ai-action-bar");
+    const newUserNotes = document.getElementById("new-user-notes");
+    const btnRunVisionAi = document.getElementById("btn-run-vision-ai");
+    const visionAiLoading = document.getElementById("vision-ai-loading");
+    const visionLoadingText = document.getElementById("vision-loading-text");
+    const visionLoadingSubtext = document.getElementById("vision-loading-subtext");
+    
+    const newAiDetectedBanner = document.getElementById("new-ai-detected-banner");
+    const detectedItemName = document.getElementById("detected-item-name");
+    const detectedConditionBadge = document.getElementById("detected-condition-badge");
+    const aiQualityTips = document.getElementById("ai-quality-tips");
+    
+    const newTitlesChipsContainer = document.getElementById("new-titles-chips-container");
+    const newTitlesChips = document.getElementById("new-titles-chips");
+    
+    const newPriceRadarContainer = document.getElementById("new-price-radar-container");
+    const valPriceQuick = document.getElementById("val-price-quick");
+    const valPriceFair = document.getElementById("val-price-fair");
+    const valPricePremium = document.getElementById("val-price-premium");
+    const cardPriceQuick = document.getElementById("card-price-quick");
+    const cardPriceFair = document.getElementById("card-price-fair");
+    const cardPricePremium = document.getElementById("card-price-premium");
+
+    const resetWizardState = () => {
+        wizardSelectedFiles = [];
+        wizardCoverIndex = 0;
+        if (newPhotoFileInput) newPhotoFileInput.value = "";
+        if (newUserNotes) newUserNotes.value = "";
+        if (newPhotoPreviewGrid) {
+            newPhotoPreviewGrid.innerHTML = "";
+            newPhotoPreviewGrid.style.display = "none";
+        }
+        if (newAiActionBar) newAiActionBar.style.display = "none";
+        if (visionAiLoading) visionAiLoading.style.display = "none";
+        if (newAiDetectedBanner) newAiDetectedBanner.style.display = "none";
+        if (newTitlesChipsContainer) {
+            newTitlesChipsContainer.style.display = "none";
+            newTitlesChips.innerHTML = "";
+        }
+        if (newPriceRadarContainer) newPriceRadarContainer.style.display = "none";
+    };
+
+    const renderWizardPhotoPreviews = () => {
+        if (!newPhotoPreviewGrid) return;
+        newPhotoPreviewGrid.innerHTML = "";
+
+        if (wizardSelectedFiles.length === 0) {
+            newPhotoPreviewGrid.style.display = "none";
+            if (newAiActionBar) newAiActionBar.style.display = "none";
+            return;
+        }
+
+        newPhotoPreviewGrid.style.display = "grid";
+        if (newAiActionBar) newAiActionBar.style.display = "block";
+
+        if (wizardCoverIndex >= wizardSelectedFiles.length) {
+            wizardCoverIndex = 0;
+        }
+
+        wizardSelectedFiles.forEach((file, index) => {
+            const isCover = index === wizardCoverIndex;
+            const thumbCard = document.createElement("div");
+            thumbCard.className = `wizard-photo-thumb ${isCover ? "is-cover" : ""}`;
+
+            const img = document.createElement("img");
+            img.src = URL.createObjectURL(file);
+            img.alt = file.name;
+
+            // Remove button
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "btn-remove-thumb";
+            removeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            removeBtn.title = "Odebrat fotku";
+            removeBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                wizardSelectedFiles.splice(index, 1);
+                if (wizardCoverIndex >= wizardSelectedFiles.length) {
+                    wizardCoverIndex = Math.max(0, wizardSelectedFiles.length - 1);
+                }
+                renderWizardPhotoPreviews();
+            });
+
+            // Set cover button
+            const coverBtn = document.createElement("button");
+            coverBtn.type = "button";
+            coverBtn.className = "btn-set-cover";
+            coverBtn.innerHTML = isCover
+                ? '<i class="fa-solid fa-star"></i> Titulní'
+                : '<i class="fa-regular fa-star"></i> Nastavit titulní';
+            coverBtn.title = isCover ? "Hlavní titulní fotografie" : "Zvolit jako hlavní fotku";
+            coverBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                wizardCoverIndex = index;
+                renderWizardPhotoPreviews();
+            });
+
+            thumbCard.appendChild(img);
+            thumbCard.appendChild(removeBtn);
+            thumbCard.appendChild(coverBtn);
+            newPhotoPreviewGrid.appendChild(thumbCard);
+        });
+    };
+
+    const addFilesToWizard = (files) => {
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            if (file.type.startsWith("image/")) {
+                wizardSelectedFiles.push(file);
+            }
+        }
+        renderWizardPhotoPreviews();
+    };
+
+    if (newPhotoFileInput) {
+        newPhotoFileInput.addEventListener("change", (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                addFilesToWizard(e.target.files);
+            }
+        });
+    }
+
+    if (newPhotoDropzone) {
+        newPhotoDropzone.addEventListener("click", () => {
+            if (newPhotoFileInput) newPhotoFileInput.click();
+        });
+
+        newPhotoDropzone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            newPhotoDropzone.style.borderColor = "var(--accent)";
+            newPhotoDropzone.style.background = "rgba(131, 92, 223, 0.15)";
+        });
+
+        newPhotoDropzone.addEventListener("dragleave", () => {
+            newPhotoDropzone.style.borderColor = "rgba(255,255,255,0.15)";
+            newPhotoDropzone.style.background = "rgba(0,0,0,0.2)";
+        });
+
+        newPhotoDropzone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            newPhotoDropzone.style.borderColor = "rgba(255,255,255,0.15)";
+            newPhotoDropzone.style.background = "rgba(0,0,0,0.2)";
+            if (e.dataTransfer && e.dataTransfer.files) {
+                addFilesToWizard(e.dataTransfer.files);
+            }
+        });
+    }
+
+    // Window paste handler for Ctrl+V / Cmd+V images
+    window.addEventListener("paste", (e) => {
+        if (!addListingModal || !addListingModal.classList.contains("active")) return;
+        
+        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
+        if (activeTag === "input" || activeTag === "textarea") return;
+
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        let pastedImages = [];
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf("image") !== -1) {
+                const blob = items[i].getAsFile();
+                if (blob) {
+                    const file = new File([blob], `screenshot_${Date.now()}.png`, { type: blob.type });
+                    pastedImages.push(file);
+                }
+            }
+        }
+        if (pastedImages.length > 0) {
+            addFilesToWizard(pastedImages);
+            showNotification(`Vloženo ${pastedImages.length} fotek ze schránky.`, "info");
+        }
+    });
+
+    // Run Vision AI analysis
+    if (btnRunVisionAi) {
+        btnRunVisionAi.addEventListener("click", async () => {
+            if (wizardSelectedFiles.length === 0) {
+                showNotification("Nejprve přetáhněte nebo vyberte fotografie předmětu.", "warning");
+                return;
+            }
+
+            if (newAiActionBar) newAiActionBar.style.display = "none";
+            if (visionAiLoading) visionAiLoading.style.display = "block";
+            btnRunVisionAi.disabled = true;
+
+            const formData = new FormData();
+            wizardSelectedFiles.forEach((file) => {
+                formData.append("photos", file);
+            });
+            if (newUserNotes) {
+                formData.append("notes", newUserNotes.value.trim());
+            }
+
+            try {
+                const res = await fetch(API.aiAnalyzePhotos, {
+                    method: "POST",
+                    body: formData
+                });
+
+                const data = await res.json();
+                if (!res.ok || data.status !== "success") {
+                    showNotification(data.message || "Analýza fotografií selhala.", "error");
+                    return;
+                }
+
+                const visionData = data.data;
+
+                // 1. Detected item banner & Quality Tips
+                if (newAiDetectedBanner) {
+                    const itemIdent = visionData.item_identification || {};
+                    if (detectedItemName) {
+                        detectedItemName.textContent = itemIdent.full_name || itemIdent.model || visionData.recommended_title || "Předmět rozpoznán";
+                    }
+                    if (detectedConditionBadge) {
+                        detectedConditionBadge.textContent = itemIdent.condition_cz || itemIdent.condition || "Zachovalý stav";
+                    }
+                    if (aiQualityTips) {
+                        const tips = (visionData.photo_recommendations && visionData.photo_recommendations.quality_tips) || visionData.quality_tips || [];
+                        if (tips.length > 0) {
+                            aiQualityTips.innerHTML = `<i class="fa-solid fa-lightbulb" style="color: #ffc107;"></i> <strong>Rádce kvality:</strong> ${tips.join(" ")}`;
+                        } else {
+                            aiQualityTips.innerHTML = `<i class="fa-solid fa-check" style="color: #10b981;"></i> Fotografie jsou ostré a obsahují všechny potřebné detaily.`;
+                        }
+                    }
+                    newAiDetectedBanner.style.display = "block";
+                }
+
+                // 2. Titles Chips & Selection
+                const titles = visionData.titles || [];
+                if (newTitlesChipsContainer && newTitlesChips) {
+                    newTitlesChips.innerHTML = "";
+                    titles.forEach((t) => {
+                        const chip = document.createElement("div");
+                        chip.className = `title-chip ${t === visionData.recommended_title ? "selected" : ""}`;
+                        chip.innerHTML = `<span>${t}</span><span class="title-chip-badge">${t.length}/50</span>`;
+                        chip.addEventListener("click", () => {
+                            document.querySelectorAll(".title-chip").forEach(c => c.classList.remove("selected"));
+                            chip.classList.add("selected");
+                            newTitle.value = t;
+                            updateCounter(newTitle, newTitleCounter, 50);
+                        });
+                        newTitlesChips.appendChild(chip);
+                    });
+                    newTitlesChipsContainer.style.display = "block";
+                }
+
+                if (visionData.recommended_title) {
+                    newTitle.value = visionData.recommended_title;
+                    updateCounter(newTitle, newTitleCounter, 50);
+                }
+
+                // 3. Category pre-fill
+                const cat = (visionData.item_identification && visionData.item_identification.category_general) || visionData.category || "";
+                if (cat) {
+                    newCategory.value = cat;
+                }
+
+                // 4. Description pre-fill
+                if (visionData.description) {
+                    newDescription.value = visionData.description;
+                    updateCounter(newDescription, newDescCounter);
+                }
+
+                // 5. Market Price Radar Cards
+                if (newPriceRadarContainer && visionData.market_analysis && visionData.market_analysis.statistics) {
+                    const stats = visionData.market_analysis.statistics;
+                    if (stats.median && stats.median > 0) {
+                        if (valPriceQuick) valPriceQuick.textContent = `${(stats.suggested_quick_sale || Math.round(stats.median * 0.9)).toLocaleString("cs-CZ")} Kč`;
+                        if (valPriceFair) valPriceFair.textContent = `${(stats.suggested_fair || stats.median).toLocaleString("cs-CZ")} Kč`;
+                        if (valPricePremium) valPricePremium.textContent = `${(stats.suggested_premium || Math.round(stats.median * 1.1)).toLocaleString("cs-CZ")} Kč`;
+
+                        const selectPrice = (val, cardEl) => {
+                            newPrice.value = val;
+                            [cardPriceQuick, cardPriceFair, cardPricePremium].forEach(c => c && c.classList.remove("active"));
+                            if (cardEl) cardEl.classList.add("active");
+                        };
+
+                        if (cardPriceQuick) cardPriceQuick.onclick = () => selectPrice(stats.suggested_quick_sale || Math.round(stats.median * 0.9), cardPriceQuick);
+                        if (cardPriceFair) cardPriceFair.onclick = () => selectPrice(stats.suggested_fair || stats.median, cardPriceFair);
+                        if (cardPricePremium) cardPricePremium.onclick = () => selectPrice(stats.suggested_premium || Math.round(stats.median * 1.1), cardPricePremium);
+
+                        selectPrice(stats.suggested_fair || stats.median, cardPriceFair);
+                        newPriceRadarContainer.style.display = "block";
+                    }
+                } else if (visionData.pricing && visionData.pricing.estimated_fair_czk) {
+                    newPrice.value = visionData.pricing.estimated_fair_czk;
+                }
+
+                // 6. Cover photo recommendation
+                const recCoverIdx = visionData.best_cover_photo_index || (visionData.photo_recommendations && visionData.photo_recommendations.cover_photo_index);
+                if (typeof recCoverIdx === "number" && recCoverIdx >= 0 && recCoverIdx < wizardSelectedFiles.length) {
+                    wizardCoverIndex = recCoverIdx;
+                    renderWizardPhotoPreviews();
+                }
+
+                showNotification("AI Vision úspěšně vygenerovala podklady pro inzerát!", "success");
+            } catch (err) {
+                showNotification("Chyba při komunikaci s AI Vision: " + err.message, "error");
+            } finally {
+                if (visionAiLoading) visionAiLoading.style.display = "none";
+                if (newAiActionBar) newAiActionBar.style.display = "block";
+                btnRunVisionAi.disabled = false;
+            }
+        });
+    }
 
     document.getElementById("btn-add-listing-modal").addEventListener("click", () => {
         addListingForm.reset();
+        resetWizardState();
         updateCounter(newTitle, newTitleCounter, 50);
         updateCounter(newDescription, newDescCounter);
         addListingModal.classList.add("active");
@@ -1046,36 +1532,122 @@ document.addEventListener("DOMContentLoaded", () => {
         
         const newTargetBazos = document.getElementById("new-target-bazos");
         const newTargetAukro = document.getElementById("new-target-aukro");
-
-        const newAdData = {
-            title: newTitle.value,
-            price: parseInt(newPrice.value) || 0,
-            category: newCategory.value.trim(),
-            description: newDescription.value,
-            target_bazos: newTargetBazos && newTargetBazos.checked ? 1 : 0,
-            target_aukro: newTargetAukro && newTargetAukro.checked ? 1 : 0
-        };
+        const submitBtn = document.getElementById("btn-submit-new-listing");
+        if (submitBtn) submitBtn.disabled = true;
 
         try {
-            const res = await fetch(API.addAd, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(newAdData)
-            });
+            if (wizardSelectedFiles.length > 0) {
+                const formData = new FormData();
+                formData.append("title", newTitle.value.trim());
+                formData.append("price", parseInt(newPrice.value) || 0);
+                formData.append("category", newCategory.value.trim());
+                formData.append("description", newDescription.value);
+                formData.append("notes", (newUserNotes ? newUserNotes.value.trim() : ""));
+                formData.append("target_bazos", newTargetBazos && newTargetBazos.checked ? 1 : 0);
+                formData.append("target_aukro", newTargetAukro && newTargetAukro.checked ? 1 : 0);
+                formData.append("cover_photo_index", wizardCoverIndex);
 
-            if (res.ok) {
+                wizardSelectedFiles.forEach((file) => {
+                    formData.append("photos", file);
+                });
+
+                const res = await fetch(API.createWithPhotos, {
+                    method: "POST",
+                    body: formData
+                });
+
                 const data = await res.json();
-                showNotification(`Inzerát byl vytvořen. Fotky vlož do složky: ${data.ad.local_photos_dir}`, "success");
-                addListingModal.classList.remove("active");
-                loadListings();
+                if (res.ok && data.status === "success") {
+                    showNotification(`Inzerát byl úspěšně vytvořen s ${data.saved_photos_count} fotkami!`, "success");
+                    addListingModal.classList.remove("active");
+                    resetWizardState();
+                    loadListings();
+                } else {
+                    showNotification(data.message || "Vytváření inzerátu selhalo", "error");
+                }
             } else {
+                const newAdData = {
+                    title: newTitle.value.trim(),
+                    price: parseInt(newPrice.value) || 0,
+                    category: newCategory.value.trim(),
+                    description: newDescription.value,
+                    target_bazos: newTargetBazos && newTargetBazos.checked ? 1 : 0,
+                    target_aukro: newTargetAukro && newTargetAukro.checked ? 1 : 0
+                };
+
+                const res = await fetch(API.addAd, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(newAdData)
+                });
+
                 const data = await res.json();
-                showNotification(data.message || "Vytváření selhalo", "error");
+                if (res.ok && data.status === "success") {
+                    showNotification(`Inzerát vytvořen. Fotky můžeš vložit do ${data.ad.local_photos_dir}`, "success");
+                    addListingModal.classList.remove("active");
+                    resetWizardState();
+                    loadListings();
+                } else {
+                    showNotification(data.message || "Vytváření selhalo", "error");
+                }
             }
         } catch (err) {
-            showNotification("Chyba při vytváření inzerátu.", "error");
+            showNotification("Chyba při vytváření inzerátu: " + err.message, "error");
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
         }
     });
+
+    // Also handle Re-analyze existing listing photos in editListingModal
+    const btnReanalyzeExisting = document.getElementById("btn-reanalyze-existing-photos");
+    if (btnReanalyzeExisting) {
+        btnReanalyzeExisting.addEventListener("click", async () => {
+            if (!currentAd || !currentAd.id) {
+                showNotification("Není vybrán žádný inzerát.", "error");
+                return;
+            }
+
+            btnReanalyzeExisting.disabled = true;
+            btnReanalyzeExisting.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzuji fotky...';
+            showNotification("Spouštím Gemini Vision na fotografiích inzerátu...", "info");
+
+            try {
+                const res = await fetch(`${API.aiAnalyzeExisting}/${currentAd.id}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ notes: editNotes ? editNotes.value : "" })
+                });
+
+                const data = await res.json();
+                if (!res.ok || data.status !== "success") {
+                    showNotification(data.message || "Analýza fotografií selhala.", "error");
+                    return;
+                }
+
+                const visionData = data.data;
+
+                if (visionData.description) {
+                    openAiModal("description", "improve", visionData.description);
+                }
+
+                if (visionData.recommended_title) {
+                    editTitle.value = visionData.recommended_title;
+                    updateCounter(editTitle, editTitleCounter, 50);
+                }
+
+                if (visionData.category || (visionData.item_identification && visionData.item_identification.category_general)) {
+                    editCategory.value = visionData.category || visionData.item_identification.category_general;
+                }
+
+                showNotification("Fotky byly analyzovány! Texty byly aktualizovány a otevřen AI návrh.", "success");
+            } catch (err) {
+                showNotification("Chyba při analýze: " + err.message, "error");
+            } finally {
+                btnReanalyzeExisting.disabled = false;
+                btnReanalyzeExisting.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> AI Vision z fotek';
+            }
+        });
+    }
 
     // ==========================================
     // 5. BAZOŠ AUTOMATIZACE (PLAYWRIGHT)
@@ -1434,6 +2006,12 @@ document.addEventListener("DOMContentLoaded", () => {
             updatedConfig.gemini_api_key = geminiKeyVal;
         }
 
+        if (configTruenasUrl) updatedConfig.truenas_url = configTruenasUrl.value.trim();
+        if (configTruenasAppName) updatedConfig.truenas_app_name = configTruenasAppName.value.trim();
+        if (configTruenasApiKey && configTruenasApiKey.value.trim()) {
+            updatedConfig.truenas_api_key = configTruenasApiKey.value.trim();
+        }
+
         try {
             const res = await fetch(API.config, {
                 method: "POST",
@@ -1443,7 +2021,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (res.ok) {
                 showNotification("Nastavení bylo úspěšně uloženo.", "success");
-                configGeminiKey.value = ""; // Vynulujeme pole po uložení
+                configGeminiKey.value = "";
+                if (configTruenasApiKey) configTruenasApiKey.value = "";
                 loadConfig();
             } else {
                 const data = await res.json();
@@ -1460,6 +2039,52 @@ document.addEventListener("DOMContentLoaded", () => {
         configGeminiKey.setAttribute("type", type);
         toggleGeminiKeyBtn.querySelector("i").className = type === "password" ? "fa-solid fa-eye" : "fa-solid fa-eye-slash";
     });
+
+    if (toggleTruenasKeyBtn && configTruenasApiKey) {
+        toggleTruenasKeyBtn.addEventListener("click", () => {
+            const type = configTruenasApiKey.getAttribute("type") === "password" ? "text" : "password";
+            configTruenasApiKey.setAttribute("type", type);
+            toggleTruenasKeyBtn.querySelector("i").className = type === "password" ? "fa-solid fa-eye" : "fa-solid fa-eye-slash";
+        });
+    }
+
+    if (btnTriggerTruenasUpgrade) {
+        btnTriggerTruenasUpgrade.addEventListener("click", async () => {
+            btnTriggerTruenasUpgrade.disabled = true;
+            btnTriggerTruenasUpgrade.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Odesílám požadavek do TrueNAS...';
+
+            try {
+                const res = await fetch("/api/version/truenas-upgrade", { method: "POST" });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    if (dockerUpdateModal) dockerUpdateModal.style.display = "none";
+                    showNotification(data.message, "success");
+
+                    const restartOverlay = document.getElementById("restart-overlay");
+                    const restartStatus = document.getElementById("restart-status");
+                    if (restartOverlay) {
+                        restartOverlay.style.display = "flex";
+                        let seconds = 30;
+                        const interval = setInterval(() => {
+                            seconds--;
+                            if (restartStatus) restartStatus.textContent = `Čekám na TrueNAS restart (cca ${seconds}s)...`;
+                            if (seconds <= 0) {
+                                clearInterval(interval);
+                                window.location.reload();
+                            }
+                        }, 1000);
+                    }
+                } else {
+                    showNotification(data.message || "Aktualizace přes TrueNAS selhala.", "error");
+                }
+            } catch (err) {
+                showNotification("Chyba při volání aktualizace: " + err.message, "error");
+            } finally {
+                btnTriggerTruenasUpgrade.disabled = false;
+                btnTriggerTruenasUpgrade.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Aktualizovat ihned na TrueNAS';
+            }
+        });
+    }
 
     let screencastWs = null;
 

@@ -1,0 +1,48 @@
+# ==========================================================
+# Listing Hub & AI Editor - TrueNAS SCALE Compose Template
+# Kompatibilní s TrueNAS SCALE Electric Eel (24.10+) a Cobia/Dragonfish Custom Apps
+# ==========================================================
+
+services:
+  listing-hub:
+    image: ghcr.io/onhala/listing-hub:latest
+    container_name: listing-hub
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      # TrueNAS SCALE nativní uživatel 'apps' má UID 568 a GID 568
+      # Díky tomu kontejner automaticky přizpůsobí práva na ZFS datasetu bez 'Permission denied'
+      - PUID=568
+      - PGID=568
+      - DISPLAY=:99
+      - PYTHONUNBUFFERED=1
+      # Volitelná konfigurace pro automatický refresh z Bazoše
+      - AUTO_REFRESH_ENABLED=true
+      - AUTO_REFRESH_INTERVAL=720
+    volumes:
+      # Namapujte na vaše TrueNAS Host Path / ZFS datasety
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./photos:/app/photos
+      - ./export:/app/export
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/api/refresh/status')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Volitelná blesková automatická aktualizace:
+  # TrueNAS SCALE nativně kontroluje image jednou za 24 hodin.
+  # Watchtower kontroluje nový obraz každé 2 minuty a ihned provede čistý restart.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: listing-hub-updater
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 120 --cleanup listing-hub
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=120

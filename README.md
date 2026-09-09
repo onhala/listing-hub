@@ -1,8 +1,13 @@
-# 🤖 Listing Hub & AI Editor v3.0.0
+# 🤖 Listing Hub & AI Editor v3.6.0
 
-Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem a pokročilým AI Gemini editorem textů. 
+Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem a pokročilým AI Gemini Vision poradcem pro fotky a ceny.
 
-Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování většího množství věcí s maximální úsporou času a plně automatickým obnovováním dat.
+---
+
+### 📚 Dokumentace projektu
+- 📦 **[Produktová dokumentace (PRODUCT.md)](PRODUCT.md)**: Uživatelská příručka, koncept „Drop & Sell“, workflow a hodnota pro prodejce.
+- 🛠️ **[Vývojářská příručka (DEVELOPMENT.md)](DEVELOPMENT.md)**: Architektura aplikace, REST API specifikace, lokální setup a unit testování.
+- 🐳 **[Produkční nasazení (DEPLOYMENT.md)](DEPLOYMENT.md)**: Provoz v Dockeru, TrueNAS SCALE, ZFS oprávnění a Nginx reverzní proxy.
 
 ---
 
@@ -15,22 +20,31 @@ Tento nástroj byl vyvinut speciálně pro dynamické a přehledné inzerování
    - **Živý prohlížeč (VNC)**: Integrované okno noVNC přímo v aplikaci pro sledování práce robota na Bazoši a bezpečné jednorázové zadání SMS kódu.
    - **Nastavení**: Plně grafická konfigurace uživatelského jména, e-mailu, telefonu, výchozího hesla pro inzeráty a Gemini API klíče.
 
-2. **Automatický refresh na pozadí (Background Worker)**:
+2. **AI Vision-First tvorba inzerátu ("Drop & Sell")**:
+   - **Blesková analýza z fotek**: Přetáhněte fotky (drag & drop), vyberte ze souborů nebo vložte přímo ze schránky (`Cmd+V`).
+   - Multimodální model **Gemini 2.5 Flash** z fotek rozpozná značku, přesný model, vizuální stav, příslušenství a klíčové parametry.
+   - **Varianty nadpisů s vysokým CTR**: AI navrhne 3–5 úderných variant nadpisů s garantovanou délkou do 50 znaků. Výběr jedním kliknutím.
+   - **Cenový radar z reálného Bazoše**: Analýza konkurenčních nabídek a doporučení tří cenových hladin (*Rychlý prodej -10 %*, *Férová mediánová cena*, *Prémiová cena +10 %*).
+   - **Strukturovaný technický popis**: Generování čtivého a věcného popisu bez otravných klišé a marketingového balastu.
+   - **Výběr hlavní fotky**: AI doporučí nejlepší fotku na úvod inzerátu (označení hvězdičkou), kterou Playwright nahraje jako první.
+
+3. **Automatický refresh na pozadí (Background Worker)**:
    - Daemon vlákno periodicky aktualizuje stavy, platnost a zhlédnutí inzerátů z Bazoše.
    - **SMS Guard**: Pokud Bazoš při refreshu vyžaduje SMS, proces se čistě zastaví, stav se přepne na `"needs_sms"` a v UI vyskočí červený varovný banner. Další SMS na pozadí se neodesílají, dokud uživatel neprovede ruční přihlášení.
    - **Timing**: Interval auto-refreshu je plně nastavitelný přímo v Nastavení (od 15 minut do 24 hodin).
    - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
 
-3. **Pokročilý AI Editor a Gemini Integrace**:
-   - Tlačítko **Vylepšit pomocí AI** u popisu a nadpisu inzerátu.
-   - Gemini automaticky opraví překlepy, zlepší prodejní tón a navrhne optimalizované varianty nadpisů.
+4. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
+   - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.6.0 • [hash]`).
+   - Nenásilný plovoucí toast s možností odložení do `localStorage` (žádné rušivé celoobrazovkové bannery).
+   - Dialog srovnání nainstalované verze a hashe proti GitHubu s přímým odkazem na diff změn a 1-click upgradem na TrueNAS.
 
-4. **Správa a vyloučení fotografií**:
+5. **Správa a vyloučení fotografií**:
    - V detailu inzerátu se zobrazují Base64 náhledy všech fotek z lokální složky.
    - Kliknutím na fotku ji lze označit jako vyloučenou – Playwright ji při vystavování přeskočí.
    - Karta inzerátu zobrazuje stav např. `📷 4/5 fotek`.
 
-5. **Čítače a ochrana nadpisů (Limit 50 znaků)**:
+6. **Čítače a ochrana nadpisů (Limit 50 znaků)**:
    - Real-time čítače s varovným barevným tónem (žlutá/červená) u políček nadpisů.
    - Automatická backend sanitace zkracuje nadpisy na max 50 znaků k zamezení ořezání na straně Bazoše.
 
@@ -55,32 +69,27 @@ docker compose up -d
 
 ## 🐳 TrueNAS SCALE Deployment
 
-Aplikaci lze snadno provozovat na **TrueNAS SCALE** (Cobia/Dragonfish/Electric Eel) jako **Custom App**.
+Aplikace je plně optimalizována pro **TrueNAS SCALE** (včetně verze 24.10+ Electric Eel s nativním Docker Compose i starších Cobia/Dragonfish s Custom Apps).
 
-### 1. Nastavení aplikace v TrueNAS
-Při vytváření aplikace v TrueNAS SCALE (sekce **Apps** -> **Discover Apps** -> **Custom App**) vyplňte následující parametry:
+Pro rychlé nasazení je v repozitáři připraven šablonový soubor [`docker-compose.truenas.yml`](docker-compose.truenas.yml).
 
-- **Application Name**: `bazos-automat`
-- **Image Repository**: `ghcr.io/onhala/bazos-automat`
-- **Image Tag**: `latest`
-- **Port Forwarding (Networking)**:
-  - Port `5001` -> Host Port `5001` (Flask Web GUI)
-  - Port `6080` -> Host Port `6080` (noVNC stream pro zadání SMS)
-- **Environment Variables**:
-  - `DISPLAY` = `:99`
-  - `PYTHONUNBUFFERED` = `1`
-  - *(Volitelně)* `BAZOS_EMAIL`, `BAZOS_PASSWORD`, `BAZOS_PHONE`, `GEMINI_API_KEY` (viz sekce konfigurace)
-- **Storage (Host Path Mounts)**:
-  Pro zachování dat a fotek při aktualizacích namapujte následující svazky (Host Path):
-  - `/app/bazos_config.json` -> Cesta k souboru s konfigurací na vašem poolu
-  - `/app/bazos_active_listings.json` -> Cesta k souboru s databází inzerátů
-  - `/app/bazos_session.json` -> Cesta k souboru s přihlašovací relací Bazoše
-  - `/app/photos` -> Cesta k adresáři s lokálními fotografiemi inzerátů
+### 1. Řešení ZFS oprávnění (PUID / PGID 568)
+TrueNAS SCALE standardně provozuje kontejnery a svazky pod systémovým uživatelem `apps` (`UID 568`, `GID 568`). Kontejner obsahuje automatický `docker-entrypoint.sh`, který při startu přizpůsobí oprávnění perzistentních složek `/app/config`, `/app/data` a `/app/photos` podle zadaných proměnných `PUID` a `PGID`:
+```yaml
+environment:
+  - PUID=568
+  - PGID=568
+```
+Tím je zcela vyřešen problém s chybami `Permission Denied` při zápisu inzerátů a fotek.
 
-### 2. Automatické aktualizace a kontrola verzí na TrueNAS SCALE
-- **Detekce nové verze**: TrueNAS SCALE automaticky periodicky dotazuje GitHub Container Registry (`ghcr.io`). Pokud detekuje novější sestavení s tagem `latest`, zobrazí u aplikace tlačítko **Update**.
-- **Self-Update z UI**: Vzhledem k tomu, že kontejner je neměnný (immutable), Flask webové rozhraní při detekci nové verze zobrazí v sidebaru upozornění a po kliknutí ti ukáže instrukce pro TrueNAS. 
-- Pro aktualizaci stačí kliknout na **Update** přímo v administračním rozhraní **TrueNAS SCALE -> Apps**, čímž systém stáhne nejnovější image a bezpečně kontejner zrekonstruuje bez ztráty nastavení (díky namapovaným Host Path svazkům).
+### 2. Okamžité aktualizace (Zero-Latency Updates)
+Už žádné čekání na 24hodinový cron TrueNASu pro detekci nových verzí. K dispozici jsou 3 možnosti:
+1. **1-Click z Web UI**: Po vydání nové verze se v aplikaci zobrazí upozornění. V modalu stačí kliknout na **"Aktualizovat ihned na TrueNAS"** – Listing Hub zavolá TrueNAS REST API (`POST /api/v2.0/app/upgrade`) a server okamžitě stáhne nový image a provede restart. (Nastavte v sekci *Nastavení* TrueNAS URL a API klíč).
+2. **Automatický webhook z GitHub Actions**: V GitHub Actions workflow (`docker-build-push.yml`) je integrován krok, který při sestavení nového image automaticky odešle push notifikaci do vašeho TrueNAS SCALE API (stačí nastavit GitHub Secrets `TRUENAS_URL` a `TRUENAS_API_KEY`).
+3. **Watchtower sidecar**: Součástí `docker-compose.truenas.yml` je lehký Watchtower kontejner kontrolující nový image každých 120 sekund.
+
+### 3. Stav kontejneru (Healthcheck) & OCI Metadata
+Kontejner obsahuje nativní `HEALTHCHECK` volající stav background workeru (`/api/refresh/status`) a bohaté OCI/TrueNAS labely (`com.truenas.app.webui.port`, kategorie, ikona), takže se v rozhraní TrueNAS SCALE zobrazuje jako **Healthy** s přímým odkazem na Web UI.
 
 ---
 

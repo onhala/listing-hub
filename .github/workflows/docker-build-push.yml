@@ -71,3 +71,25 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             GIT_COMMIT_SHA=${{ github.sha }}
+
+      - name: Trigger TrueNAS SCALE App Upgrade Webhook
+        if: env.TRUENAS_URL != '' && env.TRUENAS_API_KEY != ''
+        env:
+          TRUENAS_URL: ${{ secrets.TRUENAS_URL }}
+          TRUENAS_API_KEY: ${{ secrets.TRUENAS_API_KEY }}
+          TRUENAS_APP_NAME: ${{ secrets.TRUENAS_APP_NAME || 'bazos-automat' }}
+        run: |
+          echo "Notifying TrueNAS SCALE at ${TRUENAS_URL} to pull latest image and redeploy..."
+          curl -k -s -X POST "${TRUENAS_URL}/api/v2.0/app/upgrade" \
+            -H "Authorization: Bearer ${TRUENAS_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"app_name\": \"${TRUENAS_APP_NAME}\"}" || echo "TrueNAS webhook skipped."
+
+      - name: Trigger Watchtower Webhook
+        if: env.WATCHTOWER_WEBHOOK_URL != ''
+        env:
+          WATCHTOWER_WEBHOOK_URL: ${{ secrets.WATCHTOWER_WEBHOOK_URL }}
+          WATCHTOWER_TOKEN: ${{ secrets.WATCHTOWER_TOKEN }}
+        run: |
+          echo "Triggering Watchtower webhook to update container immediately..."
+          curl -s -X POST -H "Authorization: Bearer ${WATCHTOWER_TOKEN}" "${WATCHTOWER_WEBHOOK_URL}" || echo "Watchtower webhook skipped."

@@ -19,6 +19,8 @@ from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH, PHOTOS_DIR,
 import uuid
 import listing_hub.core.db as db
 from listing_hub.ai.gemini import improve_text_with_gemini
+from listing_hub.ai.vision import analyze_photos_with_vision
+from listing_hub.core.version import get_version_status, is_docker, APP_VERSION
 
 app = Flask(__name__)
 
@@ -552,45 +554,14 @@ def get_refresh_status():
     })
 
 # Detekce chodu v Dockeru
-IS_DOCKER = os.path.exists("/.dockerenv")
+IS_DOCKER = is_docker()
 
 @app.route("/api/version/check", methods=["GET"])
 def check_version():
-    import subprocess
-    
-    # 1. Zjistíme lokální commit hash
-    local_hash = os.environ.get("GIT_COMMIT_SHA", "unknown").strip()
-    if local_hash == "unknown":
-        try:
-            local_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        except Exception:
-            pass
-        
-    # 2. Zjistíme nejnovější commit hash z GitHubu
-    latest_hash = "unknown"
-    latest_message = ""
-    try:
-        url = "https://api.github.com/repos/onhala/listing-hub/commits/main"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            commit_data = res.json()
-            latest_hash = commit_data.get("sha", "")
-            latest_message = commit_data.get("commit", {}).get("message", "")
-    except Exception:
-        pass
-        
-    update_available = False
-    if local_hash != "unknown" and latest_hash != "unknown" and local_hash != latest_hash:
-        update_available = True
-        
-    return jsonify({
-        "local_hash": local_hash[:8] if local_hash != "unknown" else "unknown",
-        "latest_hash": latest_hash[:8] if latest_hash != "unknown" else "unknown",
-        "latest_message": latest_message,
-        "update_available": update_available,
-        "is_docker": IS_DOCKER
-    })
+    """Vrací stav verze aplikace, lokální i remote hash s podporou in-memory cache."""
+    force = request.args.get("force", "").lower() in ("1", "true", "yes")
+    status_data = get_version_status(force=force)
+    return jsonify(status_data)
 
 @app.route("/api/version/update", methods=["POST"])
 def update_version():
@@ -617,6 +588,57 @@ def update_version():
     except Exception as err:
         return jsonify({"status": "error", "message": f"Chyba při aktualizaci: {str(err)}"}), 500
 
+@app.route("/api/version/truenas-upgrade", methods=["POST"])
+def truenas_upgrade():
+    """
+    Vyvolá okamžitou aktualizaci na TrueNAS SCALE přes REST API nebo Watchtower webhook.
+    """
+    try:
+        _, user_config = load_data()
+        
+        # 1. Zkontrolujeme přítomnost Watchtower webhooku
+        watchtower_url = os.environ.get("WATCHTOWER_WEBHOOK_URL") or user_config.get("watchtower_url", "")
+        watchtower_token = os.environ.get("WATCHTOWER_TOKEN") or user_config.get("watchtower_token", "")
+        if watchtower_url:
+            headers = {"Authorization": f"Bearer {watchtower_token}"} if watchtower_token else {}
+            res = requests.post(watchtower_url, headers=headers, timeout=10)
+            return jsonify({
+                "status": "success",
+                "message": f"Watchtower webhook úspěšně odeslán (HTTP {res.status_code}). Kontejner se nyní aktualizuje."
+            })
+
+        # 2. Nebo TrueNAS SCALE REST API
+        truenas_url = os.environ.get("TRUENAS_URL") or user_config.get("truenas_url", "")
+        truenas_api_key = os.environ.get("TRUENAS_API_KEY") or user_config.get("truenas_api_key", "")
+        app_name = os.environ.get("TRUENAS_APP_NAME") or user_config.get("truenas_app_name", "bazos-automat")
+
+        if not truenas_url or not truenas_api_key:
+            return jsonify({
+                "status": "error",
+                "message": "V nastavení ani v environment proměnných není nakonfigurován TRUENAS_URL a TRUENAS_API_KEY."
+            }), 400
+
+        truenas_url = truenas_url.rstrip("/")
+        api_endpoint = f"{truenas_url}/api/v2.0/app/upgrade"
+        headers = {
+            "Authorization": f"Bearer {truenas_api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {"app_name": app_name}
+
+        res = requests.post(api_endpoint, headers=headers, json=payload, timeout=15, verify=False)
+        if res.status_code in (200, 201, 202):
+            return jsonify({
+                "status": "success",
+                "message": "Povel k aktualizaci byl úspěšně předán TrueNAS SCALE. Aplikace se během chvíle restartuje s nejnovější verzí."
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"TrueNAS API vrátilo chybu (Status {res.status_code}): {res.text}"
+            }), res.status_code
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Chyba při volání TrueNAS: {str(e)}"}), 500
 
 @app.route("/api/config", methods=["POST"])
 def save_config_endpoint():
@@ -899,6 +921,198 @@ def ai_improve():
             return jsonify({"status": "error", "message": result_text}), status_code
             
         return jsonify({"status": "success", "result": result_text})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/ai/analyze-photos", methods=["POST"])
+def api_analyze_photos():
+    try:
+        _, user_config = load_data()
+        api_key = user_config.get("gemini_api_key", "")
+        if not api_key:
+            return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
+
+        image_bytes_list = []
+        user_notes = ""
+
+        if request.files:
+            files = request.files.getlist("photos") or request.files.getlist("files")
+            for f in files:
+                if f and f.filename:
+                    image_bytes_list.append(f.read())
+            user_notes = request.form.get("notes", "").strip()
+        elif request.is_json:
+            payload = request.json or {}
+            user_notes = payload.get("notes", "").strip()
+            raw_dir = payload.get("photos_dir", "").strip()
+            if raw_dir:
+                photos_dir = resolve_photos_dir(raw_dir)
+                if os.path.isdir(photos_dir):
+                    raw_files = sorted([
+                        f for f in os.listdir(photos_dir)
+                        if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
+                    ], key=lambda x: (not x.startswith("foto_"), x))
+                    for fname in raw_files[:10]:
+                        try:
+                            with open(os.path.join(photos_dir, fname), "rb") as img_f:
+                                image_bytes_list.append(img_f.read())
+                        except Exception:
+                            pass
+
+        if not image_bytes_list:
+            return jsonify({"status": "error", "message": "Nebyly přiloženy žádné fotografie k analýze."}), 400
+
+        success, result_data, error_msg = analyze_photos_with_vision(
+            image_bytes_list=image_bytes_list,
+            user_notes=user_notes,
+            api_key=api_key,
+            run_market_advisor=True
+        )
+
+        if not success:
+            return jsonify({"status": "error", "message": error_msg}), 500
+
+        return jsonify({"status": "success", "data": result_data})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/ai/analyze-existing/<listing_id>", methods=["POST"])
+def api_analyze_existing_listing(listing_id):
+    try:
+        _, user_config = load_data()
+        api_key = user_config.get("gemini_api_key", "")
+        if not api_key:
+            return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
+
+        conn = db.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT local_photos_dir, title, notes FROM listings WHERE id = ?", (listing_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+
+        raw_dir = row["local_photos_dir"] or ""
+        photos_dir = resolve_photos_dir(raw_dir)
+        if not os.path.isdir(photos_dir):
+            return jsonify({"status": "error", "message": "Složka s fotkami inzerátu neexistuje."}), 400
+
+        raw_files = sorted([
+            f for f in os.listdir(photos_dir)
+            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
+        ], key=lambda x: (not x.startswith("foto_"), x))
+
+        image_bytes_list = []
+        for fname in raw_files[:10]:
+            try:
+                with open(os.path.join(photos_dir, fname), "rb") as img_f:
+                    image_bytes_list.append(img_f.read())
+            except Exception:
+                pass
+
+        if not image_bytes_list:
+            return jsonify({"status": "error", "message": "Ve složce inzerátu nejsou žádné fotky."}), 400
+
+        payload = request.get_json(silent=True) or {}
+        user_notes = payload.get("notes") or row["notes"] or ""
+
+        success, result_data, error_msg = analyze_photos_with_vision(
+            image_bytes_list=image_bytes_list,
+            user_notes=user_notes,
+            api_key=api_key,
+            run_market_advisor=True
+        )
+
+        if not success:
+            return jsonify({"status": "error", "message": error_msg}), 500
+
+        return jsonify({"status": "success", "data": result_data})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/create-with-photos", methods=["POST"])
+def api_create_listing_with_photos():
+    """
+    Atomické vytvoření nového inzerátu včetně přímého uložení nahraných fotek
+    a volby titulní fotografie.
+    """
+    try:
+        title = request.form.get("title", "").strip() or "Nový inzerát"
+        title_trimmed = title[:50].strip()
+        description = request.form.get("description", "").strip()
+        price = int(request.form.get("price", 0) or 0)
+        category = request.form.get("category", "").strip()
+        notes = request.form.get("notes", "").strip()
+        target_bazos = int(request.form.get("target_bazos", 1))
+        target_aukro = int(request.form.get("target_aukro", 0))
+        cover_idx = int(request.form.get("cover_photo_index", 0) or 0)
+
+        title_slug = "".join([c if c.isalnum() else "_" for c in title_trimmed.lower()])
+        unique_suffix = uuid.uuid4().hex[:6]
+        photos_dir = f"photos/{title_slug}_{unique_suffix}"
+        abs_photos_dir = Path(resolve_photos_dir(photos_dir))
+        os.makedirs(abs_photos_dir, exist_ok=True)
+
+        uploaded_files = request.files.getlist("photos") or request.files.getlist("files")
+        saved_files = []
+        if uploaded_files:
+            temp_files = []
+            for idx, file in enumerate(uploaded_files):
+                if file and file.filename:
+                    orig_name = file.filename
+                    ext = orig_name.rsplit(".", 1)[-1].lower() if "." in orig_name else "jpg"
+                    if ext not in ("jpg", "jpeg", "png", "webp"):
+                        ext = "jpg"
+                    temp_name = f"_temp_{idx}.{ext}"
+                    temp_path = abs_photos_dir / temp_name
+                    file.save(str(temp_path))
+                    temp_files.append((temp_path, ext))
+
+            if 0 < cover_idx < len(temp_files):
+                cover_item = temp_files.pop(cover_idx)
+                temp_files.insert(0, cover_item)
+
+            for idx, (t_path, ext) in enumerate(temp_files, start=1):
+                final_name = f"foto_{idx}.{ext}"
+                final_path = abs_photos_dir / final_name
+                if t_path.exists():
+                    os.rename(str(t_path), str(final_path))
+                    saved_files.append(final_name)
+
+        listing_id = str(uuid.uuid4())
+        new_ad = {
+            "id": listing_id,
+            "title": title_trimmed,
+            "description": description,
+            "price": price,
+            "category": category,
+            "local_photos_dir": photos_dir,
+            "url": "",
+            "views": 0,
+            "status": "Aktivní",
+            "date_created": "",
+            "notes": notes,
+            "target_bazos": target_bazos,
+            "target_aukro": target_aukro
+        }
+
+        db.save_listing(new_ad, {
+            "bazos": {
+                "portal_item_id": None,
+                "url": "",
+                "status": "Aktivní",
+                "views": 0,
+                "last_synced": None
+            }
+        })
+
+        return jsonify({
+            "status": "success",
+            "message": "Inzerát byl úspěšně vytvořen včetně fotografií.",
+            "ad": new_ad,
+            "saved_photos_count": len(saved_files)
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
