@@ -37,7 +37,7 @@ def prepare_image_for_gemini(image_data: bytes, max_size: Tuple[int, int] = (128
         b64_str = base64.b64encode(image_data).decode("utf-8")
         return b64_str, "image/jpeg"
 
-def normalize_vision_data(parsed_data: Dict[str, Any], total_photos: int) -> Dict[str, Any]:
+def normalize_vision_data(parsed_data: Dict[str, Any], total_photos: int, delivery_options: str = "") -> Dict[str, Any]:
     """
     Robustní normalizátor výstupu z Gemini Vision.
     Zajišťuje, že klíčové atributy (item_identification, titles, recommended_title,
@@ -126,10 +126,11 @@ def normalize_vision_data(parsed_data: Dict[str, Any], total_photos: int) -> Dic
         parsed_data.get("text_inzeratu") or ""
     )
     if not desc and full_name:
+        deliv_text = delivery_options.strip() or "Osobní předání s možností vyzkoušení (Český Krumlov / České Budějovice dle domluvy) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu."
         desc = (
             f"Prodám {full_name}.\n\n"
             f"Stav: {condition_cz}.\n\n"
-            f"Osobní předání s možností vyzkoušení (České Budějovice a okolí / Rožnov u ČB) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu."
+            f"{deliv_text}"
         )
     parsed_data["description"] = clean_bazos_text(desc)
 
@@ -179,7 +180,9 @@ def analyze_photos_with_vision(
     user_notes: str = "",
     api_key: str = "",
     run_market_advisor: bool = True,
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-2.5-flash",
+    delivery_options: str = "",
+    seller_context: str = ""
 ) -> Tuple[bool, Dict[str, Any], str]:
     """
     Multimodální analýza fotografií předmětu pomocí Gemini Vision API.
@@ -196,17 +199,21 @@ def analyze_photos_with_vision(
     if not image_bytes_list:
         return False, {}, "Nebyly přiloženy žádné fotografie k analýze."
 
+    deliv_line = delivery_options.strip() or "Osobní předání s možností vyzkoušení (Český Krumlov / České Budějovice dle domluvy) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu."
+    seller_line = seller_context.strip() or "Solidní, inženýrsky přesný a férový soukromý prodejce. Popisuje reálný stav bez přehnaných marketingových frází a slopu. Dbá na technické parametry a seriózní jednání."
+
     system_instruction = (
         "Jsi špičkový expert na oceňování zboží, identifikaci produktů a tvorbu prodejních inzerátů pro inzertní portály Bazoš.cz a Aukro.cz.\n"
         "Tvým úkolem je na základě přiložených fotografií důkladně identifikovat nabízený předmět a sestavit atraktivní, věcný a inženýrsky přesný inzerát.\n\n"
-        "STYL A STANDARD PRODEJCE (Rodinná firma TERMS, tradice od 1991):\n"
+        "STYL A STANDARD PRODEJCE:\n"
+        f"- {seller_line}\n"
         "- Piš v perfektní češtině, seriózně, transparentně a srozumitelně.\n"
         "- STRIKTNÍ ZÁKAZ POUŽÍVÁNÍ HVĚZDIČEK (*) A MARKDOWNU V TEXTU: Bazoš nepodporuje markdown! Nikdy v textu popisu nepoužívej tučné písmo (**text**), kurzívu (*text*) ani odrážky s hvězdičkami (* odrážka).\n"
         "- Pro odrážky parametrů, stavu a výhod používej výhradně pomlčku s mezerou ('- ').\n"
         "- Pro nadpisy sekcí v popisu používej velká písmena bez hvězdiček (např. 'PARAMETRY:', 'STAV:', 'PŘÍSLUŠENSTVÍ:').\n"
         "- ŽÁDNÝ MARKETINGOVÝ SLOP: Přísný zákaz frází jako 'NEVÁHEJTE!!', 'TOP STAV!!!', 'SUPER AKCE', 'NEUVĚŘITELNÁ NABÍDKA'.\n"
         "- Uveď pravdivý stav, upozorni na případné viditelné kosmetické vady nebo škrábance (zvyšuje důvěru kupujícího).\n"
-        "- Do popisu vždy zakomponuj standardní možnost předání: 'Osobní předání s možností vyzkoušení (České Budějovice a okolí / Rožnov u ČB) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu.'\n"
+        f"- Do popisu vždy zakomponuj standardní možnost předání: '{deliv_line}'\n"
         "- DŮLEŽITÉ: Všechny navržené nadpisy MUSÍ mít maximálně 50 znaků (limit Bazoše)!\n"
         "- Odpověz POUZE jako validní JSON objekt bez dalších textů a kódových bloků.\n\n"
         "POVINNÁ STRUKTURA JSON ODPOVĚDI:\n"
@@ -296,7 +303,7 @@ def analyze_photos_with_vision(
         cleaned_text = strip_markdown_codeblocks(raw_text)
         
         parsed_data = json.loads(cleaned_text)
-        parsed_data = normalize_vision_data(parsed_data, len(image_bytes_list))
+        parsed_data = normalize_vision_data(parsed_data, len(image_bytes_list), delivery_options=deliv_line)
 
         # Pokud je zapnutý market advisor, spustíme tržní analýzu (Bazoš + Sbazar + Web + Gemini)
         if run_market_advisor:

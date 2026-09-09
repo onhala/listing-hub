@@ -154,4 +154,27 @@ def test_clean_bazos_text_strips_asterisks_and_bullets():
     assert "- položka s puntíkem" in cleaned
     assert "Běžný text s kurzívou a hvězdičkou na konci" in cleaned
 
+@patch("requests.post")
+def test_improve_text_with_gemini_custom_seller_context(mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "candidates": [{"content": {"parts": [{"text": "Vylepšený text"}]}}]
+    }
+    mock_post.return_value = mock_response
+
+    success, result = improve_text_with_gemini(
+        "původní text",
+        "description",
+        "improve",
+        "dummy_key",
+        seller_context="Férový prodejce z Českého Krumlova"
+    )
+    assert success
+    assert mock_post.called
+    json_payload = mock_post.call_args[1]["json"]
+    sys_instruction = json_payload["systemInstruction"]["parts"][0]["text"]
+    assert "Férový prodejce z Českého Krumlova" in sys_instruction
+
+
 

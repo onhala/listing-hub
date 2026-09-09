@@ -43,14 +43,21 @@ check_write_permissions()
 
 def load_user_config() -> dict:
     """Načte uživatelskou konfiguraci ze souboru (z klíče 'user' nebo kořene)."""
+    default_delivery = "Osobní předání s možností vyzkoušení (Český Krumlov / České Budějovice dle domluvy) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu."
+    default_seller = "Solidní, inženýrsky přesný a férový soukromý prodejce. Popisuje reálný stav bez přehnaných marketingových frází a slopu. Dbá na technické parametry a seriózní jednání."
     if not CONFIG_PATH.exists():
-        # Pokud neexistuje, vrátí prázdnou šablonu
+        # Pokud neexistuje, vrátí výchozí šablonu
         import secrets
         return {
             "jmeno": "",
+            "name": "",
             "email": "",
             "phone": "",
-            "psc": "",
+            "psc": "38101",
+            "zip_code": "38101",
+            "location": "Český Krumlov",
+            "ai_delivery_options": default_delivery,
+            "ai_seller_context": default_seller,
             "default_ad_password_b64": "aGVzbG8xMjM=",
             "gemini_api_key": "",
             "gemini_model": "gemini-2.5-flash",
@@ -66,6 +73,12 @@ def load_user_config() -> dict:
                 if not cfg.get("calendar_token"):
                     import secrets
                     cfg["calendar_token"] = secrets.token_hex(16)
+                if not cfg.get("ai_delivery_options"):
+                    cfg["ai_delivery_options"] = default_delivery
+                if not cfg.get("ai_seller_context"):
+                    cfg["ai_seller_context"] = default_seller
+                if not cfg.get("location"):
+                    cfg["location"] = "Český Krumlov"
             return cfg
     except Exception:
         return {}

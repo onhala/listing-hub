@@ -147,3 +147,39 @@ def test_analyze_photos_custom_model(mock_advisor, mock_post):
     called_url = mock_post.call_args[0][0]
     assert "models/gemini-2.0-flash:generateContent" in called_url
 
+@patch("requests.post")
+@patch("listing_hub.ai.advisor.analyze_bazos_prices")
+def test_analyze_photos_custom_context(mock_advisor, mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "candidates": [{
+            "content": {
+                "parts": [{"text": json.dumps({"recommended_title": "Test", "titles": ["Test"]})}]
+            }
+        }]
+    }
+    mock_post.return_value = mock_response
+    mock_advisor.return_value = {"status": "ok"}
+
+    img_bytes = create_dummy_image_bytes()
+    success, data, msg = analyze_photos_with_vision(
+        [img_bytes],
+        api_key="dummy_key",
+        delivery_options="Osobní předání Český Krumlov",
+        seller_context="Moje speciální inženýrská pravidla"
+    )
+    assert success
+    assert mock_post.called
+    json_payload = mock_post.call_args[1]["json"]
+    sys_instruction = json_payload["systemInstruction"]["parts"][0]["text"]
+    assert "Osobní předání Český Krumlov" in sys_instruction
+    assert "Moje speciální inženýrská pravidla" in sys_instruction
+
+def test_normalize_vision_data_custom_delivery():
+    from listing_hub.ai.vision import normalize_vision_data
+    raw = {"full_name": "Testovací předmět"}
+    normalized = normalize_vision_data(raw, total_photos=1, delivery_options="Vlastní odběr v Krumlově")
+    assert "Vlastní odběr v Krumlově" in normalized["description"]
+
+

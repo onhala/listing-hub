@@ -35,9 +35,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const configEmail = document.getElementById("config-email");
     const configPhone = document.getElementById("config-phone");
     const configZip = document.getElementById("config-zip");
+    const configLocation = document.getElementById("config-location");
     const configPassword = document.getElementById("config-password");
     const configGeminiModel = document.getElementById("config-gemini-model");
     const configGeminiKey = document.getElementById("config-gemini-key");
+    const configAiDelivery = document.getElementById("config-ai-delivery");
+    const configAiSeller = document.getElementById("config-ai-seller");
     const toggleGeminiKeyBtn = document.getElementById("toggle-gemini-key");
     const btnTestGemini = document.getElementById("btn-test-gemini");
     const geminiTestStatus = document.getElementById("gemini-test-status");
@@ -562,6 +565,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 configEmail.value = config.email || "";
                 configPhone.value = config.phone || "";
                 configZip.value = config.zip_code || "";
+                if (configLocation) configLocation.value = config.location || "";
                 configPassword.value = config.default_ad_password_b64 ? atob(config.default_ad_password_b64) : "";
                 
                 // Auto refresh
@@ -577,6 +581,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 } else {
                     configGeminiKey.placeholder = "AIza... (ponech prázdné pro beze změny)";
                 }
+                if (configAiDelivery) configAiDelivery.value = config.ai_delivery_options || "";
+                if (configAiSeller) configAiSeller.value = config.ai_seller_context || "";
 
                 // TrueNAS nastavení
                 if (configTruenasUrl) configTruenasUrl.value = config.truenas_url || "";
@@ -2177,6 +2183,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (configTruenasApiKey && configTruenasApiKey.value.trim()) {
             updatedConfig.truenas_api_key = configTruenasApiKey.value.trim();
         }
+
+        if (configLocation) updatedConfig.location = configLocation.value.trim();
+        if (configAiDelivery) updatedConfig.ai_delivery_options = configAiDelivery.value.trim();
+        if (configAiSeller) updatedConfig.ai_seller_context = configAiSeller.value.trim();
 
         try {
             const res = await fetch(API.config, {

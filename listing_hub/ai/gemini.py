@@ -52,7 +52,14 @@ def clean_bazos_text(text: str) -> str:
     cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
     return cleaned_text.strip()
 
-def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, api_key: str, model: str = "gemini-2.5-flash") -> Tuple[bool, str]:
+def improve_text_with_gemini(
+    text: str,
+    field_type: str,
+    instruction_type: str,
+    api_key: str,
+    model: str = "gemini-2.5-flash",
+    seller_context: str = ""
+) -> Tuple[bool, str]:
     """
     Volá Gemini API a optimalizuje text inzerátu podle pokynů.
     Vrací tuple (success_boolean, result_text_or_error_message).
@@ -61,6 +68,7 @@ def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, 
         return False, "Chybí Gemini API klíč v nastavení."
         
     model = model or "gemini-2.5-flash"
+    seller_line = seller_context.strip() or "Působ jako solidní, inženýrsky přesný a férový prodejce bez přehnaných marketingových frází a slopu."
         
     system_prompt = (
         "Jsi AI asistent na úpravu prodejních textů pro Bazoš a Aukro.\n"
@@ -76,7 +84,7 @@ def improve_text_with_gemini(text: str, field_type: str, instruction_type: str, 
         "- Pro odrážky parametrů a výhod používej výhradně pomlčku s mezerou ('- ').\n"
         "- Pro nadpisy sekcí používej velká písmena bez hvězdiček (např. 'PARAMETRY:', 'STAV:', 'VÝHODY:').\n"
         "- Nepoužívej přehnané marketingové fráze a 'slop' slova (např. 'neuvěřitelná nabídka', 'jedinečná šance', 'TOP stav!!!').\n"
-        "- Působ jako solidní, inženýrsky přesný a férový prodejce (podle standardů rodinné firmy TERMS s tradicí od roku 1991).\n"
+        f"- {seller_line}\n"
         "- Text formátuj přehledně pomocí odstavců a odrážek s pomlčkou ('- ').\n"
         "- Udržuj přibližně stejnou délku a rozsah jako původní text. NIKDY text nezkracuj drasticky a vždy dokonči celé myšlenky i věty.\n"
         "- Ponech všechny věcné parametry (výkon, rozměry, stav, doplňky) a kontaktní/odběrové informace z původního textu."

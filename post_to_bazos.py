@@ -111,8 +111,10 @@ def load_data():
                     "phone_verified": "+420777123456",
                     "default_ad_password_b64": "aGVzbG8xMjM=",
                     "name": "Tvoje Jméno",
-                    "zip_code": "10000",
-                    "location": "Praha 100 00",
+                    "zip_code": "38101",
+                    "location": "Český Krumlov",
+                    "ai_delivery_options": "Osobní předání s možností vyzkoušení (Český Krumlov / České Budějovice dle domluvy) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu.",
+                    "ai_seller_context": "Solidní, inženýrsky přesný a férový soukromý prodejce. Popisuje reálný stav bez přehnaných marketingových frází a slopu. Dbá na technické parametry a seriózní jednání.",
                     "gemini_model": "gemini-2.5-flash"
                 }
             }
@@ -143,7 +145,21 @@ def load_data():
             user_config["name"] = os.environ.get("BAZOS_NAME").strip()
         if os.environ.get("BAZOS_ZIP_CODE"):
             user_config["zip_code"] = os.environ.get("BAZOS_ZIP_CODE").strip()
-            user_config["location"] = f"Město {user_config['zip_code']}"
+        if os.environ.get("BAZOS_LOCATION"):
+            user_config["location"] = os.environ.get("BAZOS_LOCATION").strip()
+        elif not user_config.get("location"):
+            user_config["location"] = "Český Krumlov"
+            
+        if os.environ.get("AI_DELIVERY_OPTIONS"):
+            user_config["ai_delivery_options"] = os.environ.get("AI_DELIVERY_OPTIONS").strip()
+        elif not user_config.get("ai_delivery_options"):
+            user_config["ai_delivery_options"] = "Osobní předání s možností vyzkoušení (Český Krumlov / České Budějovice dle domluvy) nebo bezpečné odeslání přes Zásilkovnu / Balíkovnu."
+
+        if os.environ.get("AI_SELLER_CONTEXT"):
+            user_config["ai_seller_context"] = os.environ.get("AI_SELLER_CONTEXT").strip()
+        elif not user_config.get("ai_seller_context"):
+            user_config["ai_seller_context"] = "Solidní, inženýrsky přesný a férový soukromý prodejce. Popisuje reálný stav bez přehnaných marketingových frází a slopu. Dbá na technické parametry a seriózní jednání."
+
         if os.environ.get("GEMINI_API_KEY"):
             user_config["gemini_api_key"] = os.environ.get("GEMINI_API_KEY").strip()
         if os.environ.get("GEMINI_MODEL"):

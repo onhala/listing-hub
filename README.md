@@ -1,6 +1,6 @@
-# 🤖 Listing Hub & AI Editor v3.8.1
+# 🤖 Listing Hub & AI Editor v3.8.2
 
-Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, AI Bokeh/SPZ editorem fotografií a automatickou synchronizací do Google Kalendáře.
+Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií a automatickou synchronizací do Google Kalendáře.
 
 ---
 
@@ -18,7 +18,7 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
    - **Věci k prodeji**: Sekce pro expirované věci, koncepty (drafty) a položky, které se zrovna nenabízí aktivně.
    - **Prodané věci**: Kompletní historie prodejů se statistikou zisků.
    - **Živý prohlížeč (VNC)**: Integrované okno noVNC přímo v aplikaci pro sledování práce robota na Bazoši a bezpečné jednorázové zadání SMS kódu.
-   - **Nastavení**: Plně grafická konfigurace uživatelského jména, e-mailu, telefonu, výchozího hesla pro inzeráty, Gemini AI modelu a iCal kalendáře.
+   - **Nastavení**: Plně grafická konfigurace uživatelského jména, e-mailu, telefonu, města/lokality (Český Krumlov / České Budějovice), výchozího hesla pro inzeráty, vlastního stylu a kontextu prodejce pro AI, možností předání/dopravy, Gemini AI modelu a iCal kalendáře.
 
 2. **Multi-Source Tržní Cenový Radar (Bazoš + Sbazar + Web + Gemini)**:
    - **Komplexní přehled trhu**: Automatické prohledávání Bazoš.cz, veřejného API Sbazar.cz a webu pro zjištění reálných tržních cen z druhé ruky.
@@ -30,7 +30,7 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
 3. **Čisté inženýrské popisy pro Bazoš (Clean Plaintext Standard)**:
    - **Striktní eliminace hvězdiček**: Popisy generované AI neobsahují žádné nepodporované markdown hvězdičky (`*`, `**`), které Bazoš zobrazuje surově a nehezky.
    - **Přehledná struktura**: Odrážky s pomlčkou (`- `) a jasně oddělené sekce velkými písmeny bez formátování (`PARAMETRY:`, `STAV:`, `PŘÍSLUŠENSTVÍ:`).
-   - **Zákaz marketingového slopu**: Věcný tón, popis skutečného stavu a standardní informace o možnostech předání a dopravy.
+   - **Plně nastavitelný kontext prodejce & dopravy**: V Nastavení lze kdykoliv upravit styl prodejce (inženýrský, férový, bez slopu) i šablonu osobního předání a odeslání přes Zásilkovnu/Balíkovnu (výchozí: Český Krumlov / České Budějovice).
 
 4. **Google Kalendář & iCal Synchronizace (RFC 5545 Webcal)**:
    - **Automatický odběr termínů vypršení**: Přímý Webcal/iCal feed zabezpečený privátním tokenem (`/api/calendar/feed.ics?token=...`).
@@ -56,7 +56,7 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
    - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
 
 8. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
-   - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.1 • [hash]`).
+   - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.2 • [hash]`).
    - Nenásilný plovoucí toast s možností odložení do `localStorage` (žádné rušivé celoobrazovkové bannery).
    - Dialog srovnání nainstalované verze a hashe proti GitHubu s přímým odkazem na diff změn a 1-click upgradem na TrueNAS.
 

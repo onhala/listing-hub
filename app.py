@@ -1129,11 +1129,14 @@ def ai_improve():
         _, user_config = load_data()
         api_key = user_config.get("gemini_api_key", "")
         model = user_config.get("gemini_model") or "gemini-2.5-flash"
+        seller_context = user_config.get("ai_seller_context", "")
         
         if not api_key:
             return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
             
-        success, result_text = improve_text_with_gemini(text, field_type, instruction_type, api_key, model=model)
+        success, result_text = improve_text_with_gemini(
+            text, field_type, instruction_type, api_key, model=model, seller_context=seller_context
+        )
         if not success:
             status_code = 500
             match = re.search(r"Status (\d+)", result_text)
@@ -1184,12 +1187,17 @@ def api_analyze_photos():
         if not image_bytes_list:
             return jsonify({"status": "error", "message": "Nebyly přiloženy žádné fotografie k analýze."}), 400
 
+        delivery_options = user_config.get("ai_delivery_options", "")
+        seller_context = user_config.get("ai_seller_context", "")
+
         success, result_data, error_msg = analyze_photos_with_vision(
             image_bytes_list=image_bytes_list,
             user_notes=user_notes,
             api_key=api_key,
             run_market_advisor=True,
-            model=model
+            model=model,
+            delivery_options=delivery_options,
+            seller_context=seller_context
         )
 
         if not success:
@@ -1240,13 +1248,17 @@ def api_analyze_existing_listing(listing_id):
 
         payload = request.get_json(silent=True) or {}
         user_notes = payload.get("notes") or row["notes"] or ""
+        delivery_options = user_config.get("ai_delivery_options", "")
+        seller_context = user_config.get("ai_seller_context", "")
 
         success, result_data, error_msg = analyze_photos_with_vision(
             image_bytes_list=image_bytes_list,
             user_notes=user_notes,
             api_key=api_key,
             run_market_advisor=True,
-            model=model
+            model=model,
+            delivery_options=delivery_options,
+            seller_context=seller_context
         )
 
         if not success:

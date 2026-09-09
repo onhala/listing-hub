@@ -10,6 +10,9 @@ def test_load_user_config_defaults(tmp_path):
         cfg = load_user_config()
         assert "default_ad_password_b64" in cfg
         assert cfg["default_ad_password_b64"] == "aGVzbG8xMjM="
+        assert cfg["location"] == "Český Krumlov"
+        assert "Český Krumlov" in cfg["ai_delivery_options"]
+        assert "inženýrsky přesný" in cfg["ai_seller_context"]
 
 def test_save_and_load_user_config(tmp_path):
     dummy_path = tmp_path / "test_config.json"
@@ -18,6 +21,9 @@ def test_save_and_load_user_config(tmp_path):
             "name": "Ondřej Hála",
             "email": "ondrej.hala@roboton.com",
             "phone": "605207116",
+            "location": "České Budějovice",
+            "ai_delivery_options": "Osobní předání České Budějovice",
+            "ai_seller_context": "Vlastní prodejce styl",
             "truenas_url": "http://192.168.1.50",
             "truenas_api_key": "secret_key_123"
         }
@@ -26,6 +32,9 @@ def test_save_and_load_user_config(tmp_path):
 
         loaded = load_user_config()
         assert loaded["name"] == "Ondřej Hála"
+        assert loaded["location"] == "České Budějovice"
+        assert loaded["ai_delivery_options"] == "Osobní předání České Budějovice"
+        assert loaded["ai_seller_context"] == "Vlastní prodejce styl"
         assert loaded["truenas_url"] == "http://192.168.1.50"
         assert loaded["truenas_api_key"] == "secret_key_123"
 
