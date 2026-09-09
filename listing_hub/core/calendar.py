@@ -88,9 +88,9 @@ def generate_ical_feed(listings: List[Dict[str, Any]], base_hub_url: str = "") -
         created_str = created_date.strftime("%d.%m.%Y")
         exp_str = exp_date.strftime("%d.%m.%Y")
 
-        hub_url = f"{base_hub_url.rstrip("/")}/#tab-active" if base_hub_url else ""
+        hub_url = f"{base_hub_url.rstrip('/')}/#tab-active" if base_hub_url else ""
         if is_sold and base_hub_url:
-            hub_url = f"{base_hub_url.rstrip("/")}/#tab-sold"
+            hub_url = f"{base_hub_url.rstrip('/')}/#tab-sold"
 
         desc_lines = [
             f"📦 Inzerát: {title}",
@@ -133,14 +133,14 @@ def generate_ical_feed(listings: List[Dict[str, Any]], base_hub_url: str = "") -
             lines.extend([
                 "BEGIN:VALARM",
                 "ACTION:DISPLAY",
-                f"DESCRIPTION:{escape_ical_text(f"Inzerát za 3 dny vyprší: {title}")}",
+                f"DESCRIPTION:{escape_ical_text(f'Inzerát za 3 dny vyprší: {title}')}",
                 "TRIGGER:-P3D",
                 "END:VALARM"
             ])
             lines.extend([
                 "BEGIN:VALARM",
                 "ACTION:DISPLAY",
-                f"DESCRIPTION:{escape_ical_text(f"Dnes vyprší inzerát na Bazoši: {title}")}",
+                f"DESCRIPTION:{escape_ical_text(f'Dnes vyprší inzerát na Bazoši: {title}')}",
                 "TRIGGER:-PT0M",
                 "END:VALARM"
             ])
