@@ -2730,6 +2730,34 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             };
         }
+
+        // Tlačítko "🎯 Zaměřit pole" – manuální fokus SMS/code inputu v prohlížeči
+        const btnFocusInput = document.getElementById("btn-focus-input");
+        if (btnFocusInput) {
+            btnFocusInput.onclick = async (e) => {
+                e.preventDefault();
+                btnFocusInput.disabled = true;
+                btnFocusInput.textContent = "⏳ Hledám...";
+                try {
+                    const res = await fetch("/api/browser/focus-input", { method: "POST" });
+                    const data = await res.json();
+                    if (data.focused) {
+                        const fieldLabel = data.field || "pole";
+                        showNotification(`✅ Zaměřeno: "${fieldLabel}" – nyní zadej SMS kód a stiskni Odeslat.`, "success");
+                        // Přesuneme fokus na input pro kód
+                        const qi = document.getElementById("screencast-quick-text");
+                        if (qi) qi.focus();
+                    } else {
+                        showNotification(`⚠️ ${data.message || "Žádné pole nenalezeno. Zkus kliknout přímo do prohlížeče."}`, "warning");
+                    }
+                } catch (err) {
+                    showNotification("Chyba při zaměřování pole: " + err.message, "error");
+                } finally {
+                    btnFocusInput.disabled = false;
+                    btnFocusInput.textContent = "🎯 Zaměřit pole";
+                }
+            };
+        }
     }
 
     const btnReloadVnc = document.getElementById("btn-reload-vnc");

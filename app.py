@@ -330,6 +330,67 @@ def submit_sms_code():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/browser/focus-input", methods=["POST"])
+def browser_focus_input():
+    """Manuálně zaměří (fokusuje) nejpravděpodobnější SMS/code input na aktuální stránce.
+    Vrací info o zaměřeném poli, aby uživatel věděl, kam bude psát."""
+    if not session_manager.running or not session_manager.page or session_manager.page.is_closed():
+        return jsonify({"status": "error", "message": "Prohlížeč není aktivní"}), 400
+
+    def _focus_input(page, *args):
+        if not page or page.is_closed():
+            return None
+        result = page.evaluate(r"""() => {
+            const SMS_NAMES = ['teloverit','kodd','klic','cr','kod','overkod','sms','code','pin','overit','verit'];
+            const all = [...document.querySelectorAll(
+                "input[type='text'], input[type='number'], input[type='tel'], input:not([type])"
+            )].filter(el => {
+                const s = window.getComputedStyle(el);
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0
+                    && s.display !== 'none'
+                    && s.visibility !== 'hidden'
+                    && !el.disabled && !el.readOnly;
+            });
+
+            // Seřaď – SMS/code pole mají přednost
+            const scored = all.map(el => {
+                const n = (el.name || '').toLowerCase();
+                const i = (el.id || '').toLowerCase();
+                const p = (el.placeholder || '').toLowerCase();
+                const skip = ['hledat','search','email','mail','telefon','cena','nadpis'];
+                let score = 0;
+                if (SMS_NAMES.some(k => n.includes(k) || i.includes(k) || p.includes(k))) score += 100;
+                if (el.maxLength && el.maxLength <= 8) score += 20;
+                if (skip.some(k => n.includes(k) || i.includes(k))) score -= 200;
+                return { el, score, name: el.name || '', id: el.id || '',
+                         placeholder: el.placeholder || '', maxlength: el.maxLength };
+            }).sort((a, b) => b.score - a.score);
+
+            if (scored.length === 0) return null;
+            const best = scored[0];
+            best.el.focus();
+            best.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Vizuální highlight na 1.5s
+            const orig = best.el.style.outline;
+            best.el.style.outline = '3px solid #f59e0b';
+            setTimeout(() => { best.el.style.outline = orig; }, 1500);
+            return { name: best.name, id: best.id, placeholder: best.placeholder,
+                     maxlength: best.maxlength, score: best.score,
+                     total_inputs: scored.length };
+        }""")
+        return result
+
+    try:
+        info = session_manager.run_on_worker(_focus_input)
+        if info:
+            label = info.get("name") or info.get("id") or info.get("placeholder") or "neznámé pole"
+            return jsonify({"status": "ok", "focused": True, "field": label, "info": info})
+        else:
+            return jsonify({"status": "error", "focused": False, "message": "Žádné vstupní pole nenalezeno"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/debug/page")
 def debug_page():
     def _inspect(page, *args):
