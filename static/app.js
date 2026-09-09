@@ -300,10 +300,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const openVersionModal = () => {
         if (dockerUpdateModal) {
+            dockerUpdateModal.classList.add("active");
             dockerUpdateModal.style.display = "flex";
             if (currentVersionData) {
                 populateVersionModal(currentVersionData);
             }
+        }
+    };
+
+    const closeVersionModal = () => {
+        if (dockerUpdateModal) {
+            dockerUpdateModal.classList.remove("active");
+            dockerUpdateModal.style.display = "none";
         }
     };
 
@@ -471,7 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 }
                 if (appUpdateBanner) appUpdateBanner.style.display = "none";
-                if (dockerUpdateModal) dockerUpdateModal.style.display = "none";
+                closeVersionModal();
                 showNotification("Upozornění na tuto verzi bylo odloženo.", "info");
             });
         }
@@ -496,13 +504,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Zprovoznit zavírání Docker Update modalu
         if (btnCloseDockerUpdate) {
-            btnCloseDockerUpdate.addEventListener("click", () => {
-                dockerUpdateModal.style.display = "none";
-            });
+            btnCloseDockerUpdate.addEventListener("click", closeVersionModal);
         }
         if (btnCloseDockerUpdateOk) {
-            btnCloseDockerUpdateOk.addEventListener("click", () => {
-                dockerUpdateModal.style.display = "none";
+            btnCloseDockerUpdateOk.addEventListener("click", closeVersionModal);
+        }
+        if (dockerUpdateModal) {
+            dockerUpdateModal.addEventListener("click", (e) => {
+                if (e.target === dockerUpdateModal) {
+                    closeVersionModal();
+                }
             });
         }
         if (btnCopyDockerCmd) {
@@ -2057,7 +2068,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const res = await fetch("/api/version/truenas-upgrade", { method: "POST" });
                 const data = await res.json();
                 if (res.ok && data.status === "success") {
-                    if (dockerUpdateModal) dockerUpdateModal.style.display = "none";
+                    closeVersionModal();
                     showNotification(data.message, "success");
 
                     const restartOverlay = document.getElementById("restart-overlay");

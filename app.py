@@ -610,7 +610,7 @@ def truenas_upgrade():
         # 2. Nebo TrueNAS SCALE REST API
         truenas_url = os.environ.get("TRUENAS_URL") or user_config.get("truenas_url", "")
         truenas_api_key = os.environ.get("TRUENAS_API_KEY") or user_config.get("truenas_api_key", "")
-        app_name = os.environ.get("TRUENAS_APP_NAME") or user_config.get("truenas_app_name", "bazos-automat")
+        app_name = os.environ.get("TRUENAS_APP_NAME") or user_config.get("truenas_app_name", "listing-hub")
 
         if not truenas_url or not truenas_api_key:
             return jsonify({
