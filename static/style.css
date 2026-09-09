@@ -386,6 +386,61 @@ body {
     transform: translateY(-4px);
 }
 
+/* Price chip – tržní srovnání cen na dlaždicích */
+.price-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+    user-select: none;
+    margin-bottom: 0.5rem;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.price-chip:hover {
+    filter: brightness(1.15);
+    transform: scale(1.02);
+}
+.price-chip.chip-loading {
+    color: var(--text-muted);
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    cursor: default;
+    pointer-events: none;
+}
+.price-chip.chip-bargain {
+    background: rgba(25, 135, 84, 0.12);
+    border-color: rgba(25, 135, 84, 0.35);
+    color: #75b798;
+}
+.price-chip.chip-fair {
+    background: rgba(131, 92, 223, 0.12);
+    border-color: rgba(131, 92, 223, 0.35);
+    color: #c29ffa;
+}
+.price-chip.chip-overpriced {
+    background: rgba(220, 53, 69, 0.12);
+    border-color: rgba(220, 53, 69, 0.35);
+    color: #ea868f;
+}
+.price-chip.chip-no-data {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    cursor: default;
+    pointer-events: none;
+}
+
 .listing-header {
     display: flex;
     justify-content: space-between;

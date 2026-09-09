@@ -127,11 +127,11 @@ class PlaywrightSessionManager:
             text_val = evt.get("text", "")
             if self.page and not self.page.is_closed():
                 try:
-                    # Automaticky zaměříme pole pro SMS kód – teloverit (nový inzerát) nebo kodd/klic/kod/cr (přihlášení)
+                    # Automaticky zaměříme pole pro SMS kód – klic (nový inzerát) nebo kodd/kod/cr (přihlášení)
                     code_input = self.page.locator(
-                        "input[name='teloverit'], input[id='teloverit'], "
-                        "input[name='kodd'], input[name='klic'], input[name='cr'], "
-                        "input[name='kod'], input[name='overkod']"
+                        "input[name='klic'], input[id='klic'], "
+                        "input[name='kodd'], input[id='kodd'], "
+                        "input[name='cr'], input[name='kod'], input[name='overkod']"
                     )
                     if code_input.count() > 0 and code_input.first.is_visible():
                         curr_val = code_input.first.input_value() or ""
@@ -141,10 +141,10 @@ class PlaywrightSessionManager:
                         self.page.evaluate('''() => {
                             let el = document.activeElement;
                             if (!el || el.tagName === "BODY" || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
-                                let input = document.querySelector("input[name='teloverit']") ||
-                                            document.querySelector("input[id='teloverit']") ||
+                                let input = document.querySelector("input[name='klic']") ||
+                                            document.querySelector("input[id='klic']") ||
                                             document.querySelector("input[name='kodd']") ||
-                                            document.querySelector("input[name='klic']") ||
+                                            document.querySelector("input[id='kodd']") ||
                                             document.querySelector("input[name='cr']") ||
                                             document.querySelector("input[name='kod']") ||
                                             document.querySelector("input[type='text']") || 
@@ -166,23 +166,22 @@ class PlaywrightSessionManager:
             if self.page and not self.page.is_closed():
                 try:
                     code_input = self.page.locator(
-                        "input[name='teloverit'], input[id='teloverit'], "
-                        "input[name='kodd'], input[name='klic'], input[name='cr'], "
-                        "input[name='kod'], input[name='overkod']"
+                        "input[name='klic'], input[id='klic'], "
+                        "input[name='kodd'], input[id='kodd'], "
+                        "input[name='cr'], input[name='kod'], input[name='overkod']"
                     )
                     if key_name == "Backspace" and code_input.count() > 0 and code_input.first.is_visible():
                         curr_val = code_input.first.input_value() or ""
                         code_input.first.fill(curr_val[:-1])
                     elif key_name == "Enter" and code_input.count() > 0 and code_input.first.is_visible():
                         submit_btn = self.page.locator(
+                            "form:has(input[name='klic']) input[type='submit'], "
+                            "form:has(input[name='kodd']) input[type='submit'], "
                             "input[type='submit'][value*='Vypsat'], "
                             "input[type='submit'][value*='Ověř'], "
                             "input[type='submit'][value*='Potvrd'], "
                             "input[type='submit'][value*='Odeslat'], "
-                            "button[type='submit'], "
-                            "form:has(input[name='teloverit']) input[type='submit'], "
-                            "form:has(input[name='kodd']) input[type='submit'], "
-                            "form:has(input[name='klic']) input[type='submit']"
+                            "button[type='submit']"
                         )
                         if submit_btn.count() > 0 and submit_btn.first.is_visible():
                             submit_btn.first.click()
@@ -276,7 +275,10 @@ class PlaywrightSessionManager:
             "kwargs": kwargs,
             "result_queue": res_q
         })
-        res, err = res_q.get()
+        try:
+            res, err = res_q.get(timeout=12.0)
+        except queue.Empty:
+            raise TimeoutError("Vypršel limit (12s) pro zpracování požadavku v prohlížeči.")
         if err:
             raise err
         return res

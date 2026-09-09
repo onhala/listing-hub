@@ -670,6 +670,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 soldListingsContainer.appendChild(card);
             });
         }
+
+        // Spustíme IntersectionObserver pro price chipy (zaregistrujeme nově přidané chipy)
+        // initPriceChipObserver je definovaný níže v sekci Price Advisor
+        if (typeof initPriceChipObserver === "function") {
+            initPriceChipObserver();
+        }
     };
 
     const createAdCard = (ad, isSold) => {
@@ -698,6 +704,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     </span>
                 </div>
                 <p class="listing-desc">${escapeHtml(descText)}</p>
+                ${!isSold && ad.price ? `
+                <div class="price-chip chip-loading" data-ad-id="${ad.id}" data-ad-price="${ad.price || 0}" data-loaded="false" title="Klikni pro detail cenového srovnání">
+                    <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 0.7rem;"></i>
+                    <span class="chip-text">Analyzuji trh...</span>
+                </div>` : ''}
             </div>
             <div>
                 <div class="listing-meta">
@@ -2682,9 +2693,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
 
                 if (res.ok && data.submitted) {
-                    showNotification("SMS kód byl úspěšně zadán a odeslán do Bazoše.", "success");
+                    showNotification(data.message || "SMS kód byl úspěšně zadán a odeslán do Bazoše.", "success");
                     input.value = "";
+                    if (typeof refreshBrowserInspect === "function") refreshBrowserInspect(false);
                 } else {
+                    const warnMsg = (data && data.message) ? data.message : "SMS pole nenalezeno, zkouším odeslat do aktivního elementu...";
+                    showNotification(warnMsg, "warning");
                     // Fallback: vepsat jako text přes CDP a stisknout Enter
                     await fetch("/api/screencast/input", {
                         method: "POST",
@@ -2696,8 +2710,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ action: "key", key: "Enter" })
                     });
-                    showNotification("Text byl zapsán do pole v prohlížeči a odeslán (Enter).", "info");
+                    showNotification("Text byl zapsán do prohlížeče a odeslán (Enter).", "info");
                     input.value = "";
+                    if (typeof refreshBrowserInspect === "function") refreshBrowserInspect(false);
                 }
             } catch (err) {
                 console.error("Chyba při odesílání textu do prohlížeče:", err);
@@ -2744,9 +2759,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (data.focused) {
                         const fieldLabel = data.field || "pole";
                         showNotification(`✅ Zaměřeno: "${fieldLabel}" – nyní zadej SMS kód a stiskni Odeslat.`, "success");
-                        // Přesuneme fokus na input pro kód
                         const qi = document.getElementById("screencast-quick-text");
                         if (qi) qi.focus();
+                        if (typeof refreshBrowserInspect === "function") refreshBrowserInspect(false);
                     } else {
                         showNotification(`⚠️ ${data.message || "Žádné pole nenalezeno. Zkus kliknout přímo do prohlížeče."}`, "warning");
                     }
@@ -2758,6 +2773,259 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             };
         }
+
+        // ==========================================
+        // ŽIVÁ DIAGNOSTIKA FORMULÁŘE A INTERAKTIVNÍ ČIPY POLÍ
+        // ==========================================
+        const browserStepBadge = document.getElementById("browser-step-badge");
+        const browserDetectedFields = document.getElementById("browser-detected-fields");
+        const modalBrowserInspect = document.getElementById("modal-browser-inspect");
+        const btnInspectPage = document.getElementById("btn-inspect-page");
+        const btnCloseInspect = document.getElementById("btn-close-inspect");
+        const btnCloseInspectFooter = document.getElementById("btn-close-inspect-footer");
+        const btnRefreshInspect = document.getElementById("btn-refresh-inspect");
+        const inspectStepDesc = document.getElementById("inspect-step-desc");
+        const inspectUrl = document.getElementById("inspect-url");
+        const inspectAlertsContainer = document.getElementById("inspect-alerts-container");
+        const inspectAlertsList = document.getElementById("inspect-alerts-list");
+        const inspectFieldsTable = document.getElementById("inspect-fields-table");
+
+        const updateBrowserStepBadge = (step, desc) => {
+            if (!browserStepBadge) return;
+            browserStepBadge.title = desc || "";
+            if (step === "sms_new_ad") {
+                browserStepBadge.textContent = "🔑 Krok 2: SMS Mobilní klíč (klic)";
+                browserStepBadge.style.background = "rgba(16, 185, 129, 0.25)";
+                browserStepBadge.style.color = "#6ee7b7";
+                browserStepBadge.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+            } else if (step === "sms_login") {
+                browserStepBadge.textContent = "🔑 SMS kód (kodd)";
+                browserStepBadge.style.background = "rgba(16, 185, 129, 0.25)";
+                browserStepBadge.style.color = "#6ee7b7";
+                browserStepBadge.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+            } else if (step === "phone_new_ad") {
+                browserStepBadge.textContent = "📱 Krok 1: Telefon (teloverit)";
+                browserStepBadge.style.background = "rgba(59, 130, 246, 0.25)";
+                browserStepBadge.style.color = "#93c5fd";
+                browserStepBadge.style.border = "1px solid rgba(59, 130, 246, 0.4)";
+            } else if (step === "ad_form") {
+                browserStepBadge.textContent = "📝 Formulář inzerátu";
+                browserStepBadge.style.background = "rgba(139, 92, 246, 0.25)";
+                browserStepBadge.style.color = "#c4b5fd";
+                browserStepBadge.style.border = "1px solid rgba(139, 92, 246, 0.4)";
+            } else if (step === "login_form") {
+                browserStepBadge.textContent = "👤 Přihlášení";
+                browserStepBadge.style.background = "rgba(139, 92, 246, 0.25)";
+                browserStepBadge.style.color = "#c4b5fd";
+                browserStepBadge.style.border = "1px solid rgba(139, 92, 246, 0.4)";
+            } else if (step === "closed") {
+                browserStepBadge.textContent = "Prohlížeč neběží";
+                browserStepBadge.style.background = "rgba(255, 255, 255, 0.05)";
+                browserStepBadge.style.color = "var(--text-muted)";
+                browserStepBadge.style.border = "none";
+            } else {
+                browserStepBadge.textContent = "🌐 Bazoš aktivní";
+                browserStepBadge.style.background = "rgba(255, 255, 255, 0.1)";
+                browserStepBadge.style.color = "#e2e8f0";
+                browserStepBadge.style.border = "none";
+            }
+        };
+
+        const fillSpecificField = async (fieldName, textVal = "", submit = false) => {
+            try {
+                const res = await fetch("/api/browser/fill-field", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ field_name: fieldName, value: textVal, submit: submit })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "ok") {
+                    showNotification(data.message, "success");
+                    const qi = document.getElementById("screencast-quick-text");
+                    if (qi) {
+                        if (textVal) qi.value = "";
+                        qi.focus();
+                    }
+                    refreshBrowserInspect(false);
+                } else {
+                    showNotification(data.message || `Chyba při manipulaci s polem ${fieldName}`, "error");
+                }
+            } catch (err) {
+                showNotification(`Chyba: ${err.message}`, "error");
+            }
+        };
+
+        const refreshBrowserInspect = async (openModal = false) => {
+            if (openModal && btnRefreshInspect) {
+                btnRefreshInspect.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Obnovuji...`;
+            }
+            try {
+                const res = await fetch("/api/browser/inspect");
+                const data = await res.json();
+
+                if (!res.ok || data.status === "closed") {
+                    updateBrowserStepBadge("closed", "Prohlížeč není spuštěn.");
+                    if (browserDetectedFields) browserDetectedFields.innerHTML = "";
+                    if (openModal && inspectStepDesc) inspectStepDesc.textContent = "Prohlížeč není spuštěn.";
+                    return;
+                }
+
+                updateBrowserStepBadge(data.detected_step, data.step_description);
+
+                // Vykreslíme rychlé čipy polí pod screencastem
+                if (browserDetectedFields) {
+                    browserDetectedFields.innerHTML = "";
+                    const visibleInputs = (data.inputs || []).filter(i => i.visible && i.type !== "hidden" && i.type !== "submit");
+                    if (visibleInputs.length === 0) {
+                        browserDetectedFields.innerHTML = `<span style="color: var(--text-muted); font-size: 0.75rem;">Žádná viditelná pole</span>`;
+                    } else {
+                        visibleInputs.slice(0, 5).forEach(inp => {
+                            const name = inp.name || inp.id || "pole";
+                            const isKey = name === "klic" || name === "kodd";
+                            const isPhone = name === "teloverit" || name === "telefoni" || name === "telefon";
+                            const icon = isKey ? "🔑" : (isPhone ? "📱" : "🎯");
+                            const label = isKey ? `${icon} ${name} (SMS kód)` : (isPhone ? `${icon} ${name}` : `${icon} ${name}`);
+
+                            const chip = document.createElement("button");
+                            chip.type = "button";
+                            chip.className = "btn btn-secondary";
+                            chip.style.cssText = "padding: 0.2rem 0.55rem; font-size: 0.75rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid rgba(255,255,255,0.12); cursor: pointer; white-space: nowrap;";
+                            if (isKey) {
+                                chip.style.background = "rgba(16, 185, 129, 0.2)";
+                                chip.style.borderColor = "rgba(16, 185, 129, 0.5)";
+                                chip.style.color = "#a7f3d0";
+                            }
+                            chip.innerHTML = `${label}${inp.value ? ` <span style="opacity: 0.75; font-size: 0.7rem;">(${inp.value})</span>` : ""}`;
+                            chip.title = `Kliknutím zaměříte pole '${name}'. Pokud je v řádku vepsán kód, okamžitě se do něj vloží.`;
+
+                            chip.onclick = (e) => {
+                                e.preventDefault();
+                                const qi = document.getElementById("screencast-quick-text");
+                                const textVal = qi ? qi.value.trim() : "";
+                                fillSpecificField(name, textVal, false);
+                            };
+                            browserDetectedFields.appendChild(chip);
+                        });
+                    }
+                }
+
+                // Pokud je vyžádán modal, naplníme jej daty
+                if (openModal || (modalBrowserInspect && modalBrowserInspect.style.display === "flex")) {
+                    if (inspectStepDesc) inspectStepDesc.textContent = data.step_description || "Běžná stránka";
+                    if (inspectUrl) inspectUrl.textContent = data.url || "-";
+
+                    // Alerty / Upozornění
+                    if (inspectAlertsContainer && inspectAlertsList) {
+                        if (data.alerts && data.alerts.length > 0) {
+                            inspectAlertsList.innerHTML = data.alerts.map(a => `<li>${a}</li>`).join("");
+                            inspectAlertsContainer.style.display = "block";
+                        } else {
+                            inspectAlertsContainer.style.display = "none";
+                        }
+                    }
+
+                    // Tabulka polí
+                    if (inspectFieldsTable) {
+                        if (!data.inputs || data.inputs.length === 0) {
+                            inspectFieldsTable.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 1rem; color: var(--text-muted);">Na stránce nebyla nalezena žádná pole formuláře.</td></tr>`;
+                        } else {
+                            inspectFieldsTable.innerHTML = data.inputs.map(inp => {
+                                const name = inp.name || inp.id || "(bezejmenné)";
+                                const isSMS = name === "klic" || name === "kodd";
+                                const isPhone = name === "teloverit" || name === "telefoni" || name === "telefon";
+                                const focusBadge = inp.focused ? `<span style="background: rgba(245, 158, 11, 0.2); color: #fcd34d; font-size: 0.7rem; padding: 1px 4px; border-radius: 4px; margin-left: 4px;">Fokus</span>` : "";
+                                const visBadge = inp.visible ? `<span style="color: #10b981;">Viditelné</span>` : `<span style="color: var(--text-muted);">Skryté</span>`;
+                                const rowStyle = isSMS ? "background: rgba(16, 185, 129, 0.08);" : (inp.focused ? "background: rgba(245, 158, 11, 0.05);" : "");
+
+                                return `
+                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); ${rowStyle}">
+                                        <td style="padding: 0.45rem 0.5rem; font-family: monospace; font-weight: ${isSMS ? 'bold' : 'normal'}; color: ${isSMS ? '#a7f3d0' : '#fff'};">
+                                            ${isSMS ? '🔑 ' : (isPhone ? '📱 ' : '')}${name} ${focusBadge}
+                                        </td>
+                                        <td style="padding: 0.45rem 0.5rem; font-size: 0.8rem; color: var(--text-muted);">
+                                            ${inp.type || inp.tag} · ${visBadge}
+                                        </td>
+                                        <td style="padding: 0.45rem 0.5rem; font-family: monospace; font-size: 0.8rem; color: #cbd5e1;">
+                                            ${inp.value || '<span style="color: rgba(255,255,255,0.2);">&lt;prázdné&gt;</span>'}
+                                        </td>
+                                        <td style="padding: 0.45rem 0.5rem; text-align: right;">
+                                            <button class="btn btn-secondary btn-sm" onclick="window._fillInspectField('${name}', false)" style="padding: 2px 7px; font-size: 0.75rem; border-radius: 4px;" title="Zaměřit toto pole v prohlížeči">
+                                                🎯 Zaměřit
+                                            </button>
+                                            <button class="btn btn-primary btn-sm" onclick="window._fillInspectField('${name}', true)" style="padding: 2px 7px; font-size: 0.75rem; border-radius: 4px; margin-left: 4px;" title="Vepsat text z horního řádku a odeslat">
+                                                ✏️ Vložit a odeslat
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join("");
+                        }
+                    }
+
+                    if (openModal && modalBrowserInspect) {
+                        modalBrowserInspect.style.display = "flex";
+                    }
+                }
+            } catch (err) {
+                console.error("Chyba při diagnostice prohlížeče:", err);
+            } finally {
+                if (btnRefreshInspect) {
+                    btnRefreshInspect.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Obnovit`;
+                }
+            }
+        };
+
+        // Globální pomocník pro tlačítka v tabulce modalu
+        window._fillInspectField = (fieldName, submit) => {
+            const qi = document.getElementById("screencast-quick-text");
+            let textVal = qi ? qi.value.trim() : "";
+            if (submit && !textVal) {
+                textVal = prompt(`Zadej text nebo SMS kód pro pole '${fieldName}':`) || "";
+                if (!textVal) return;
+            }
+            fillSpecificField(fieldName, textVal, submit);
+        };
+
+        if (btnInspectPage) {
+            btnInspectPage.addEventListener("click", () => {
+                refreshBrowserInspect(true);
+            });
+        }
+        if (btnRefreshInspect) {
+            btnRefreshInspect.addEventListener("click", () => {
+                refreshBrowserInspect(true);
+            });
+        }
+        if (btnCloseInspect) {
+            btnCloseInspect.addEventListener("click", () => {
+                if (modalBrowserInspect) modalBrowserInspect.style.display = "none";
+            });
+        }
+        if (btnCloseInspectFooter) {
+            btnCloseInspectFooter.addEventListener("click", () => {
+                if (modalBrowserInspect) modalBrowserInspect.style.display = "none";
+            });
+        }
+        if (modalBrowserInspect) {
+            modalBrowserInspect.addEventListener("click", (e) => {
+                if (e.target === modalBrowserInspect) {
+                    modalBrowserInspect.style.display = "none";
+                }
+            });
+        }
+
+        // Periodické obnovování detekce stavu formuláře každých 5s (pokud je okno viditelné)
+        setInterval(() => {
+            if (document.visibilityState === "visible") {
+                const screencastContainer = document.getElementById("screencast-container");
+                if (screencastContainer && screencastContainer.offsetParent !== null) {
+                    refreshBrowserInspect(false);
+                }
+            }
+        }, 5000);
+
+        // Počáteční načtení diagnostiky
+        setTimeout(() => refreshBrowserInspect(false), 2000);
     }
 
     const btnReloadVnc = document.getElementById("btn-reload-vnc");
@@ -2866,12 +3134,130 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==========================================================
     // Price Advisor & Auto-Repost Client Integration
     // ==========================================================
-    
+
+    // --- In-memory cache pro výsledky cenové analýzy (key = ad.id) ---
+    const priceCache = {};
+
+    // Aktualizuje vizuál price chipu na dlaždicích
+    const updatePriceChip = (chipEl, data) => {
+        if (!chipEl) return;
+        const stats = data.statistics || {};
+        const marketMedian = stats.median || stats.avg || 0;
+        const myPrice = parseInt(chipEl.dataset.adPrice) || 0;
+
+        chipEl.removeAttribute("data-loaded"); // mark done
+        chipEl.classList.remove("chip-loading", "chip-bargain", "chip-fair", "chip-overpriced", "chip-no-data");
+
+        let icon = "📊";
+        let chipClass = "chip-fair";
+        let diffText = "";
+
+        if (data.status === "NO_COMPETITION" || !marketMedian) {
+            chipEl.classList.add("chip-no-data");
+            chipEl.querySelector(".chip-text").textContent = "📊 Bez srovnání na trhu";
+            chipEl.querySelector("i")?.remove();
+            chipEl.style.cursor = "default";
+            chipEl.style.pointerEvents = "none";
+            return;
+        }
+
+        const pct = myPrice && marketMedian ? Math.round(((myPrice - marketMedian) / marketMedian) * 100) : 0;
+
+        if (data.status === "BARGAIN") {
+            chipClass = "chip-bargain";
+            icon = "✅";
+            diffText = pct < 0 ? ` · Levnější o ${Math.abs(pct)} %` : ` · Výhodná cena`;
+        } else if (data.status === "OVERPRICED") {
+            chipClass = "chip-overpriced";
+            icon = "⬆";
+            diffText = pct > 0 ? ` · Dražší o ${pct} %` : ` · Nad trhem`;
+        } else {
+            chipClass = "chip-fair";
+            icon = "≈";
+            diffText = ` · Odpovídá trhu`;
+        }
+
+        chipEl.classList.add(chipClass);
+        const iEl = chipEl.querySelector("i");
+        if (iEl) iEl.remove();
+        chipEl.querySelector(".chip-text").textContent =
+            `${icon} Trh: ~${marketMedian.toLocaleString("cs-CZ")} Kč${diffText}`;
+    };
+
+    // Načte cenová data pro jeden inzerát a updatuje všechny chipy se stejným ad.id
+    const loadPriceChip = async (adId, adPrice) => {
+        // Pokud máme cache, hned updatujeme
+        if (priceCache[adId]) {
+            document.querySelectorAll(`.price-chip[data-ad-id="${adId}"]`).forEach(chip => {
+                updatePriceChip(chip, priceCache[adId]);
+            });
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/advisor/price/${adId}`);
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const json = await res.json();
+            if (json.status !== "success") throw new Error(json.message || "err");
+
+            priceCache[adId] = json.data;
+            document.querySelectorAll(`.price-chip[data-ad-id="${adId}"]`).forEach(chip => {
+                updatePriceChip(chip, json.data);
+            });
+        } catch {
+            // Neupravuj chip – nech ho skrytý nebo přepni na no-data
+            document.querySelectorAll(`.price-chip[data-ad-id="${adId}"][data-loaded="false"]`).forEach(chip => {
+                chip.classList.remove("chip-loading");
+                chip.classList.add("chip-no-data");
+                chip.querySelector(".chip-text").textContent = "📊 Nelze načíst";
+                chip.querySelector("i")?.remove();
+                chip.style.pointerEvents = "none";
+            });
+        }
+    };
+
+    // IntersectionObserver – spustí loadPriceChip jakmile chip vstoupí do viewportu
+    const initPriceChipObserver = () => {
+        const inFlight = new Set(); // zabrání duplicate volání
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) return;
+                const chip = entry.target;
+                if (chip.dataset.loaded === "false" && chip.dataset.adId) {
+                    const adId = chip.dataset.adId;
+                    if (inFlight.has(adId)) return;
+                    inFlight.add(adId);
+                    chip.dataset.loaded = "pending";
+                    loadPriceChip(adId, parseInt(chip.dataset.adPrice) || 0)
+                        .finally(() => inFlight.delete(adId));
+                    observer.unobserve(chip); // stačí jednou
+                }
+            });
+        }, { rootMargin: "100px", threshold: 0.1 });
+
+        document.querySelectorAll(".price-chip[data-loaded='false']").forEach(chip => {
+            observer.observe(chip);
+        });
+        return observer;
+    };
+
+    // Kliknutí na price chip → otevři Poradce (z cache pokud možno)
+    document.addEventListener("click", (e) => {
+        const chip = e.target.closest(".price-chip");
+        if (!chip || chip.classList.contains("chip-loading") || chip.classList.contains("chip-no-data")) return;
+        const adId = chip.dataset.adId;
+        if (!adId) return;
+        const ad = activeListings.find(item => String(item.id) === String(adId));
+        if (!ad) return;
+        e.stopPropagation();
+        openAdvisor(ad);
+    });
+
     const advisorModal = document.getElementById("price-advisor-modal");
     const closeAdvisorBtn = document.getElementById("btn-close-advisor-modal");
     const closeAdvisorBtnFooter = document.getElementById("btn-close-advisor-modal-footer");
     const applyAdvisorPriceBtn = document.getElementById("btn-apply-advisor-price");
-    
+
     let activeAdvisorListingId = null;
 
     // Odchytávání kliknutí na karty (Cenový poradce)
@@ -2896,141 +3282,150 @@ document.addEventListener("DOMContentLoaded", () => {
         openAdvisor(ad);
     });
 
+    const _renderAdvisorData = (data) => {
+        const stats = data.statistics;
+        const sourcesListEl = document.getElementById("advisor-sources-list");
+        const statusAlert = document.getElementById("advisor-status-alert");
+
+        if (sourcesListEl && data.sources_checked && data.sources_checked.length) {
+            sourcesListEl.innerText = `Zdroje: ${data.sources_checked.join(", ")}`;
+        }
+
+        statusAlert.className = "alert";
+        if (data.status === "OVERPRICED") {
+            statusAlert.style.background = "rgba(220, 53, 69, 0.15)";
+            statusAlert.style.color = "#ea868f";
+            statusAlert.style.border = "1px solid rgba(220, 53, 69, 0.3)";
+        } else if (data.status === "BARGAIN") {
+            statusAlert.style.background = "rgba(25, 135, 84, 0.15)";
+            statusAlert.style.color = "#75b798";
+            statusAlert.style.border = "1px solid rgba(25, 135, 84, 0.3)";
+        } else {
+            statusAlert.style.background = "rgba(131, 92, 223, 0.15)";
+            statusAlert.style.color = "var(--accent)";
+            statusAlert.style.border = "1px solid rgba(131, 92, 223, 0.3)";
+        }
+
+        const fullMsg = data.reasoning ? `${data.message} ${data.reasoning}` : data.message;
+        document.getElementById("advisor-message").innerText = fullMsg;
+
+        if (data.status === "NO_COMPETITION") {
+            document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i> Nebyla nalezena žádná konkurence.</div>';
+            document.getElementById("advisor-opt-quick").innerText = "- Kč";
+            document.getElementById("advisor-opt-fair").innerText = "- Kč";
+            document.getElementById("advisor-opt-premium").innerText = "- Kč";
+            return;
+        }
+
+        document.getElementById("advisor-opt-quick").innerText = `${stats.suggested_quick_sale.toLocaleString("cs-CZ")} Kč`;
+        document.getElementById("advisor-opt-fair").innerText = `${stats.suggested_fair.toLocaleString("cs-CZ")} Kč`;
+        document.getElementById("advisor-opt-premium").innerText = `${stats.suggested_premium.toLocaleString("cs-CZ")} Kč`;
+
+        const selectBtns = document.querySelectorAll(".btn-select-advisor-price");
+        selectBtns[0].setAttribute("data-price", stats.suggested_quick_sale);
+        selectBtns[1].setAttribute("data-price", stats.suggested_fair);
+        selectBtns[2].setAttribute("data-price", stats.suggested_premium);
+
+        document.getElementById("advisor-selected-price").value = stats.suggested_fair;
+
+        document.getElementById("advisor-range-min").innerText = `${stats.min.toLocaleString("cs-CZ")} Kč`;
+        document.getElementById("advisor-range-median").innerText = `${stats.median.toLocaleString("cs-CZ")} Kč`;
+        document.getElementById("advisor-range-avg").innerText = `${stats.avg.toLocaleString("cs-CZ")} Kč`;
+        document.getElementById("advisor-range-max").innerText = `${stats.max.toLocaleString("cs-CZ")} Kč`;
+
+        const competitorsContainer = document.getElementById("advisor-competitors-container");
+        competitorsContainer.innerHTML = "";
+
+        data.listings.forEach(item => {
+            const itemEl = document.createElement("div");
+            itemEl.style.display = "flex";
+            itemEl.style.justifyContent = "space-between";
+            itemEl.style.alignItems = "center";
+            itemEl.style.background = "rgba(255, 255, 255, 0.02)";
+            itemEl.style.border = "1px solid var(--border)";
+            itemEl.style.padding = "0.6rem 0.85rem";
+            itemEl.style.borderRadius = "6px";
+            itemEl.style.fontSize = "0.85rem";
+
+            const topText = item.is_top ? '<span style="color: #ffc107; font-weight: bold; margin-left: 0.25rem;">[TOP]</span>' : '';
+
+            const sourceName = item.source || "Bazoš.cz";
+            let badgeStyle = "background: rgba(255, 152, 0, 0.15); color: #ff9800; border: 1px solid rgba(255, 152, 0, 0.3);";
+            if (sourceName.toLowerCase().includes("sbazar")) {
+                badgeStyle = "background: rgba(220, 53, 69, 0.15); color: #ea868f; border: 1px solid rgba(220, 53, 69, 0.3);";
+            } else if (sourceName.toLowerCase().includes("web")) {
+                badgeStyle = "background: rgba(13, 110, 253, 0.15); color: #6ea8fe; border: 1px solid rgba(13, 110, 253, 0.3);";
+            } else if (sourceName.toLowerCase().includes("gemini")) {
+                badgeStyle = "background: rgba(131, 92, 223, 0.15); color: #c29ffa; border: 1px solid rgba(131, 92, 223, 0.3);";
+            }
+            const sourceBadge = `<span style="display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; margin-right: 0.4rem; ${badgeStyle}">${escapeHtml(sourceName)}</span>`;
+
+            const extraMeta = [];
+            if (item.location) extraMeta.push(escapeHtml(item.location));
+            if (item.views) extraMeta.push(`👀 ${item.views} zhlédnutí`);
+            if (item.date) extraMeta.push(`📅 ${item.date}`);
+
+            itemEl.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 0.15rem; max-width: 75%;">
+                    <div style="display: flex; align-items: center; gap: 0.25rem; overflow: hidden;">
+                        ${sourceBadge}
+                        <a href="${item.link}" target="_blank" style="color: #a5d6ff; text-decoration: none; font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHtml(item.title)}</a>
+                    </div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">${extraMeta.join(" | ")}</span>
+                </div>
+                <strong style="color: #fff; white-space: nowrap; margin-left: 0.5rem;">${item.price_text || (item.price ? `${item.price.toLocaleString("cs-CZ")} Kč` : "Cena neuvedena")}${topText}</strong>
+            `;
+            competitorsContainer.appendChild(itemEl);
+        });
+    };
+
     const openAdvisor = async (ad) => {
-        // Inicializujeme modal do loading stavu
+        activeAdvisorListingId = ad.id;
+
+        // Základní info do modalu
         document.getElementById("advisor-listing-title").innerText = ad.title;
         document.getElementById("advisor-current-price").innerText = `${ad.price.toLocaleString("cs-CZ")} Kč`;
-        
+        document.getElementById("advisor-selected-price").value = ad.price;
+        advisorModal.classList.add("active");
+
+        // Pokud máme cache z chipu → render okamžitě, žádný API call
+        if (priceCache[ad.id]) {
+            _renderAdvisorData(priceCache[ad.id]);
+            return;
+        }
+
+        // Jinak loading stav a API call
         const sourcesListEl = document.getElementById("advisor-sources-list");
         if (sourcesListEl) sourcesListEl.innerText = "";
-
         const statusAlert = document.getElementById("advisor-status-alert");
         statusAlert.className = "alert alert-warning";
         statusAlert.style.background = "rgba(255, 193, 7, 0.1)";
         statusAlert.style.color = "#ffc107";
+        statusAlert.style.border = "";
         document.getElementById("advisor-message").innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzuji konkurenční nabídky (Bazoš, Sbazar, Web)...';
-        
         document.getElementById("advisor-opt-quick").innerText = "- Kč";
         document.getElementById("advisor-opt-fair").innerText = "- Kč";
         document.getElementById("advisor-opt-premium").innerText = "- Kč";
-        
         document.getElementById("advisor-range-min").innerText = "- Kč";
         document.getElementById("advisor-range-median").innerText = "- Kč";
         document.getElementById("advisor-range-avg").innerText = "- Kč";
         document.getElementById("advisor-range-max").innerText = "- Kč";
-        
         document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1.5rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Hledám inzeráty na portálech...</div>';
-        document.getElementById("advisor-selected-price").value = ad.price;
-        
-        advisorModal.classList.add("active");
 
         try {
             const res = await fetch(`/api/advisor/price/${ad.id}`);
             const json = await res.json();
-            
             if (json.status === "error") {
                 showNotification(`Chyba analýzy: ${json.message}`, "error");
                 closeAdvisor();
                 return;
             }
-            
-            const data = json.data;
-            const stats = data.statistics;
-            
-            if (sourcesListEl && data.sources_checked && data.sources_checked.length) {
-                sourcesListEl.innerText = `Zdroje: ${data.sources_checked.join(", ")}`;
-            }
-
-            // Vyhodnocení stavu a nastavení alertu
-            statusAlert.className = "alert";
-            if (data.status === "OVERPRICED") {
-                statusAlert.style.background = "rgba(220, 53, 69, 0.15)";
-                statusAlert.style.color = "#ea868f";
-                statusAlert.style.border = "1px solid rgba(220, 53, 69, 0.3)";
-            } else if (data.status === "BARGAIN") {
-                statusAlert.style.background = "rgba(25, 135, 84, 0.15)";
-                statusAlert.style.color = "#75b798";
-                statusAlert.style.border = "1px solid rgba(25, 135, 84, 0.3)";
-            } else {
-                statusAlert.style.background = "rgba(131, 92, 223, 0.15)";
-                statusAlert.style.color = "var(--accent)";
-                statusAlert.style.border = "1px solid rgba(131, 92, 223, 0.3)";
-            }
-            
-            const fullMsg = data.reasoning ? `${data.message} ${data.reasoning}` : data.message;
-            document.getElementById("advisor-message").innerText = fullMsg;
-            
-            if (data.status === "NO_COMPETITION") {
-                document.getElementById("advisor-competitors-container").innerHTML = '<div class="loading-state" style="padding: 1rem;"><i class="fa-solid fa-triangle-exclamation"></i> Nebyla nalezena žádná konkurence.</div>';
-                return;
-            }
-
-            // Nastavení doporučených cen
-            document.getElementById("advisor-opt-quick").innerText = `${stats.suggested_quick_sale.toLocaleString("cs-CZ")} Kč`;
-            document.getElementById("advisor-opt-fair").innerText = `${stats.suggested_fair.toLocaleString("cs-CZ")} Kč`;
-            document.getElementById("advisor-opt-premium").innerText = `${stats.suggested_premium.toLocaleString("cs-CZ")} Kč`;
-            
-            // Nastavení datasetů pro tlačítka "Zvolit"
-            const selectBtns = document.querySelectorAll(".btn-select-advisor-price");
-            selectBtns[0].setAttribute("data-price", stats.suggested_quick_sale);
-            selectBtns[1].setAttribute("data-price", stats.suggested_fair);
-            selectBtns[2].setAttribute("data-price", stats.suggested_premium);
-
-            // Výchozí předvyplněná cena bude férová (medián)
-            document.getElementById("advisor-selected-price").value = stats.suggested_fair;
-
-            // Nastavení tabulky rozpětí
-            document.getElementById("advisor-range-min").innerText = `${stats.min.toLocaleString("cs-CZ")} Kč`;
-            document.getElementById("advisor-range-median").innerText = `${stats.median.toLocaleString("cs-CZ")} Kč`;
-            document.getElementById("advisor-range-avg").innerText = `${stats.avg.toLocaleString("cs-CZ")} Kč`;
-            document.getElementById("advisor-range-max").innerText = `${stats.max.toLocaleString("cs-CZ")} Kč`;
-
-            // Vykreslení konkurenčních inzerátů
-            const competitorsContainer = document.getElementById("advisor-competitors-container");
-            competitorsContainer.innerHTML = "";
-            
-            data.listings.forEach(item => {
-                const itemEl = document.createElement("div");
-                itemEl.style.display = "flex";
-                itemEl.style.justify = "space-between";
-                itemEl.style.alignItems = "center";
-                itemEl.style.background = "rgba(255, 255, 255, 0.02)";
-                itemEl.style.border = "1px solid var(--border)";
-                itemEl.style.padding = "0.6rem 0.85rem";
-                itemEl.style.borderRadius = "6px";
-                itemEl.style.fontSize = "0.85rem";
-                
-                const topText = item.is_top ? '<span style="color: #ffc107; font-weight: bold; margin-left: 0.25rem;">[TOP]</span>' : '';
-                
-                const sourceName = item.source || "Bazoš.cz";
-                let badgeStyle = "background: rgba(255, 152, 0, 0.15); color: #ff9800; border: 1px solid rgba(255, 152, 0, 0.3);";
-                if (sourceName.toLowerCase().includes("sbazar")) {
-                    badgeStyle = "background: rgba(220, 53, 69, 0.15); color: #ea868f; border: 1px solid rgba(220, 53, 69, 0.3);";
-                } else if (sourceName.toLowerCase().includes("web")) {
-                    badgeStyle = "background: rgba(13, 110, 253, 0.15); color: #6ea8fe; border: 1px solid rgba(13, 110, 253, 0.3);";
-                } else if (sourceName.toLowerCase().includes("gemini")) {
-                    badgeStyle = "background: rgba(131, 92, 223, 0.15); color: #c29ffa; border: 1px solid rgba(131, 92, 223, 0.3);";
-                }
-                const sourceBadge = `<span style="display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; margin-right: 0.4rem; ${badgeStyle}">${escapeHtml(sourceName)}</span>`;
-
-                const extraMeta = [];
-                if (item.location) extraMeta.push(escapeHtml(item.location));
-                if (item.views) extraMeta.push(`👀 ${item.views} zhlédnutí`);
-                if (item.date) extraMeta.push(`📅 ${item.date}`);
-                
-                itemEl.innerHTML = `
-                    <div style="display: flex; flex-direction: column; gap: 0.15rem; max-width: 75%;">
-                        <div style="display: flex; align-items: center; gap: 0.25rem; overflow: hidden;">
-                            ${sourceBadge}
-                            <a href="${item.link}" target="_blank" style="color: #a5d6ff; text-decoration: none; font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHtml(item.title)}</a>
-                        </div>
-                        <span style="font-size: 0.75rem; color: var(--text-muted);">${extraMeta.join(" | ")}</span>
-                    </div>
-                    <strong style="color: #fff; white-space: nowrap; margin-left: 0.5rem;">${item.price_text || (item.price ? `${item.price.toLocaleString("cs-CZ")} Kč` : "Cena neuvedena")}${topText}</strong>
-                `;
-                competitorsContainer.appendChild(itemEl);
+            priceCache[ad.id] = json.data;
+            _renderAdvisorData(json.data);
+            // Aktualizujeme i chip pokud je viditelný
+            document.querySelectorAll(`.price-chip[data-ad-id="${ad.id}"]`).forEach(chip => {
+                updatePriceChip(chip, json.data);
             });
-
         } catch (e) {
             showNotification("Chyba při komunikaci s analyzátorem cen.", "error");
             closeAdvisor();

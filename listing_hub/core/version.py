@@ -13,7 +13,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "3.8.4"
+APP_VERSION = "3.8.5"
 GITHUB_REPO = "onhala/listing-hub"
 CACHE_TTL_SECONDS = 900  # 15 minut mezipaměť pro GitHub API
 

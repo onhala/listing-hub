@@ -233,11 +233,21 @@
                     <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; background: rgba(255, 255, 255, 0.03); padding: 0.5rem 0.75rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08);">
                         <i class="fa-solid fa-keyboard" style="color: var(--primary-color);"></i>
                         <input type="text" id="screencast-quick-text" placeholder="Zadej SMS kód nebo text k odeslání do prohlížeče..." style="flex: 1; background: transparent; border: none; color: #fff; outline: none; font-size: 0.9rem; padding: 0.2rem 0.5rem;">
-                        <button class="btn btn-secondary" id="btn-focus-input" title="Zaměří (fokusuje) pole pro SMS kód v prohlížeči – zvýrazní ho žlutě. Použij, pokud se kód nevkládá." style="padding: 0.35rem 0.7rem; font-size: 0.85rem; border-radius: 8px; white-space: nowrap;">
+                        <button class="btn btn-secondary" id="btn-focus-input" title="Zaměří (fokusuje) nejpravděpodobnější pole v prohlížeči. Použij, pokud se kód nevkládá." style="padding: 0.35rem 0.7rem; font-size: 0.85rem; border-radius: 8px; white-space: nowrap;">
                             🎯 Zaměřit pole
                         </button>
                         <button class="btn btn-primary" id="btn-send-quick-text" style="padding: 0.35rem 0.8rem; font-size: 0.85rem; border-radius: 8px;">
                             <i class="fa-solid fa-paper-plane"></i> Odeslat text
+                        </button>
+                    </div>
+                    <div id="browser-field-bar" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; padding: 0.4rem 0.75rem; background: rgba(0, 0, 0, 0.25); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.06); font-size: 0.8rem;">
+                        <span style="color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem;">
+                            <i class="fa-solid fa-compass" style="color: var(--primary-color);"></i>
+                            <span id="browser-step-badge" class="badge" style="background: rgba(124, 58, 237, 0.2); color: #c4b5fd; font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 6px;">Ověřuji stránku...</span>
+                        </span>
+                        <div id="browser-detected-fields" style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap;"></div>
+                        <button id="btn-inspect-page" class="btn btn-secondary" style="margin-left: auto; padding: 0.25rem 0.6rem; font-size: 0.75rem; border-radius: 6px; display: flex; align-items: center; gap: 0.3rem;" title="Otevřít kompletní diagnostiku formuláře Bazoše">
+                            <i class="fa-solid fa-stethoscope"></i> Diagnostika
                         </button>
                     </div>
                 </div>
@@ -1026,8 +1036,65 @@
         </div>
     </div>
 
+    <!-- Modal: Diagnostika formuláře Bazoše -->
+    <div class="modal-overlay" id="modal-browser-inspect" style="display: none;">
+        <div class="modal modal-lg" style="max-width: 780px; width: 95%;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <i class="fa-solid fa-stethoscope" style="color: var(--primary-color); font-size: 1.2rem;"></i>
+                    <h3 style="margin: 0;">Diagnostika formuláře Bazoše</h3>
+                </div>
+                <button class="close-btn" id="btn-close-inspect">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem; max-height: 75vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: rgba(255,255,255,0.03); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">Aktuální stav stránky:</div>
+                        <div id="inspect-step-desc" style="font-weight: 600; color: #fff; margin-top: 2px;">Načítám diagnostiku...</div>
+                        <div id="inspect-url" style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace; margin-top: 4px; word-break: break-all;">-</div>
+                    </div>
+                    <button class="btn btn-secondary" id="btn-refresh-inspect" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Obnovit
+                    </button>
+                </div>
+
+                <!-- Chybové alerty / varování z Bazoše -->
+                <div id="inspect-alerts-container" style="display: none; margin-bottom: 1rem; padding: 0.75rem 1rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px;">
+                    <div style="color: #fca5a5; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem;">⚠️ Upozornění z Bazoše:</div>
+                    <ul id="inspect-alerts-list" style="margin: 0; padding-left: 1.2rem; color: #fee2e2; font-size: 0.85rem;"></ul>
+                </div>
+
+                <!-- Nalezená pole formuláře -->
+                <div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 0.95rem; color: #fff;">Detekovaná pole formuláře:</h4>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--text-muted);">
+                                    <th style="padding: 0.5rem;">Název / ID</th>
+                                    <th style="padding: 0.5rem;">Typ / Stav</th>
+                                    <th style="padding: 0.5rem;">Hodnota</th>
+                                    <th style="padding: 0.5rem; text-align: right;">Akce</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inspect-fields-table">
+                                <tr>
+                                    <td colspan="4" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">Načítám pole...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 0.75rem 1.25rem; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.78rem; color: var(--text-muted);">Kliknutím na "Vložit kód" se do vybraného pole vepíše zadaný text a odešle.</span>
+                <button type="button" class="btn btn-secondary" id="btn-close-inspect-footer">Zavřít</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Client application logic -->
-    <script src="/static/app.js?v=3.8.2"></script>
+    <script src="/static/app.js?v=3.8.5"></script>
 </body>
 </html>
 

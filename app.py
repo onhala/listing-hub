@@ -243,92 +243,125 @@ def submit_sms_code():
         
     def _fill_sms(page, *args):
         if not page or page.is_closed():
-            return False
+            return {"submitted": False, "message": "Prohlížeč není otevřen."}
 
+        # 1. SMS specifické selektory (klic = Mobilní klíč pro nový inzerát, kodd = SMS kód pro přihlášení)
+        # POZOR: teloverit je telefonní číslo, NIKOLIV kód z SMS!
         selectors = [
-            "input[name='teloverit']",   # SMS kód pro přidání nového inzerátu (pridat-inzerat.php)
-            "input[id='teloverit']",
-            "input[name='kodd']",
             "input[name='klic']",
+            "input[id='klic']",
+            "input[name='kodd']",
+            "input[id='kodd']",
             "input[name='cr']",
             "input[name='kod']",
             "input[name='overkod']",
-            "input[id='kodd']",
-            "input[id*='kod']",
-            "input[name*='kod']",
-            "input[name*='sms']",
-            "input[name*='verit']",      # teloverit, overit apod.
-            "input[maxlength='6']",
+            "input[placeholder*='klíč']",
+            "input[placeholder*='klic']",
             "input[placeholder*='kód']",
             "input[placeholder*='kod']",
             "input[placeholder*='SMS']",
             "input[placeholder*='sms']",
+            "input[name*='kod']",
+            "input[name*='sms']",
+            "input[maxlength='6']"
         ]
         code_input = None
+        matched_sel = None
         for sel in selectors:
             loc = page.locator(sel)
             if loc.count() > 0 and loc.first.is_visible():
                 code_input = loc.first
+                matched_sel = sel
                 break
                 
+        # 2. Pokud jsme nenašli SMS pole specifickým selektorem, zkontrolujeme aktivní element
         if not code_input:
-            for inp in page.locator("input[type='text'], input[type='number'], input:not([type])").all():
-                try:
-                    if not inp.is_visible():
-                        continue
-                    name = (inp.get_attribute("name") or "").lower()
-                    inp_id = (inp.get_attribute("id") or "").lower()
-                    placeholder = (inp.get_attribute("placeholder") or "").lower()
-                    if any(x in name or x in inp_id or x in placeholder for x in ("kod", "kód", "klic", "klíč", "sms", "cr", "over")):
-                        code_input = inp
-                        break
-                    if name not in ("hledat", "hlokalita", "mail", "email", "telefon", "telefoni", "cena", "nadpis", "rubrika", "kategorie"):
-                        code_input = inp
-                        break
-                except Exception:
-                    pass
-
-        if not code_input:
-            overit_btn = page.locator("input[type='submit'][value='Ověřit'], input[type='submit'][value*='Ověř']")
-            if overit_btn.count() > 0 and overit_btn.first.is_visible():
-                overit_btn.first.click()
-                time.sleep(1.5)
-                for sel in selectors:
-                    loc = page.locator(sel)
-                    if loc.count() > 0 and loc.first.is_visible():
-                        code_input = loc.first
-                        break
-
-        if code_input:
             try:
-                code_input.click()
+                active_info = page.evaluate('''() => {
+                    const el = document.activeElement;
+                    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.type !== 'hidden') {
+                        return { name: el.name || '', id: el.id || '', placeholder: el.placeholder || '', type: el.type };
+                    }
+                    return null;
+                }''')
+                if active_info:
+                    act_name = (active_info.get("name") or "").lower()
+                    if act_name not in ("teloverit", "telefon", "telefoni", "hledat", "hlokalita", "mail", "email", "cena", "nadpis"):
+                        code_input = page.locator("*:focus")
+                        matched_sel = f":focus ({act_name or active_info.get('type')})"
             except Exception:
                 pass
-            code_input.fill(code)
-            time.sleep(0.3)
-            submit_btn = page.locator(
-                "input[type='submit'][value*='Vypsat'], "
-                "input[type='submit'][value*='Ověř'], "
-                "input[type='submit'][value*='Potvrd'], "
-                "input[type='submit'][value*='Odeslat'], "
-                "button[type='submit'], "
-                "form:has(input[name='kodd']) input[type='submit'], "
-                "form:has(input[name='klic']) input[type='submit']"
-            )
-            if submit_btn.count() > 0 and submit_btn.first.is_visible():
-                submit_btn.first.click()
-            else:
-                code_input.press("Enter")
-            time.sleep(1.0)
-            session_manager.save_state()
-            return True
-        return False
+
+        if not code_input:
+            # Poskytneme uživateli detailní diagnostiku viditelných prvků
+            page_info = page.evaluate('''() => {
+                const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), select, textarea'))
+                    .filter(el => {
+                        const r = el.getBoundingClientRect();
+                        return r.width > 0 && r.height > 0;
+                    })
+                    .map(el => el.name || el.id || el.placeholder || el.tagName.toLowerCase());
+                return { inputs: inputs, url: window.location.href };
+            }''')
+            vis_inputs = page_info.get("inputs", [])
+            if "teloverit" in vis_inputs:
+                return {
+                    "submitted": False,
+                    "visible_inputs": vis_inputs,
+                    "url": page_info.get("url", ""),
+                    "message": "Na stránce je pole pro telefonní číslo ('teloverit'), nikoliv pro SMS kód. Odesílá se nejprve telefon."
+                }
+            return {
+                "submitted": False,
+                "visible_inputs": vis_inputs,
+                "url": page_info.get("url", ""),
+                "message": f"Pole pro SMS kód (klic/kodd) nebylo nalezeno. Viditelná pole na stránce: [{', '.join(vis_inputs) if vis_inputs else 'žádná'}]."
+            }
+
+        try:
+            code_input.click()
+        except Exception:
+            pass
+        code_input.fill(code)
+        time.sleep(0.3)
+        
+        submit_btn = page.locator(
+            "form:has(input[name='klic']) input[type='submit'], "
+            "form:has(input[name='kodd']) input[type='submit'], "
+            "input[type='submit'][value*='Vypsat inzeráty'], "
+            "input[type='submit'][value*='Vypsat'], "
+            "input[type='submit'][value*='Odeslat'], "
+            "input[type='submit'][value*='Ověřit'], "
+            "input[type='submit'][value*='Potvrdit'], "
+            "button[type='submit']"
+        )
+        btn_clicked = "Enter keypress"
+        if submit_btn.count() > 0 and submit_btn.first.is_visible():
+            btn_clicked = submit_btn.first.get_attribute("value") or "Odeslat"
+            submit_btn.first.click()
+        else:
+            code_input.press("Enter")
+            
+        time.sleep(1.0)
+        session_manager.save_state()
+        field_name = code_input.get_attribute("name") or code_input.get_attribute("id") or matched_sel or "SMS pole"
+        return {
+            "submitted": True,
+            "target_field": field_name,
+            "button_clicked": btn_clicked,
+            "url": page.url,
+            "message": f"SMS kód byl úspěšně vepsán do pole '{field_name}' a odeslán ({btn_clicked})."
+        }
         
     try:
-        success = session_manager.run_on_worker(_fill_sms)
-        return jsonify({"status": "ok" if success else "error", "submitted": bool(success)})
+        result = session_manager.run_on_worker(_fill_sms)
+        if isinstance(result, dict):
+            status = "ok" if result.get("submitted") else "error"
+            return jsonify({"status": status, **result})
+        success = bool(result)
+        return jsonify({"status": "ok" if success else "error", "submitted": success})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "submitted": False, "message": str(e)}), 500
 
 @app.route("/api/browser/focus-input", methods=["POST"])
 def browser_focus_input():
@@ -341,7 +374,7 @@ def browser_focus_input():
         if not page or page.is_closed():
             return None
         result = page.evaluate(r"""() => {
-            const SMS_NAMES = ['teloverit','kodd','klic','cr','kod','overkod','sms','code','pin','overit','verit'];
+            const SMS_NAMES = ['klic','kodd','cr','kod','overkod','sms','code','pin'];
             const all = [...document.querySelectorAll(
                 "input[type='text'], input[type='number'], input[type='tel'], input:not([type])"
             )].filter(el => {
@@ -353,14 +386,15 @@ def browser_focus_input():
                     && !el.disabled && !el.readOnly;
             });
 
-            // Seřaď – SMS/code pole mají přednost
+            // Seřaď – SMS/code pole mají absolutní přednost
             const scored = all.map(el => {
                 const n = (el.name || '').toLowerCase();
                 const i = (el.id || '').toLowerCase();
                 const p = (el.placeholder || '').toLowerCase();
-                const skip = ['hledat','search','email','mail','telefon','cena','nadpis'];
+                const skip = ['hledat','search','email','mail','cena','nadpis'];
                 let score = 0;
-                if (SMS_NAMES.some(k => n.includes(k) || i.includes(k) || p.includes(k))) score += 100;
+                if (SMS_NAMES.some(k => n.includes(k) || i.includes(k) || p.includes(k))) score += 150;
+                if (n === 'teloverit' || i === 'teloverit') score += 50; // telefon má nižší prioritu než SMS klíč
                 if (el.maxLength && el.maxLength <= 8) score += 20;
                 if (skip.some(k => n.includes(k) || i.includes(k))) score -= 200;
                 return { el, score, name: el.name || '', id: el.id || '',
@@ -374,7 +408,11 @@ def browser_focus_input():
             // Vizuální highlight na 1.5s
             const orig = best.el.style.outline;
             best.el.style.outline = '3px solid #f59e0b';
-            setTimeout(() => { best.el.style.outline = orig; }, 1500);
+            best.el.style.boxShadow = '0 0 12px #f59e0b';
+            setTimeout(() => {
+                best.el.style.outline = orig;
+                best.el.style.boxShadow = '';
+            }, 1800);
             return { name: best.name, id: best.id, placeholder: best.placeholder,
                      maxlength: best.maxlength, score: best.score,
                      total_inputs: scored.length };
@@ -391,33 +429,169 @@ def browser_focus_input():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/api/debug/page")
-def debug_page():
+@app.route("/api/browser/inspect", methods=["GET"])
+@app.route("/api/debug/page", methods=["GET"])
+def browser_inspect():
+    """Vrací detailní diagnostiku otevřené stránky v prohlížeči: URL, titulek, detekovaný stav Bazoše,
+    všechna formulářová pole s fokusem a hodnotami, alerty/chyby a ovládací tlačítka."""
+    if not session_manager.running or not session_manager.page or session_manager.page.is_closed():
+        return jsonify({
+            "status": "closed",
+            "url": "",
+            "title": "",
+            "detected_step": "closed",
+            "step_description": "Prohlížeč není spuštěn.",
+            "inputs": [],
+            "alerts": []
+        })
+
     def _inspect(page, *args):
         if not page or page.is_closed():
             return {"status": "closed"}
-        url = page.url
-        title = page.title()
-        inputs = []
-        try:
-            for inp in page.locator("input, textarea, select").all():
-                try:
-                    inputs.append({
-                        "name": inp.get_attribute("name"),
-                        "type": inp.get_attribute("type"),
-                        "value": inp.get_attribute("value"),
-                        "visible": inp.is_visible()
-                    })
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return {"url": url, "title": title, "inputs": inputs}
+        
+        info = page.evaluate(r"""() => {
+            const inputs = Array.from(document.querySelectorAll('input, textarea, select')).map(el => {
+                const rect = el.getBoundingClientRect();
+                const isVis = (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden');
+                let valPreview = '';
+                if (el.type === 'password') {
+                    valPreview = el.value ? '***' : '';
+                } else if (el.type === 'checkbox') {
+                    valPreview = el.checked ? 'zaškrtnuto' : 'nezaškrtnuto';
+                } else {
+                    valPreview = el.value ? (el.value.length > 25 ? el.value.substring(0, 25) + '...' : el.value) : '';
+                }
+                return {
+                    tag: el.tagName.toLowerCase(),
+                    type: el.type || '',
+                    name: el.name || '',
+                    id: el.id || '',
+                    placeholder: el.placeholder || '',
+                    value: valPreview,
+                    visible: isVis,
+                    focused: (document.activeElement === el),
+                    disabled: el.disabled || el.readOnly
+                };
+            });
+
+            const buttons = Array.from(document.querySelectorAll('input[type="submit"], button')).map(el => {
+                const rect = el.getBoundingClientRect();
+                const isVis = (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden');
+                return {
+                    tag: el.tagName.toLowerCase(),
+                    text: (el.value || el.innerText || '').trim(),
+                    visible: isVis,
+                    type: el.type || 'button'
+                };
+            }).filter(b => b.visible && b.text.length > 0);
+
+            const alerts = Array.from(document.querySelectorAll('.upozorneni, .chyba, font[color="red"], span[style*="red"], div[style*="red"], p[style*="red"]'))
+                .map(el => el.innerText.trim())
+                .filter(txt => txt.length > 0 && txt.length < 250);
+
+            return {
+                url: window.location.href,
+                title: document.title,
+                inputs: inputs.filter(i => i.visible || i.type === 'hidden'),
+                buttons: buttons,
+                alerts: alerts
+            };
+        }""")
+
+        inputs = info.get("inputs", [])
+        has_klic = any(i.get("name") == "klic" and i.get("visible") for i in inputs)
+        has_kodd = any(i.get("name") == "kodd" and i.get("visible") for i in inputs)
+        has_teloverit = any(i.get("name") == "teloverit" and i.get("visible") for i in inputs)
+        has_nadpis = any(i.get("name") == "nadpis" and i.get("visible") for i in inputs)
+        has_login_mail = any(i.get("name") in ("mail", "email") and i.get("visible") for i in inputs)
+
+        detected_step = "other"
+        step_description = "Běžná stránka"
+        if has_klic:
+            detected_step = "sms_new_ad"
+            step_description = "Bazoš: Zadání SMS Mobilního klíče ('klic') pro vystavení nového inzerátu"
+        elif has_kodd:
+            detected_step = "sms_login"
+            step_description = "Bazoš: Zadání SMS ověřovacího kódu ('kodd') pro přihlášení / správu"
+        elif has_teloverit:
+            detected_step = "phone_new_ad"
+            step_description = "Bazoš: Krok 1 – Zadání telefonního čísla ('teloverit')"
+        elif has_nadpis:
+            detected_step = "ad_form"
+            step_description = "Bazoš: Formulář inzerátu (pole 'nadpis' připraveno)"
+        elif has_login_mail:
+            detected_step = "login_form"
+            step_description = "Bazoš: Přihlašovací formulář (e-mail a telefon)"
+
+        return {
+            "status": "running",
+            "url": info.get("url", ""),
+            "title": info.get("title", ""),
+            "detected_step": detected_step,
+            "step_description": step_description,
+            "inputs": inputs,
+            "buttons": info.get("buttons", []),
+            "alerts": info.get("alerts", [])
+        }
+
     try:
         res = session_manager.run_on_worker(_inspect)
         return jsonify(res)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/browser/fill-field", methods=["POST"])
+def browser_fill_field():
+    """Umožňuje z UI kliknutím zaměřit a vyplnit konkrétní pole v prohlížeči."""
+    if not session_manager.running or not session_manager.page or session_manager.page.is_closed():
+        return jsonify({"status": "error", "message": "Prohlížeč není spuštěn"}), 400
+
+    req = request.json or {}
+    field_name = req.get("field_name")
+    value = req.get("value", "")
+    submit = req.get("submit", False)
+
+    if not field_name:
+        return jsonify({"status": "error", "message": "Název pole je povinný"}), 400
+
+    def _fill_target(page, *args):
+        if not page or page.is_closed():
+            return {"status": "error", "message": "Prohlížeč je zavřen"}
+
+        loc = page.locator(f"input[name='{field_name}'], input[id='{field_name}'], textarea[name='{field_name}']")
+        if loc.count() == 0:
+            loc = page.locator(f"[placeholder*='{field_name}']")
+        if loc.count() > 0 and loc.first.is_visible():
+            target = loc.first
+            target.focus()
+            target.scroll_into_view_if_needed()
+            try:
+                target.evaluate("el => { el.style.outline = '3px solid #10b981'; el.style.boxShadow = '0 0 12px #10b981'; }")
+            except Exception:
+                pass
+            if value:
+                target.fill(value)
+            if submit:
+                submit_btn = target.locator("xpath=ancestor::form//input[@type='submit'] | xpath=ancestor::form//button[@type='submit']")
+                if submit_btn.count() > 0 and submit_btn.first.is_visible():
+                    submit_btn.first.click()
+                else:
+                    target.press("Enter")
+            return {
+                "status": "ok",
+                "field": field_name,
+                "focused": True,
+                "filled": bool(value),
+                "submitted": submit,
+                "message": f"Pole '{field_name}' bylo zaměřeno" + (f" a vyplněno hodnotou." if value else ".")
+            }
+        return {"status": "error", "message": f"Pole '{field_name}' nebylo na stránce nalezeno nebo není viditelné."}
+
+    try:
+        res = session_manager.run_on_worker(_fill_target)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 def count_photos(photos_dir, excluded_list=None):
     if not photos_dir or not os.path.isdir(photos_dir):

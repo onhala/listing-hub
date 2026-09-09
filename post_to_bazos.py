@@ -1398,26 +1398,46 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
             print(f"\n{Colors.BOLD}Sleduj okno prohlížeče a proveď SMS ověření (pokud je vyžadováno).{Colors.ENDC}")
             print("Jakmile se načte formulář, skript ho automaticky vyplní a nahraje fotky.")
             
+            start_wait_form = time.time()
+            last_klic_log = 0
             try:
                 while not form_filled:
-                    if page.is_closed():
-                        print(f"\n{Colors.FAIL}Okno prohlížeče bylo zavřeno.{Colors.ENDC}")
+                    if page.is_closed() or getattr(session_manager, "cancel_requested", False):
+                        print(f"\n{Colors.FAIL}Akce přerušena nebo okno prohlížeče bylo zavřeno.{Colors.ENDC}")
+                        break
+
+                    if is_web:
+                        session_manager.process_events()
+
+                    if time.time() - start_wait_form > 900:
+                        print(f"\n{Colors.FAIL}Vypršel časový limit (15 minut) pro vyplnění inzerátu.{Colors.ENDC}")
                         break
                         
                     if not step1_filled:
                         step1_filled = autofill_step1()
+
+                    # Zkontrolujeme, zda Bazoš čeká na SMS Mobilní klíč
+                    try:
+                        klic_input = page.locator("input[name='klic'], input#klic")
+                        if klic_input.count() > 0 and klic_input.first.is_visible(timeout=100):
+                            now = time.time()
+                            if now - last_klic_log > 10:
+                                print(f"{Colors.BLUE}💬 [Bazoš] Zobrazeno pole 'klic' (Mobilní klíč). Čekám na zadání SMS kódu z webového rozhraní...{Colors.ENDC}")
+                                last_klic_log = now
+                    except Exception:
+                        pass
                     
                     # Detekce formuláře inzerátu
                     nadpis_selectors = ["input[name='nadpis']", "#nadpis", "input[placeholder*='nadpis']"]
                     nadpis_found = False
                     for sel in nadpis_selectors:
                         try:
-                            if page.locator(sel).is_visible(timeout=500):
+                            if page.locator(sel).is_visible(timeout=300):
                                 nadpis_found = True
                                 break
                         except Exception:
                             pass
- 
+
                     if nadpis_found:
                         # 1. Nejprve zkusíme navolit Rubriku. Pokud to vyvolalo reload, cyklus pokračuje novou iterací
                         if select_rubrika_first():
@@ -1474,7 +1494,11 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         form_filled = True
                         break
                     
-                    time.sleep(1)
+                    # Krátké spaní s průběžným odbavováním událostí
+                    for _ in range(5):
+                        if is_web:
+                            session_manager.process_events()
+                        time.sleep(0.1)
                     
             except KeyboardInterrupt:
                 print("\nKrok přerušen uživatelem.")
