@@ -283,3 +283,72 @@ def test_analyze_existing_photos_success(mock_listdir, mock_isdir, mock_vision, 
             data = json.loads(res.data)
             assert data["status"] == "success"
             assert data["data"]["recommended_title"] == "Analyzovaný stůl"
+
+@patch("app.load_data")
+def test_calendar_feed_unauthorized(mock_load_data, client):
+    mock_load_data.return_value = ({}, {"calendar_token": "secret_12345"})
+    res = client.get("/api/calendar/feed.ics?token=wrong_token")
+    assert res.status_code == 403
+
+@patch("app.db.get_all_listings")
+@patch("app.load_data")
+def test_calendar_feed_success(mock_load_data, mock_get_listings, client):
+    mock_load_data.return_value = ({}, {"calendar_token": "secret_12345"})
+    mock_get_listings.return_value = [
+        {
+            "id": "item1",
+            "title": "Kolo Author",
+            "price": 5000,
+            "status": "Aktivní",
+            "created_at": "2026-07-15",
+            "portal_states": {"bazos": {"url": "https://sport.bazos.cz/inzerat/1/kolo.php"}}
+        }
+    ]
+
+    res = client.get("/api/calendar/feed.ics?token=secret_12345")
+    assert res.status_code == 200
+    assert res.mimetype == "text/calendar"
+    text = res.data.decode("utf-8")
+    assert "BEGIN:VCALENDAR" in text
+    assert "Kolo Author" in text
+    assert "https://sport.bazos.cz/inzerat/1/kolo.php" in text
+
+def test_photo_edit_preview_with_b64(client):
+    import io
+    import base64
+    from PIL import Image
+    img = Image.new("RGB", (50, 50), color="red")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    res = client.post("/api/photos/edit/preview", json={
+        "image_b64": b64_str,
+        "operations": [{"type": "blur_box", "box": [0.1, 0.1, 0.9, 0.9], "radius": 5}]
+    })
+    assert res.status_code == 200
+    data = json.loads(res.data)
+    assert data["status"] == "success"
+    assert data["data_url"].startswith("data:image/jpeg;base64,")
+
+def test_photo_edit_save(client, tmp_path):
+    import io
+    from PIL import Image
+    test_dir = tmp_path / "photos" / "test_item"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    test_file = test_dir / "foto_1.jpg"
+
+    img = Image.new("RGB", (50, 50), color="blue")
+    img.save(str(test_file), format="JPEG")
+
+    with patch("app.resolve_photos_dir", return_value=str(test_dir)):
+        res = client.post("/api/photos/edit/save", json={
+            "photos_dir": str(test_dir),
+            "filename": "foto_1.jpg",
+            "operations": [{"type": "blur_box", "box": [0.2, 0.2, 0.8, 0.8], "radius": 5}]
+        })
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        assert test_file.is_file()
+

@@ -35,6 +35,7 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV HEADLESS=true
 ENV PUID=1000
 ENV PGID=1000
+ENV U2NET_HOME=/app/data/.u2net
 
 # 1. Instalace systémových závislostí + systémové Chromium z Debianu + gosu pro TrueNAS PUID/PGID
 RUN apt-get update && apt-get install -y --no-install-recommends \

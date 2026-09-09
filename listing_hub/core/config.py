@@ -45,6 +45,7 @@ def load_user_config() -> dict:
     """Načte uživatelskou konfiguraci ze souboru (z klíče 'user' nebo kořene)."""
     if not CONFIG_PATH.exists():
         # Pokud neexistuje, vrátí prázdnou šablonu
+        import secrets
         return {
             "jmeno": "",
             "email": "",
@@ -52,14 +53,19 @@ def load_user_config() -> dict:
             "psc": "",
             "default_ad_password_b64": "aGVzbG8xMjM=",
             "gemini_api_key": "",
-            "gemini_model": "gemini-2.5-flash"
+            "gemini_model": "gemini-2.5-flash",
+            "calendar_token": secrets.token_hex(16)
         }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
             cfg = data.get("user", data)
-            if isinstance(cfg, dict) and not cfg.get("gemini_model"):
-                cfg["gemini_model"] = "gemini-2.5-flash"
+            if isinstance(cfg, dict):
+                if not cfg.get("gemini_model"):
+                    cfg["gemini_model"] = "gemini-2.5-flash"
+                if not cfg.get("calendar_token"):
+                    import secrets
+                    cfg["calendar_token"] = secrets.token_hex(16)
             return cfg
     except Exception:
         return {}

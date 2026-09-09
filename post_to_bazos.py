@@ -150,6 +150,9 @@ def load_data():
             user_config["gemini_model"] = os.environ.get("GEMINI_MODEL").strip()
         elif not user_config.get("gemini_model"):
             user_config["gemini_model"] = "gemini-2.5-flash"
+        if not user_config.get("calendar_token"):
+            import secrets
+            user_config["calendar_token"] = secrets.token_hex(16)
             
         if os.environ.get("AUTO_REFRESH_ENABLED") is not None:
             user_config["auto_refresh_enabled"] = os.environ.get("AUTO_REFRESH_ENABLED").lower() in ("true", "1", "yes")

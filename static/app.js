@@ -58,6 +58,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnSyncBanner = document.getElementById("btn-sync-banner");
     const lastSyncTimeLabel = document.getElementById("last-sync-time-label");
 
+    // Calendar elements
+    const calendarFeedUrl = document.getElementById("calendar-feed-url");
+    const btnCopyCalendarUrl = document.getElementById("btn-copy-calendar-url");
+    const btnRegenCalendarToken = document.getElementById("btn-regen-calendar-token");
+
     // App Update & Version Inspector elements
     const appUpdateBanner = document.getElementById("app-update-banner");
     const appUpdateMsg = document.getElementById("app-update-msg");
@@ -92,6 +97,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const lightboxImg = document.getElementById("lightbox-img");
     const lightboxCaption = document.getElementById("lightbox-caption");
     const closeLightboxBtn = document.getElementById("close-lightbox-btn");
+
+    // Photo Editor Modal elements
+    const photoEditorModal = document.getElementById("photo-editor-modal");
+    const btnClosePhotoEditor = document.getElementById("btn-close-photo-editor");
+    const btnCancelPhotoEditor = document.getElementById("btn-cancel-photo-editor");
+    const btnSavePhotoEditor = document.getElementById("btn-save-photo-editor");
+    const photoEditorImg = document.getElementById("photo-editor-img");
+    const photoEditorCanvas = document.getElementById("photo-editor-canvas");
+    const photoEditorCanvasWrap = document.getElementById("photo-editor-canvas-wrap");
+    const photoEditorDragBox = document.getElementById("photo-editor-drag-box");
+    const photoEditorSpinner = document.getElementById("photo-editor-spinner");
+    const photoEditorSpinnerText = document.getElementById("photo-editor-spinner-text");
+    const photoEditorTargetName = document.getElementById("photo-editor-target-name");
+    const btnToggleBoxBlur = document.getElementById("btn-toggle-box-blur");
+    const boxBlurHint = document.getElementById("box-blur-hint");
+    const btnComparePhoto = document.getElementById("btn-compare-photo");
+    const btnResetPhotoEdits = document.getElementById("btn-reset-photo-edits");
+    const bokehButtons = document.querySelectorAll(".btn-bokeh-preset");
 
     function openLightbox(dataUrl, filename) {
         if (lightboxModal && lightboxImg) {
@@ -560,6 +583,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (configTruenasAppName) configTruenasAppName.value = config.truenas_app_name || "listing-hub";
                 if (config.truenas_api_key && configTruenasApiKey) {
                     configTruenasApiKey.placeholder = "••••••••••••••••••••••••••••••••";
+                }
+
+                // Google Kalendář & iCal feed
+                if (calendarFeedUrl && config.calendar_token) {
+                    const feedUrl = `${window.location.origin}/api/calendar/feed.ics?token=${config.calendar_token}`;
+                    calendarFeedUrl.value = feedUrl;
                 }
             }
         } catch (err) {
@@ -1081,6 +1110,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 openLightbox(photo.data_url, photo.filename);
             });
 
+            // 3.5. Edit Photo (Bokeh & SPZ Blur) button
+            const btnEdit = document.createElement("button");
+            btnEdit.type = "button";
+            btnEdit.className = "btn-edit-photo";
+            btnEdit.title = "Upravit fotku (AI Bokeh / Zamazat SPZ)";
+            btnEdit.style.cssText = "background: none; border: none; color: #a78bfa; cursor: pointer; padding: 4px; font-size: 0.85rem;";
+            btnEdit.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>';
+            btnEdit.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openPhotoEditorForExisting(editPhotosDir.value, photo.filename, photo.data_url);
+            });
+            overlay.appendChild(btnEdit);
+
             // 4. Delete button
             const btnDelete = document.createElement("button");
             btnDelete.type = "button";
@@ -1346,10 +1388,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             });
 
+            // Edit photo button (bottom-right)
+            const editBtn = document.createElement("button");
+            editBtn.type = "button";
+            editBtn.className = "btn-edit-thumb";
+            editBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Upravit';
+            editBtn.title = "AI Bokeh / Zamazat SPZ";
+            editBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openPhotoEditorForWizard(index, file);
+            });
+
             thumbCard.appendChild(img);
             thumbCard.appendChild(badge);
             thumbCard.appendChild(removeBtn);
             thumbCard.appendChild(coverBtn);
+            thumbCard.appendChild(editBtn);
             newPhotoPreviewGrid.appendChild(thumbCard);
         });
     };
@@ -2194,6 +2248,45 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Google Kalendář & iCal akce
+    if (btnCopyCalendarUrl && calendarFeedUrl) {
+        btnCopyCalendarUrl.addEventListener("click", async () => {
+            const url = calendarFeedUrl.value;
+            if (!url) {
+                showNotification("Odkaz na kalendář není připraven.", "error");
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(url);
+                showNotification("URL kalendáře zkopírována do schránky! Vložte ji do Google/Apple kalendáře.", "success");
+            } catch (err) {
+                calendarFeedUrl.select();
+                document.execCommand("copy");
+                showNotification("URL kalendáře zkopírována do schránky!", "success");
+            }
+        });
+    }
+
+    if (btnRegenCalendarToken) {
+        btnRegenCalendarToken.addEventListener("click", async () => {
+            if (!confirm("Opravdu vygenerovat nový token pro kalendář? Starý odkaz v Google Kalendáři přestane fungovat a budete muset zadat nový.")) {
+                return;
+            }
+            try {
+                const res = await fetch("/api/calendar/token/regenerate", { method: "POST" });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showNotification("Bezpečnostní token kalendáře byl obnoven.", "success");
+                    loadConfig();
+                } else {
+                    showNotification(data.message || "Nepodařilo se obnovit token.", "error");
+                }
+            } catch (err) {
+                showNotification("Chyba při komunikaci se serverem: " + err.message, "error");
+            }
+        });
+    }
+
     let screencastWs = null;
 
     const initScreencast = () => {
@@ -2850,6 +2943,328 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
+    }
+
+    // ==========================================
+    // 8. AI PHOTO EDITOR (BOKEH & SPZ BLUR)
+    // ==========================================
+    let photoEditorState = {
+        mode: null, // "wizard" | "existing"
+        wizardIndex: null,
+        file: null,
+        photosDir: null,
+        filename: null,
+        originalDataUrl: null,
+        currentDataUrl: null,
+        bokehStrength: "none",
+        isDrawingBox: false,
+        boxToolActive: false,
+        startCoord: null,
+        boxBlurs: [] // array of [x1, y1, x2, y2]
+    };
+
+    const fileToDataUrl = (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const openPhotoEditorForWizard = async (index, file) => {
+        try {
+            const dataUrl = await fileToDataUrl(file);
+            photoEditorState = {
+                mode: "wizard",
+                wizardIndex: index,
+                file: file,
+                photosDir: null,
+                filename: file.name,
+                originalDataUrl: dataUrl,
+                currentDataUrl: dataUrl,
+                bokehStrength: "none",
+                isDrawingBox: false,
+                boxToolActive: false,
+                startCoord: null,
+                boxBlurs: []
+            };
+            initPhotoEditorView();
+        } catch (err) {
+            showNotification("Nepodařilo se otevřít fotku v editoru.", "error");
+        }
+    };
+
+    const openPhotoEditorForExisting = (photosDir, filename, dataUrl) => {
+        photoEditorState = {
+            mode: "existing",
+            wizardIndex: null,
+            file: null,
+            photosDir: photosDir,
+            filename: filename,
+            originalDataUrl: dataUrl,
+            currentDataUrl: dataUrl,
+            bokehStrength: "none",
+            isDrawingBox: false,
+            boxToolActive: false,
+            startCoord: null,
+            boxBlurs: []
+        };
+        initPhotoEditorView();
+    };
+
+    const initPhotoEditorView = () => {
+        if (!photoEditorModal || !photoEditorImg) return;
+        photoEditorTargetName.textContent = photoEditorState.filename;
+        photoEditorImg.src = photoEditorState.currentDataUrl;
+        
+        // Reset toolbar UI
+        bokehButtons.forEach(btn => {
+            if (btn.dataset.strength === photoEditorState.bokehStrength) {
+                btn.classList.add("active");
+            } else {
+                btn.classList.remove("active");
+            }
+        });
+        if (btnToggleBoxBlur) btnToggleBoxBlur.classList.remove("active");
+        if (boxBlurHint) boxBlurHint.style.display = "none";
+        if (photoEditorDragBox) photoEditorDragBox.style.display = "none";
+        if (photoEditorSpinner) photoEditorSpinner.style.display = "none";
+        photoEditorCanvasWrap.classList.remove("photo-editor-crosshair");
+
+        photoEditorModal.style.display = "flex";
+    };
+
+    const closePhotoEditor = () => {
+        if (photoEditorModal) photoEditorModal.style.display = "none";
+        photoEditorState.isDrawingBox = false;
+        photoEditorState.boxToolActive = false;
+        if (photoEditorDragBox) photoEditorDragBox.style.display = "none";
+        if (photoEditorSpinner) photoEditorSpinner.style.display = "none";
+    };
+
+    if (btnClosePhotoEditor) btnClosePhotoEditor.addEventListener("click", closePhotoEditor);
+    if (btnCancelPhotoEditor) btnCancelPhotoEditor.addEventListener("click", closePhotoEditor);
+
+    // Bokeh preset buttons
+    bokehButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const strength = btn.dataset.strength;
+            if (strength === photoEditorState.bokehStrength) return;
+            photoEditorState.bokehStrength = strength;
+            bokehButtons.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            triggerPhotoEditPreview();
+        });
+    });
+
+    // Box blur toggle tool
+    if (btnToggleBoxBlur) {
+        btnToggleBoxBlur.addEventListener("click", () => {
+            photoEditorState.boxToolActive = !photoEditorState.boxToolActive;
+            if (photoEditorState.boxToolActive) {
+                btnToggleBoxBlur.classList.add("active");
+                if (boxBlurHint) boxBlurHint.style.display = "inline";
+                photoEditorCanvasWrap.classList.add("photo-editor-crosshair");
+            } else {
+                btnToggleBoxBlur.classList.remove("active");
+                if (boxBlurHint) boxBlurHint.style.display = "none";
+                photoEditorCanvasWrap.classList.remove("photo-editor-crosshair");
+            }
+        });
+    }
+
+    // Reset edits button
+    if (btnResetPhotoEdits) {
+        btnResetPhotoEdits.addEventListener("click", () => {
+            photoEditorState.bokehStrength = "none";
+            photoEditorState.boxBlurs = [];
+            photoEditorState.currentDataUrl = photoEditorState.originalDataUrl;
+            photoEditorImg.src = photoEditorState.originalDataUrl;
+            bokehButtons.forEach(b => {
+                b.classList.toggle("active", b.dataset.strength === "none");
+            });
+            if (btnToggleBoxBlur) btnToggleBoxBlur.classList.remove("active");
+            photoEditorState.boxToolActive = false;
+            if (boxBlurHint) boxBlurHint.style.display = "none";
+            photoEditorCanvasWrap.classList.remove("photo-editor-crosshair");
+            showNotification("Úpravy byly resetovány na originál.", "info");
+        });
+    }
+
+    // Hold to compare with original
+    if (btnComparePhoto) {
+        const showOriginal = () => {
+            photoEditorImg.src = photoEditorState.originalDataUrl;
+        };
+        const showEdited = () => {
+            photoEditorImg.src = photoEditorState.currentDataUrl;
+        };
+        btnComparePhoto.addEventListener("mousedown", showOriginal);
+        btnComparePhoto.addEventListener("mouseup", showEdited);
+        btnComparePhoto.addEventListener("mouseleave", showEdited);
+        btnComparePhoto.addEventListener("touchstart", showOriginal, { passive: true });
+        btnComparePhoto.addEventListener("touchend", showEdited);
+    }
+
+    // Drawing drag-box for sensitive blur
+    if (photoEditorCanvasWrap) {
+        photoEditorCanvasWrap.addEventListener("mousedown", (e) => {
+            if (!photoEditorState.boxToolActive) return;
+            const rect = photoEditorCanvasWrap.getBoundingClientRect();
+            const startX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+            const startY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+
+            photoEditorState.isDrawingBox = true;
+            photoEditorState.startCoord = { x: startX, y: startY, rectWidth: rect.width, rectHeight: rect.height };
+
+            photoEditorDragBox.style.left = `${startX}px`;
+            photoEditorDragBox.style.top = `${startY}px`;
+            photoEditorDragBox.style.width = "0px";
+            photoEditorDragBox.style.height = "0px";
+            photoEditorDragBox.style.display = "block";
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            if (!photoEditorState.isDrawingBox || !photoEditorState.startCoord) return;
+            const rect = photoEditorCanvasWrap.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+            const currentY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+
+            const minX = Math.min(photoEditorState.startCoord.x, currentX);
+            const maxX = Math.max(photoEditorState.startCoord.x, currentX);
+            const minY = Math.min(photoEditorState.startCoord.y, currentY);
+            const maxY = Math.max(photoEditorState.startCoord.y, currentY);
+
+            photoEditorDragBox.style.left = `${minX}px`;
+            photoEditorDragBox.style.top = `${minY}px`;
+            photoEditorDragBox.style.width = `${maxX - minX}px`;
+            photoEditorDragBox.style.height = `${maxY - minY}px`;
+        });
+
+        window.addEventListener("mouseup", (e) => {
+            if (!photoEditorState.isDrawingBox || !photoEditorState.startCoord) return;
+            photoEditorState.isDrawingBox = false;
+            photoEditorDragBox.style.display = "none";
+
+            const rect = photoEditorCanvasWrap.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+            const currentY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+
+            const minX = Math.min(photoEditorState.startCoord.x, currentX);
+            const maxX = Math.max(photoEditorState.startCoord.x, currentX);
+            const minY = Math.min(photoEditorState.startCoord.y, currentY);
+            const maxY = Math.max(photoEditorState.startCoord.y, currentY);
+
+            const boxWidth = maxX - minX;
+            const boxHeight = maxY - minY;
+
+            // Ignorovat nepatrné kliky (< 10px)
+            if (boxWidth < 10 || boxHeight < 10) return;
+
+            // Normalizované souřadnice 0.0 - 1.0
+            const normBox = [
+                parseFloat((minX / rect.width).toFixed(4)),
+                parseFloat((minY / rect.height).toFixed(4)),
+                parseFloat((maxX / rect.width).toFixed(4)),
+                parseFloat((maxY / rect.height).toFixed(4))
+            ];
+
+            photoEditorState.boxBlurs.push(normBox);
+            triggerPhotoEditPreview();
+        });
+    }
+
+    const triggerPhotoEditPreview = async () => {
+        if (!photoEditorSpinner) return;
+        photoEditorSpinner.style.display = "flex";
+        if (photoEditorSpinnerText) {
+            photoEditorSpinnerText.textContent = photoEditorState.bokehStrength !== "none"
+                ? "AI počítá Bokeh a rozostření..."
+                : "Aplikuji rozostření zóny...";
+        }
+
+        try {
+            const payload = {
+                bokeh_strength: photoEditorState.bokehStrength,
+                box_blurs: photoEditorState.boxBlurs
+            };
+
+            if (photoEditorState.mode === "wizard") {
+                payload.image_b64 = photoEditorState.originalDataUrl;
+            } else {
+                payload.photos_dir = photoEditorState.photosDir;
+                payload.filename = photoEditorState.filename;
+            }
+
+            const res = await fetch("/api/photos/edit/preview", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                photoEditorState.currentDataUrl = data.data_url;
+                photoEditorImg.src = data.data_url;
+            } else {
+                showNotification(data.message || "Náhled úpravy se nezdařil.", "error");
+            }
+        } catch (err) {
+            showNotification("Chyba při renderování náhledu: " + err.message, "error");
+        } finally {
+            photoEditorSpinner.style.display = "none";
+        }
+    };
+
+    // Save Photo Edits
+    if (btnSavePhotoEditor) {
+        btnSavePhotoEditor.addEventListener("click", async () => {
+            btnSavePhotoEditor.disabled = true;
+            btnSavePhotoEditor.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Ukládám fotku...';
+
+            try {
+                if (photoEditorState.mode === "wizard") {
+                    // Konvertujeme data_url zpět na File a nahradíme v wizardSelectedFiles
+                    const res = await fetch(photoEditorState.currentDataUrl);
+                    const blob = await res.blob();
+                    const newFile = new File([blob], photoEditorState.filename, {
+                        type: "image/jpeg",
+                        lastModified: Date.now()
+                    });
+                    wizardSelectedFiles[photoEditorState.wizardIndex] = newFile;
+                    renderWizardPhotoPreviews();
+                    closePhotoEditor();
+                    showNotification("Fotka v průvodci byla upravena.", "success");
+                } else {
+                    // Uložíme přímo na disk do složky inzerátu
+                    const payload = {
+                        photos_dir: photoEditorState.photosDir,
+                        filename: photoEditorState.filename,
+                        bokeh_strength: photoEditorState.bokehStrength,
+                        box_blurs: photoEditorState.boxBlurs
+                    };
+                    const res = await fetch("/api/photos/edit/save", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.status === "success") {
+                        closePhotoEditor();
+                        showNotification("Úprava fotky byla uložena na disk!", "success");
+                        loadPhotoGallery(photoEditorState.photosDir);
+                    } else {
+                        showNotification(data.message || "Uložení fotky selhalo.", "error");
+                    }
+                }
+            } catch (err) {
+                showNotification("Chyba při ukládání fotky: " + err.message, "error");
+            } finally {
+                btnSavePhotoEditor.disabled = false;
+                btnSavePhotoEditor.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Uložit úpravu fotky';
+            }
+        });
     }
 
     // --- Start up ---

@@ -4,7 +4,7 @@ import json
 import re
 import base64
 import requests
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 from pathlib import Path
 
 # Přidáme aktuální adresář do sys.path, abychom mohli importovat post_to_bazos
@@ -21,6 +21,8 @@ import listing_hub.core.db as db
 from listing_hub.ai.gemini import improve_text_with_gemini
 from listing_hub.ai.vision import analyze_photos_with_vision
 from listing_hub.core.version import get_version_status, is_docker, APP_VERSION
+from listing_hub.core.calendar import generate_ical_feed
+from listing_hub.ai.photo_editor import process_photo_pipeline
 
 app = Flask(__name__)
 
@@ -549,6 +551,93 @@ def reorder_photos():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/photos/edit/preview", methods=["POST"])
+def api_photo_edit_preview():
+    try:
+        payload = request.get_json(silent=True) or {}
+        operations = payload.get("operations", [])
+        image_bytes = None
+
+        # 1. Pokud je poslán přímo base64 (např. z wizardu)
+        raw_b64 = payload.get("image_b64", "")
+        if raw_b64:
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            image_bytes = base64.b64decode(raw_b64)
+        else:
+            # 2. Načtení z disku přes photos_dir nebo listing_id + filename
+            filename = payload.get("filename", "")
+            raw_photos_dir = payload.get("photos_dir", "")
+            listing_id = payload.get("listing_id", "")
+
+            if not raw_photos_dir and listing_id:
+                conn = db.get_db_connection()
+                row = conn.cursor().execute("SELECT local_photos_dir FROM listings WHERE id = ?", (listing_id,)).fetchone()
+                conn.close()
+                if row:
+                    raw_photos_dir = row["local_photos_dir"]
+
+            if raw_photos_dir and filename:
+                photos_dir = resolve_photos_dir(raw_photos_dir)
+                photo_path = Path(photos_dir) / filename
+                if photo_path.is_file():
+                    image_bytes = photo_path.read_bytes()
+
+        if not image_bytes:
+            return jsonify({"status": "error", "message": "Fotografie nebyla nalezena nebo chybí obrazová data."}), 400
+
+        result_bytes = process_photo_pipeline(image_bytes, operations)
+        result_b64 = base64.b64encode(result_bytes).decode("utf-8")
+
+        return jsonify({
+            "status": "success",
+            "data_url": f"data:image/jpeg;base64,{result_b64}"
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Chyba při úpravě fotografie: {e}"}), 500
+
+@app.route("/api/photos/edit/save", methods=["POST"])
+def api_photo_edit_save():
+    try:
+        payload = request.get_json(silent=True) or {}
+        operations = payload.get("operations", [])
+        filename = payload.get("filename", "")
+        raw_photos_dir = payload.get("photos_dir", "")
+        listing_id = payload.get("listing_id", "")
+        raw_b64 = payload.get("image_b64", "")
+
+        if not raw_photos_dir and listing_id:
+            conn = db.get_db_connection()
+            row = conn.cursor().execute("SELECT local_photos_dir FROM listings WHERE id = ?", (listing_id,)).fetchone()
+            conn.close()
+            if row:
+                raw_photos_dir = row["local_photos_dir"]
+
+        photos_dir = resolve_photos_dir(raw_photos_dir)
+        photo_path = Path(photos_dir) / filename
+
+        if raw_b64:
+            # Přímé uložení hotového base64
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            final_bytes = base64.b64decode(raw_b64)
+        elif photo_path.is_file():
+            # Aplikace operací na existující soubor
+            orig_bytes = photo_path.read_bytes()
+            final_bytes = process_photo_pipeline(orig_bytes, operations)
+        else:
+            return jsonify({"status": "error", "message": "Cílový soubor fotografie nebyl nalezen."}), 404
+
+        # Přímý přepis bez zálohy dle ADR-04
+        photo_path.write_bytes(final_bytes)
+
+        return jsonify({
+            "status": "success",
+            "message": "Fotografie byla úspěšně upravena a uložena."
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Chyba při ukládání fotografie: {e}"}), 500
+
 
 @app.route("/api/config", methods=["GET"])
 def get_config():
@@ -565,6 +654,58 @@ def get_refresh_status():
         "last_refresh_time": user_config.get("last_refresh_time", ""),
         "is_running": playwright_process.is_alive() if playwright_process else False
     })
+
+@app.route("/api/calendar/feed.ics", methods=["GET"])
+def get_calendar_feed():
+    try:
+        _, user_config = load_data()
+        configured_token = user_config.get("calendar_token", "").strip()
+        
+        # Ověření tokenu (přes query parametr token nebo key)
+        req_token = (request.args.get("token") or request.args.get("key") or "").strip()
+        if configured_token and req_token != configured_token:
+            return Response("Neplatný nebo chybějící přístupový token kalendáře.", status=403, mimetype="text/plain; charset=utf-8")
+
+        listings = db.get_all_listings()
+        base_url = request.host_url.rstrip("/")
+        ical_content = generate_ical_feed(listings, base_hub_url=base_url)
+
+        return Response(
+            ical_content,
+            mimetype="text/calendar; charset=utf-8",
+            headers={
+                "Content-Disposition": "inline; filename=listing_hub_calendar.ics",
+                "Cache-Control": "no-cache, no-store, must-revalidate"
+            }
+        )
+    except Exception as e:
+        return Response(f"Chyba při generování kalendáře: {e}", status=500, mimetype="text/plain; charset=utf-8")
+
+@app.route("/api/calendar/token/regenerate", methods=["POST"])
+def regenerate_calendar_token():
+    try:
+        import secrets
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                full_config = json.load(f)
+        else:
+            full_config = {}
+            
+        user_cfg = full_config.get("user", {})
+        new_token = secrets.token_hex(16)
+        user_cfg["calendar_token"] = new_token
+        full_config["user"] = user_cfg
+
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(full_config, f, ensure_ascii=False, indent=2)
+
+        return jsonify({
+            "status": "success",
+            "calendar_token": new_token,
+            "message": "Přístupový token kalendáře byl úspěšně přegenerován."
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # Detekce chodu v Dockeru
 IS_DOCKER = is_docker()
