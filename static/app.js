@@ -3,6 +3,32 @@
  * Brand: TERMS a.s. / Roboton Custom UI Engine
  */
 
+// Global Cloudflare Access 2FA session handler
+(function() {
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await originalFetch.apply(this, args);
+        try {
+            const urlStr = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url ? args[0].url : "");
+            // Detekce přesměrování na Cloudflare Access Login při vypršení relace
+            if (response.redirected && (response.url.includes("cloudflareaccess.com") || response.url.includes("/cdn-cgi/access/"))) {
+                window.location.reload();
+                return response;
+            }
+            if (urlStr.includes("/api/") && !urlStr.includes("/feed.ics")) {
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("text/html") && (response.status === 200 || response.status === 302 || response.status === 401 || response.status === 403)) {
+                    window.location.reload();
+                    return response;
+                }
+            }
+        } catch (e) {
+            console.debug("CF Access interceptor check:", e);
+        }
+        return response;
+    };
+})();
+
 document.addEventListener("DOMContentLoaded", () => {
     // State state management
     let activeListings = [];
@@ -2449,6 +2475,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         screencastWs.onclose = () => {
             screencastWs = null;
+            // Automatický reconnect při odpojení vlivem Cloudflare 100s idle timeoutu, pokud je tab stále aktivní
+            setTimeout(() => {
+                const activeTab = document.querySelector(".tab-content.active");
+                if (activeTab && (activeTab.id === "tab-browser" || activeTab.getAttribute("data-tab") === "browser")) {
+                    console.log("🔄 Reconnecting screencast WebSocket after idle timeout...");
+                    initScreencast();
+                }
+            }, 1500);
         };
     };
 
