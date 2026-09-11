@@ -23,7 +23,8 @@ def test_agent_summary_endpoint(client):
     assert "sold_count" in s
     assert "worker" in s
     assert s["worker"]["running"] is False
-    assert s["app_version"] == "3.8.7"
+    from listing_hub.core.version import APP_VERSION
+    assert s["app_version"] == APP_VERSION
 
 def test_agent_listings_query(client):
     res = client.get("/api/agent/v1/listings?status=all&limit=10")

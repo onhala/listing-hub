@@ -759,13 +759,17 @@ document.addEventListener("DOMContentLoaded", () => {
                         </button>
                     </div>
                 </div>
-                <div class="portal-badges" style="display: flex; gap: 0.5rem; margin-top: -0.25rem; margin-bottom: 0.75rem;">
+                <div class="portal-badges" style="display: flex; gap: 0.5rem; margin-top: -0.25rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
                     <span class="portal-badge badge-bazos" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${ad.target_bazos ? 'background: rgba(131, 92, 223, 0.2); color: var(--accent); border: 1px solid rgba(131, 92, 223, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
                         <i class="fa-solid ${ad.target_bazos ? 'fa-square-check' : 'fa-square'}"></i> Bazoš
                     </span>
                     <span class="portal-badge badge-aukro" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${ad.target_aukro ? 'background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
                         <i class="fa-solid ${ad.target_aukro ? 'fa-square-check' : 'fa-square'}"></i> Aukro
                     </span>
+                    ${ad.is_reposted ? `
+                    <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4);" title="${ad.publication_count}. vystavení (přeceněno/obnoveno)">
+                        <i class="fa-solid fa-arrows-rotate"></i> ${ad.publication_count}. vystavení
+                    </span>` : ''}
                 </div>
                 <p class="listing-desc">${escapeHtml(descText)}</p>
                 ${!isSold && ad.price ? `
@@ -780,9 +784,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         <i class="fa-solid fa-camera"></i>
                         <span>${ad.photos_count !== undefined ? `${ad.photos_upload_count}/${ad.photos_count}` : '0'} fotek</span>
                     </div>
-                    <div class="meta-item">
+                    <div class="meta-item" title="${ad.cumulative_views && ad.cumulative_views > viewsCount ? `Tento cyklus: ${viewsCount}, Celkem přes všechny cykly: ${ad.cumulative_views}` : `${viewsCount} zhlédnutí`}">
                         <i class="fa-solid fa-eye"></i>
-                        <span>${viewsCount} zhlédnutí</span>
+                        <span>${viewsCount} zhl.${ad.cumulative_views && ad.cumulative_views > viewsCount ? ` (celk. ${ad.cumulative_views})` : ''}</span>
                     </div>
                     <div class="meta-item">
                         <i class="fa-solid fa-calendar"></i>
@@ -799,7 +803,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     <button class="btn btn-secondary btn-edit"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
                     ${!isSold ? `
                         <button class="btn btn-secondary btn-advisor" style="background: rgba(255,193,7,0.1); color: #ffc107; border: 1px solid rgba(255,193,7,0.3);"><i class="fa-solid fa-lightbulb"></i> Poradce</button>
-                        <button class="btn btn-primary btn-post-action"><i class="fa-solid fa-cloud-arrow-up"></i> Vystavit</button>
+                        <button class="btn btn-primary btn-post-action">
+                            <i class="fa-solid ${urlStr ? 'fa-arrows-rotate' : 'fa-cloud-arrow-up'}"></i> ${urlStr ? 'Znovu vystavit' : 'Vystavit'}
+                        </button>
                     ` : ""}
                 </div>
             </div>
@@ -869,11 +875,68 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             infoUrlContainer.textContent = "Dosud nevystaveno";
         }
-        infoViews.textContent = ad.views || 0;
+        if (ad.cumulative_views && ad.cumulative_views > (ad.views || 0)) {
+            infoViews.innerHTML = `${ad.views || 0} <span style="font-size: 0.75rem; color: #94a3b8;">(celkem ${ad.cumulative_views})</span>`;
+        } else {
+            infoViews.textContent = ad.views || 0;
+        }
         infoPhotosDir.textContent = ad.local_photos_dir || "photos/";
+
+        // Načíst historii publikací
+        loadListingHistory(ad.id);
 
         // Zobrazit modal
         editListingModal.classList.add("active");
+    };
+
+    const loadListingHistory = async (listingId) => {
+        const historyTimeline = document.getElementById("listing-history-timeline");
+        const badgeEl = document.getElementById("history-iteration-badge");
+        if (!historyTimeline) return;
+
+        historyTimeline.innerHTML = '<p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;"><i class="fa-solid fa-spinner fa-spin"></i> Načítám historii...</p>';
+        try {
+            const res = await fetch(`/api/listings/${encodeURIComponent(listingId)}/history`);
+            if (!res.ok) throw new Error("Nelze načíst historii");
+            const data = await res.json();
+            const pubs = data.publications || [];
+            const stats = data.cumulative_stats || {};
+
+            if (badgeEl) {
+                const count = stats.publication_count || (pubs.length || 1);
+                badgeEl.textContent = `${count}. vystavení`;
+                badgeEl.style.display = count > 1 ? "inline-block" : "none";
+            }
+
+            if (!pubs || pubs.length === 0) {
+                historyTimeline.innerHTML = '<p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">Zatím žádná historie.</p>';
+                return;
+            }
+
+            historyTimeline.innerHTML = pubs.map((pub, idx) => {
+                const isActive = pub.status === "active";
+                const badgeColor = isActive ? "#22c55e" : "#64748b";
+                const badgeBg = isActive ? "rgba(34, 197, 94, 0.15)" : "rgba(100, 116, 139, 0.15)";
+                const statusLabel = isActive ? "Aktivní" : (pub.close_reason === "reposted" ? "Nahrazeno" : (pub.close_reason || "Ukončeno"));
+                const dateRange = pub.closed_at ? `${pub.published_at} – ${pub.closed_at}` : `Od ${pub.published_at}`;
+                const urlLink = pub.url ? `<a href="${pub.url}" target="_blank" style="color: var(--secondary); text-decoration: none; margin-left: 4px;" title="Otevřít odkaz"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.7rem;"></i></a>` : '';
+
+                return `
+                    <div style="border-left: 2px solid ${badgeColor}; padding-left: 8px; margin-bottom: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 600; color: #fff;">#${idx + 1} (${pub.price} Kč)</span>
+                            <span style="background: ${badgeBg}; color: ${badgeColor}; padding: 1px 5px; border-radius: 4px; font-size: 0.72rem;">${statusLabel}</span>
+                        </div>
+                        <div style="color: #94a3b8; font-size: 0.75rem; margin-top: 1px; display: flex; justify-content: space-between;">
+                            <span>${dateRange}</span>
+                            <span>${pub.views || 0} zhl. ${urlLink}</span>
+                        </div>
+                    </div>
+                `;
+            }).reverse().join("");
+        } catch (e) {
+            historyTimeline.innerHTML = '<p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">Historie není k dispozici.</p>';
+        }
     };
 
     // ----------------------------------------
@@ -1906,7 +1969,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 5. BAZOŠ AUTOMATIZACE (PLAYWRIGHT)
     // ==========================================
 
-    const triggerPlaywrightAction = async (ad, actionType, extraVal = null, targetDomain = null) => {
+    const triggerPlaywrightAction = async (ad, actionType, extraVal = null, targetDomain = null, autoDeleteOld = true) => {
         // Okamžitě zavřít editační modal, pokud je aktivní, abychom viděli VNC prohlížeč
         if (editListingModal.classList.contains("active")) {
             editListingModal.classList.remove("active");
@@ -1923,8 +1986,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (statusDesc) {
             if (actionType === "sync_views") {
                 statusDesc.textContent = "Probíhá synchronizace inzerátů s Bazošem...";
-            } else if (actionType === "post") {
-                statusDesc.textContent = "Probíhá vyplňování formuláře inzerátu na Bazoši...";
+            } else if (actionType === "post" || actionType === "repost") {
+                statusDesc.textContent = "Probíhá předvyplňování nového inzerátu na Bazoši...";
             } else if (actionType === "delete") {
                 statusDesc.textContent = "Probíhá mazání inzerátu na Bazoši...";
             } else if (actionType === "edit_price") {
@@ -1943,15 +2006,23 @@ document.addEventListener("DOMContentLoaded", () => {
         switchToTab("browser");
         
         try {
+            const bodyPayload = {
+                id: ad.id,
+                local_photos_dir: ad.local_photos_dir,
+                extra_val: extraVal,
+                target_domain: targetDomain,
+                auto_delete_old: autoDeleteOld
+            };
+            if (actionType === "repost" || actionType === "post") {
+                if (extraVal && !isNaN(parseInt(extraVal))) {
+                    bodyPayload.staged_price = parseInt(extraVal);
+                }
+            }
+
             const res = await fetch(`${API.action}/${actionType}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    id: ad.id,
-                    local_photos_dir: ad.local_photos_dir,
-                    extra_val: extraVal,
-                    target_domain: targetDomain
-                })
+                body: JSON.stringify(bodyPayload)
             });
 
             const data = await res.json();
@@ -2029,6 +2100,16 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             rubrikaSelect.value = preselect;
         }
+
+        const priceInput = document.getElementById("repost-price-input");
+        if (priceInput) {
+            priceInput.value = ad.price || "";
+        }
+        const autoDeleteCheckbox = document.getElementById("repost-autodelete-checkbox");
+        if (autoDeleteCheckbox) {
+            autoDeleteCheckbox.checked = true;
+        }
+
         openChildModal(repostConfirmModal);
     };
 
@@ -2041,10 +2122,14 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-repost-confirm-start").addEventListener("click", () => {
         const rubrikaSelect = document.getElementById("repost-rubrika-select");
         const chosenDomain = rubrikaSelect ? rubrikaSelect.value : "dum.bazos.cz";
+        const priceInput = document.getElementById("repost-price-input");
+        const stagedPrice = priceInput && priceInput.value ? parseInt(priceInput.value) : null;
+        const autoDeleteCheckbox = document.getElementById("repost-autodelete-checkbox");
+        const autoDelete = autoDeleteCheckbox ? autoDeleteCheckbox.checked : true;
         const targetAd = pendingActionAd || currentAd;
         closeChildModal(repostConfirmModal);
         if (targetAd) {
-            triggerPlaywrightAction(targetAd, "post", null, chosenDomain);
+            triggerPlaywrightAction(targetAd, "repost", stagedPrice, chosenDomain, autoDelete);
         }
     });
 

@@ -70,6 +70,21 @@ TOOLS_SCHEMA: List[Dict[str, Any]] = [
         }
     },
     {
+        "name": "listing_hub_get_history",
+        "description": "Retrieve full publication history timeline and cumulative view statistics for a specific listing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Listing ID or local photos directory"
+                }
+            },
+            "required": ["id"],
+            "additionalProperties": False
+        }
+    },
+    {
         "name": "listing_hub_market_radar",
         "description": "Query live multi-source market price radar (Bazoš.cz, Sbazar.cz, Web search, and AI fallback) to get price distributions and fair/quick-sale recommendations.",
         "inputSchema": {
@@ -273,6 +288,10 @@ class McpServer:
 
             elif name == "listing_hub_get_listing":
                 res = self._api_request("GET", f"/listings/{arguments['id']}")
+                return json.dumps(res, indent=2, ensure_ascii=False)
+
+            elif name == "listing_hub_get_history":
+                res = self._api_request("GET", f"/listings/{arguments['id']}/history")
                 return json.dumps(res, indent=2, ensure_ascii=False)
 
             elif name == "listing_hub_market_radar":

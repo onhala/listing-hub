@@ -1146,7 +1146,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                     
                 time.sleep(2.0)
                 res_content = page.content().lower()
-                if "vymazán" in res_content or "smazán" in res_content or "neexistuje" in res_content:
+                if "chybné heslo" in res_content or "chybne heslo" in res_content:
+                    print(f"\n{Colors.FAIL}Chyba: Zadáno chybné heslo inzerátu na Bazoši!{Colors.ENDC}")
+                    return False
+                elif "vymazán" in res_content or "smazán" in res_content or "neexistuje" in res_content:
                     print(f"\n{Colors.GREEN}✓ Inzerát byl úspěšně vymazán z Bazoše!{Colors.ENDC}")
                 else:
                     print(f"\n{Colors.BLUE}💬 Požadavek na smazání odeslán.{Colors.ENDC}")

@@ -314,6 +314,33 @@ def agent_get_listing(listing_id: str):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@agent_bp.route("/listings/<listing_id>/history", methods=["GET"])
+def agent_get_listing_history(listing_id: str):
+    """Retrieve full publication history and price timeline for a listing."""
+    try:
+        from listing_hub.core.db import get_listing_publications, get_listing_cumulative_stats, get_listing_by_id
+        listing = get_listing_by_id(listing_id)
+        if not listing:
+            for cand in db.get_all_listings():
+                if cand.get("local_photos_dir") == listing_id:
+                    listing = cand
+                    listing_id = cand.get("id")
+                    break
+        if not listing:
+            return jsonify({"status": "error", "message": f"Listing '{listing_id}' not found"}), 404
+
+        publications = get_listing_publications(listing_id)
+        cumulative_stats = get_listing_cumulative_stats(listing_id)
+        return jsonify({
+            "status": "ok",
+            "listing_id": listing_id,
+            "publications": publications,
+            "cumulative_stats": cumulative_stats
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ============================================================================
 # 3. Draft Ad Creation
 # ============================================================================

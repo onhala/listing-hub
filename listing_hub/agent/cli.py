@@ -287,11 +287,18 @@ def handle_get(args: argparse.Namespace) -> int:
     print(f"Photos ({len(photos)}): {', '.join(photos[:5])}{' ...' if len(photos) > 5 else ''}")
     print("-" * 60)
     print("Description:")
-    print(l.get("description") or "(No description)")
-    print("-" * 60)
     if l.get("portal_states"):
         for portal, state in l.get("portal_states").items():
             print(f"Portal [{portal}]: status={state.get('status')} views={state.get('views')} url={state.get('url')}")
+    pubs = l.get("publications") or []
+    if getattr(args, "history", False) or len(pubs) > 1:
+        print("-" * 60)
+        print(f"🔄 Publication History ({len(pubs)} publication(s), cumulative views: {l.get('cumulative_views', 0)}):")
+        for idx, p in enumerate(pubs, 1):
+            stat = p.get('status', '').upper()
+            reason = f" ({p.get('close_reason')})" if p.get('close_reason') else ""
+            dates = f"{p.get('published_at')} -> {p.get('closed_at') or 'active'}"
+            print(f"  #{idx} [{stat}{reason}] {p.get('price')} Kč | {p.get('views', 0)} views | {dates} | {p.get('url') or ''}")
     print("=" * 60)
     return 0
 
@@ -578,6 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
     # get
     p_get = subparsers.add_parser("get", parents=[common_parser], help="Get complete details of a single listing")
     p_get.add_argument("id", help="Listing ID or local photos dir")
+    p_get.add_argument("--history", action="store_true", help="Include full publication history timeline")
     p_get.set_defaults(func=handle_get)
 
     # draft

@@ -49,14 +49,16 @@ class ActionStateManager:
         self.action_type = None
         self.listing_id = None
         self.ad_data = None
+        self.meta = {}
         self.error_message = None
 
-    def start_action(self, action_type, listing_id=None, ad_data=None):
+    def start_action(self, action_type, listing_id=None, ad_data=None, meta=None):
         with self._lock:
             self.state = self.RUNNING
             self.action_type = action_type
             self.listing_id = listing_id
             self.ad_data = ad_data
+            self.meta = meta or {}
             self.error_message = None
 
     def set_ready_for_review(self):
@@ -82,6 +84,7 @@ class ActionStateManager:
             self.action_type = None
             self.listing_id = None
             self.ad_data = None
+            self.meta = {}
             self.error_message = None
 
     def get_status(self):
@@ -90,6 +93,7 @@ class ActionStateManager:
                 "state": self.state,
                 "action_type": self.action_type,
                 "listing_id": self.listing_id,
+                "meta": dict(self.meta),
                 "error": self.error_message
             }
 
@@ -126,10 +130,10 @@ def log_debug(msg):
     except Exception:
         pass
 
-def process_target(ad, user_config, action_type, extra_val):
+def process_target(ad, user_config, action_type, extra_val, meta=None):
     log_debug("1. Background thread started")
     ad_id = (ad.get("id") or ad.get("local_photos_dir")) if ad else None
-    action_state_mgr.start_action(action_type, listing_id=ad_id, ad_data=ad)
+    action_state_mgr.start_action(action_type, listing_id=ad_id, ad_data=ad, meta=meta)
     
     # Monkey-patch save_listings to avoid race conditions/overwriting
     import post_to_bazos
@@ -224,7 +228,7 @@ def process_target(ad, user_config, action_type, extra_val):
             success = run_playwright_action(ad, user_config, action=action_type, extra_val=extra_val, is_web=True)
             log_debug(f"5. Done run_playwright_action, success={success}")
             if success:
-                if action_type == "post":
+                if action_type in ("post", "repost"):
                     action_state_mgr.set_ready_for_review()
                 elif action_type == "delete":
                     if ad and ad.get("id"):
@@ -1373,10 +1377,20 @@ def run_action(action_type):
         # Pro ostatní akce (post, edit_price, delete)
         extra_val = payload.get("extra_val") # např. nová cena
         
+        # Připravíme metadata pro akce vystavení / znovuvystavení
+        meta = None
+        if action_type in ("post", "repost"):
+            meta = {
+                "auto_delete_old": payload.get("auto_delete_old", True),
+                "staged_price": payload.get("staged_price") or (selected_ad.get("price") if selected_ad else None),
+                "old_portal_url": selected_ad.get("url") if selected_ad else None,
+                "old_portal_item_id": selected_ad.get("portal_item_id") if selected_ad else None
+            }
+
         # Spustíme neblokující Playwright akci na pozadí jako samostatný vláknový worker
         playwright_process = threading.Thread(
             target=process_target, 
-            args=(selected_ad, user_config, action_type, extra_val),
+            args=(selected_ad, user_config, action_type, extra_val, meta),
             daemon=True
         )
         playwright_process.start()
@@ -1467,28 +1481,155 @@ def confirm_action():
         new_url = inspect_res.get("new_url")
         status_info = action_state_mgr.get_status()
         listing_id = status_info.get("listing_id")
-        
-        if listing_id:
-            listing = db.get_listing_by_id(listing_id)
-            if listing:
-                listing_data = dict(listing)
-                portal_states = {
-                    "bazos": {
-                        "portal_item_id": re.search(r'/inzerat/(\d+)/', new_url).group(1) if new_url and re.search(r'/inzerat/(\d+)/', new_url) else None,
-                        "url": new_url or listing.get("url", ""),
-                        "status": "Aktivní",
-                        "views": 0,
-                        "last_synced": datetime.now().isoformat()
-                    }
+        meta = status_info.get("meta") or {}
+        auto_delete_old = meta.get("auto_delete_old", True)
+        old_portal_url = meta.get("old_portal_url")
+        staged_price = meta.get("staged_price")
+
+        listing = db.get_listing_by_id(listing_id) if listing_id else None
+        if not listing and listing_id:
+            for cand in db.get_all_listings():
+                if cand.get("id") == listing_id or cand.get("local_photos_dir") == listing_id:
+                    listing = cand
+                    listing_id = cand.get("id")
+                    break
+
+        old_portal_state = listing.get("portal_states", {}).get("bazos", {}) if listing else {}
+        if not old_portal_url:
+            old_portal_url = old_portal_state.get("url")
+        if staged_price is None and listing:
+            staged_price = listing.get("price")
+
+        old_deleted_info = None
+        # Řetězený úklid starého inzerátu na stejném Playwright workeru
+        if auto_delete_old and old_portal_url and new_url and old_portal_url.strip() != new_url.strip():
+            log_debug(f"Chained delete triggered for old ad: {old_portal_url}")
+            
+            import base64
+            _, user_config = load_data()
+            pwd_b64 = (listing.get("ad_password_b64") if listing else None) or user_config.get("default_ad_password_b64") or ""
+            try:
+                ad_pwd = base64.b64decode(pwd_b64).decode("utf-8") if pwd_b64 else user_config.get("bazos_password", "heslo123")
+            except Exception:
+                ad_pwd = user_config.get("bazos_password", "heslo123")
+
+            def _delete_old_worker(page, target_url, password):
+                if not page or page.is_closed():
+                    return {"success": False, "reason": "Prohlížeč je zavřený"}
+                try:
+                    page.goto(target_url, timeout=20000)
+                    page_content = page.content().lower()
+                    if "inzerát neexistuje" in page_content or "inzerat neexistuje" in page_content or "byl smazán" in page_content or "byl vymazán" in page_content:
+                        return {"success": True, "reason": "Inzerát již neexistoval"}
+
+                    old_m = re.search(r'/inzerat/(\d+)/', target_url)
+                    old_id_str = old_m.group(1) if old_m else ""
+                    try:
+                        page.evaluate("""(id) => {
+                            if (typeof odeslatakci === 'function') {
+                                odeslatakci('edit', id);
+                            } else {
+                                const f = document.forms['formaction'] || document.querySelector("form[name='formaction']");
+                                if (f) {
+                                    f.elements['postaction'].value = 'edit';
+                                    f.elements['postv1'].value = id;
+                                    f.submit();
+                                }
+                            }
+                        }""", old_id_str)
+                    except Exception:
+                        pass
+
+                    action_span = page.locator("span.paction, span:has-text('Smazat'), a:has-text('Smazat')")
+                    if action_span.count() > 0 and action_span.first.is_visible():
+                        action_span.first.click()
+
+                    pwd_input = page.locator("input[name='heslobazar'], #heslobazar, input[name='heslo'], #heslo, input[type='password'], input[name*='hesl']")
+                    pwd_input.first.wait_for(timeout=5000)
+                    pwd_input.first.fill(password)
+
+                    radio_del = page.locator("input[type='radio'][value='2'], input[type='radio'][value='delete']")
+                    if radio_del.count() > 0:
+                        radio_del.first.click()
+
+                    submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], input[type='submit'][value*='Vymazat'], input[type='submit'][value*='Potvrdit']")
+                    if submit_btn.count() > 0:
+                        submit_btn.first.click()
+                    else:
+                        page.keyboard.press("Enter")
+
+                    page.wait_for_timeout(2000)
+                    res_content = page.content().lower()
+                    if "chybné heslo" in res_content or "chybne heslo" in res_content:
+                        return {"success": False, "reason": "Chybné heslo inzerátu"}
+                    return {"success": True, "reason": "Inzerát byl vymazán"}
+                except Exception as del_e:
+                    return {"success": False, "reason": str(del_e)}
+
+            del_res = session_manager.run_on_worker(_delete_old_worker, old_portal_url, ad_pwd, timeout=25.0)
+            old_deleted_info = del_res
+
+        # DB aktualizace a historie v atomické sekvenci
+        if listing_id and listing:
+            today_str = datetime.today().strftime('%Y-%m-%d')
+            old_views = old_portal_state.get("views", 0)
+            new_item_id = re.search(r'/inzerat/(\d+)/', new_url).group(1) if new_url and re.search(r'/inzerat/(\d+)/', new_url) else None
+            final_price = int(staged_price) if staged_price is not None else int(listing.get("price", 0))
+
+            # 1. Uzavřít stávající aktivní publikaci (pokud existovala)
+            if old_portal_url:
+                db.close_active_publication(
+                    listing_id=listing_id,
+                    portal_name="bazos",
+                    closed_at=today_str,
+                    close_reason="reposted",
+                    final_views=old_views
+                )
+
+            # 2. Zapsat novou publikaci do historie
+            db.record_publication(
+                listing_id=listing_id,
+                portal_name="bazos",
+                portal_item_id=new_item_id,
+                url=new_url or "",
+                price=final_price,
+                published_at=today_str,
+                status="active"
+            )
+
+            # 3. Aktualizovat listing a snapshot v portal_states
+            listing_data = dict(listing)
+            listing_data["price"] = final_price
+            listing_data["created_at"] = today_str
+
+            portal_states = {
+                "bazos": {
+                    "portal_item_id": new_item_id,
+                    "url": new_url or listing.get("url", ""),
+                    "status": "Aktivní",
+                    "views": 0,
+                    "last_synced": datetime.now().isoformat()
                 }
-                listing_data["created_at"] = datetime.today().strftime('%Y-%m-%d')
-                db.save_listing(listing_data, portal_states)
+            }
+            if "aukro" in listing.get("portal_states", {}):
+                portal_states["aukro"] = listing["portal_states"]["aukro"]
+
+            db.save_listing(listing_data, portal_states)
 
         action_state_mgr.set_completed()
+
+        msg = "Inzerát byl úspěšně potvrzen a uložen do databáze jako aktivní!"
+        if old_deleted_info:
+            if old_deleted_info.get("success"):
+                msg += " Původní inzerát na Bazoši byl automaticky smazán."
+            else:
+                msg += f" (Upozornění: původní inzerát se nepodařilo smazat: {old_deleted_info.get('reason')})"
+
         return jsonify({
             "status": "success", 
-            "message": "Inzerát byl úspěšně potvrzen a uložen do databáze jako aktivní!",
-            "url": new_url
+            "message": msg,
+            "url": new_url,
+            "old_deleted": old_deleted_info
         })
     except Exception as e:
         log_debug(f"CONFIRM ERR: {e}")
@@ -1863,51 +2004,47 @@ def api_repost_with_new_price():
 
         listings_data, user_config = load_data()
         target_domain = payload.get("target_domain")
+        auto_delete_old = payload.get("auto_delete_old", True)
 
-        # 1. Aktualizujeme cenu v SQLite databázi
-        from listing_hub.core.db import get_db_connection, save_listing
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM listings WHERE id = ?", (listing_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            conn.close()
+        from listing_hub.core.db import get_listing_by_id
+        listing_data = get_listing_by_id(listing_id)
+        if not listing_data:
             return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
-            
-        listing_data = dict(row)
-        listing_data["price"] = int(new_price)
-        
-        # Načteme a zachováme stavy portálů
-        cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (listing_id,))
-        states_rows = cursor.fetchall()
-        portal_states = {state["portal_name"]: dict(state) for state in states_rows}
-        conn.close()
-        
-        save_listing(listing_data, portal_states)
 
-        # 2. Spustíme znovuvystavení inzerátu (topování) na pozadí jako Playwright proces
-        # Převedeme na formát pro legacy automat
+        portal_states = listing_data.get("portal_states", {})
+        bazos_state = portal_states.get("bazos", {})
+        old_url = bazos_state.get("url", "")
+        old_item_id = bazos_state.get("portal_item_id")
+
+        # Připravíme data pro Playwright s novou cenou (staged) - do DB se zapíše až po potvrzení
         ad_legacy = {
+            "id": listing_data["id"],
             "title": listing_data["title"],
             "description": listing_data["description"],
-            "price": listing_data["price"],
+            "price": int(new_price),
             "local_photos_dir": listing_data["local_photos_dir"],
-            "url": portal_states.get("bazos", {}).get("url", ""),
-            "ad_password_b64": listing_data["ad_password_b64"],
+            "url": old_url,
+            "ad_password_b64": listing_data.get("ad_password_b64"),
             "target_domain": target_domain
+        }
+
+        meta = {
+            "staged_price": int(new_price),
+            "old_portal_url": old_url,
+            "old_portal_item_id": old_item_id,
+            "auto_delete_old": auto_delete_old
         }
 
         playwright_process = threading.Thread(
             target=process_target,
-            args=(ad_legacy, user_config, "repost", None),
+            args=(ad_legacy, user_config, "repost", None, meta),
             daemon=True
         )
         playwright_process.start()
 
         return jsonify({
             "status": "success",
-            "message": f"Cena inzerátu byla změněna na {new_price} Kč a bylo spuštěno znovuvystavení na Bazoši."
+            "message": f"Bylo spuštěno znovuvystavení inzerátu s novou cenou {new_price} Kč. Sledujte Živý prohlížeč."
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1972,6 +2109,32 @@ def background_refresh_worker():
             log_debug(f"Error in background worker loop: {err}")
             
         time.sleep(15)
+
+@app.route("/api/listings/<listing_id>/history", methods=["GET"])
+def api_get_listing_history(listing_id):
+    try:
+        from listing_hub.core.db import get_listing_publications, get_listing_cumulative_stats, get_listing_by_id
+        listing = get_listing_by_id(listing_id)
+        if not listing:
+            # Zkusíme dohledat podle local_photos_dir
+            for cand in db.get_all_listings():
+                if cand.get("id") == listing_id or cand.get("local_photos_dir") == listing_id:
+                    listing = cand
+                    listing_id = cand.get("id")
+                    break
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+
+        publications = get_listing_publications(listing_id)
+        cumulative_stats = get_listing_cumulative_stats(listing_id)
+        return jsonify({
+            "status": "success",
+            "listing_id": listing_id,
+            "publications": publications,
+            "cumulative_stats": cumulative_stats
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # Registrace rozhraní pro AI agenty (Antigravity & MCP)
 from listing_hub.agent.api import agent_bp

@@ -382,6 +382,15 @@ class BazosPortal(AbstractPortal):
             if s_idx in matched_scraped_indices:
                 continue
                 
+            # Zombie Resurrection Defense: Ověříme, zda inzerát neodpovídá publikaci v historii (např. superseded / smazaný)
+            scraped_url = (scraped_ad.get("url") or "").strip()
+            scraped_id = extract_ad_id(scraped_url)
+            from listing_hub.core.db import get_publication_by_url_or_item_id
+            archived_pub = get_publication_by_url_or_item_id("bazos", url=scraped_url, portal_item_id=scraped_id)
+            if archived_pub:
+                print(f"  [Zombie Defense] Nalezen starý inzerát z historie (ID: {scraped_id}, listing: {archived_pub.get('listing_id')}). Přeskakuji import duplicity.")
+                continue
+
             default_pwd_b64 = user_config.get("default_ad_password_b64", "aGVzbG8xMjM=")
             
             # Vytvoření složky pro fotografie

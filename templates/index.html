@@ -63,7 +63,7 @@
                 <div class="version-widget" id="app-version-widget" title="Zobrazit podrobnosti o verzi a aktualizacích" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); font-size: 0.76rem; color: var(--text-muted); transition: all 0.2s;">
                     <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                         <i class="fa-solid fa-code-branch" style="font-size: 0.72rem; color: var(--accent);"></i>
-                        <span id="app-version-label" style="font-weight: 600; color: var(--text-main);">v3.8.7</span>
+                        <span id="app-version-label" style="font-weight: 600; color: var(--text-main);">v3.8.8</span>
                         <code id="app-commit-hash" style="background: rgba(0,0,0,0.35); padding: 1px 4px; border-radius: 4px; font-size: 0.72rem; color: #a5d6ff;">...</code>
                     </div>
                     <span id="app-version-badge" style="display: none; background: #eab308; color: #000; font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 10px; margin-left: 4px; text-transform: uppercase;">Update</span>
@@ -684,13 +684,23 @@
                         </div>
                     </div>
 
+                    <div class="info-widget" id="listing-history-widget" style="margin-top: 1rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <h4 style="margin: 0; font-size: 0.95rem;"><i class="fa-solid fa-clock-rotate-left"></i> Historie vystavení</h4>
+                            <span id="history-iteration-badge" class="badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">1. vystavení</span>
+                        </div>
+                        <div id="listing-history-timeline" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 180px; overflow-y: auto; font-size: 0.82rem; padding-right: 4px;">
+                            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">Načítám historii...</p>
+                        </div>
+                    </div>
+
                     <div class="control-widget">
                         <h4>Bazoš Automatizace</h4>
                         <p class="widget-desc">Spustí poloautomatické skripty přes Playwright. Sleduj otevřené okno prohlížeče Chrome.</p>
                         
                         <div class="automation-actions">
                             <button class="btn btn-primary btn-block" id="action-post">
-                                <i class="fa-solid fa-cloud-arrow-up"></i> Znovu vystavit (jako nový)
+                                <i class="fa-solid fa-arrows-rotate"></i> Znovu vystavit (Topovat zdarma)
                             </button>
                             <button class="btn btn-secondary btn-block" id="action-edit-price">
                                 <i class="fa-solid fa-tag"></i> Synchronizovat cenu online
@@ -1114,16 +1124,16 @@
         </div>
     </div>
 
-    <!-- REPOST CONFIRM MODAL (Rubrika confirmation) -->
+    <!-- REPOST CONFIRM MODAL (Rubrika & Price confirmation) -->
     <div class="modal-overlay" id="repost-confirm-modal" style="display: none; z-index: 1050;">
         <div class="modal" style="max-width: 520px; width: 95%;">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-cloud-arrow-up" style="color: var(--primary-color);"></i> Znovu vystavit inzerát</h3>
+                <h3><i class="fa-solid fa-arrows-rotate" style="color: var(--primary-color);"></i> Znovu vystavit inzerát</h3>
                 <button type="button" class="btn-close-repost-modal" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body" style="padding: 1.25rem;">
                 <p style="margin-top: 0; font-size: 0.9rem; color: #cbd5e1; line-height: 1.5;">
-                    Před spuštěním robota na Bazoši prosím potvrď nebo zvol správnou rubriku. Zabrání se tím smazání vyplněných údajů při pozdější změně sekce na Bazoši.
+                    Před spuštěním robota zkontroluj rubriku, případně uprav cenu a potvrď automatické smazání předchozího inzerátu na Bazoši.
                 </p>
                 <div class="form-group" style="margin-top: 1rem;">
                     <label for="repost-rubrika-select" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
@@ -1142,7 +1152,22 @@
                         <option value="ostatni.bazos.cz">Ostatní (ostatni.bazos.cz)</option>
                     </select>
                 </div>
-                <div style="font-size: 0.8rem; color: var(--text-muted); background: rgba(59, 130, 246, 0.08); border-left: 3px solid var(--primary-color); padding: 0.6rem 0.8rem; border-radius: 4px; margin-top: 1rem;">
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="repost-price-input" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
+                        Cena pro nové vystavení (Kč):
+                    </label>
+                    <input type="number" id="repost-price-input" style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.95rem; outline: none;" placeholder="Cena v Kč">
+                </div>
+                <div class="form-group" style="margin-top: 1rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); padding: 0.75rem 0.9rem; border-radius: 8px;">
+                    <label style="display: flex; align-items: flex-start; gap: 0.65rem; cursor: pointer; margin-bottom: 0;">
+                        <input type="checkbox" id="repost-autodelete-checkbox" checked style="margin-top: 3px; accent-color: var(--primary-color);">
+                        <div>
+                            <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">Po potvrzení automaticky smazat původní inzerát na Bazoši</div>
+                            <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 2px;">Zamezí vzniku duplicit. Původní inzerát a jeho statistiky zůstanou uloženy v historii v aplikaci.</div>
+                        </div>
+                    </label>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); background: rgba(255, 255, 255, 0.04); border-left: 3px solid var(--primary-color); padding: 0.6rem 0.8rem; border-radius: 4px; margin-top: 1rem;">
                     <i class="fa-solid fa-circle-info" style="color: var(--primary-color); margin-right: 4px;"></i>
                     Robot vyplní formulář a nahraje fotky. Finální odeslání zkontroluješ v záložce <strong>Živý prohlížeč</strong>.
                 </div>

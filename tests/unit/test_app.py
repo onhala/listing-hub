@@ -419,14 +419,17 @@ def test_action_confirm_still_on_form(client):
 
 def test_action_confirm_success(client):
     with patch("app.session_manager.run_on_worker", return_value={"still_on_form": False, "new_url": "https://dum.bazos.cz/inzerat/999/stepkovac.php"}), \
-         patch("app.action_state_mgr.get_status", return_value={"listing_id": "test-123"}), \
-         patch("app.db.get_listing_by_id", return_value={"id": "test-123", "title": "Štěpkovač"}), \
+         patch("app.action_state_mgr.get_status", return_value={"listing_id": "test-123", "meta": {"staged_price": 2200}}), \
+         patch("app.db.get_listing_by_id", return_value={"id": "test-123", "title": "Štěpkovač", "price": 2500}), \
+         patch("app.db.close_active_publication") as mock_close_pub, \
+         patch("app.db.record_publication") as mock_rec_pub, \
          patch("app.db.save_listing") as mock_save:
         res = client.post("/api/action/confirm")
         assert res.status_code == 200
         data = json.loads(res.data)
         assert data["status"] == "success"
         assert data["url"] == "https://dum.bazos.cz/inzerat/999/stepkovac.php"
+        mock_rec_pub.assert_called_once()
         mock_save.assert_called_once()
 
 def test_api_repost_with_new_price_success(client):
@@ -439,6 +442,7 @@ def test_api_repost_with_new_price_success(client):
         "ad_password_b64": "MTIzNA=="
     }
     with patch("listing_hub.core.db.get_db_connection") as mock_conn, \
+         patch("listing_hub.core.db.get_listing_by_id", return_value=mock_row), \
          patch("listing_hub.core.db.save_listing") as mock_save, \
          patch("app.load_data", return_value=({}, {"bazos_phone": "123"})), \
          patch("threading.Thread.start") as mock_thread_start:
@@ -455,6 +459,23 @@ def test_api_repost_with_new_price_success(client):
         assert res.status_code == 200
         data = json.loads(res.data)
         assert data["status"] == "success"
-        mock_save.assert_called_once()
+        # Ověření, že cena se nezapisuje předčasně do DB před potvrzením
+        mock_save.assert_not_called()
         mock_thread_start.assert_called_once()
+
+def test_api_get_listing_history(client):
+    with patch("listing_hub.core.db.get_listing_by_id", return_value={"id": "item-123", "title": "Sekačka"}), \
+         patch("listing_hub.core.db.get_listing_publications", return_value=[
+             {"id": 1, "listing_id": "item-123", "price": 3000, "status": "superseded"},
+             {"id": 2, "listing_id": "item-123", "price": 2500, "status": "active"}
+         ]), \
+         patch("listing_hub.core.db.get_listing_cumulative_stats", return_value={
+             "publication_count": 2, "total_views": 45, "is_reposted": True
+         }):
+        res = client.get("/api/listings/item-123/history")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        assert len(data["publications"]) == 2
+        assert data["cumulative_stats"]["is_reposted"] is True
 
