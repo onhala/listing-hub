@@ -135,3 +135,11 @@ Při mazání inzerátu nabízí Listing Hub inteligentní kontextové možnosti
 - **Nenásilné notifikace:** Decentní odložitelný toast a widget v patičce sidebaru namísto rušivých dialogů.
 - **Transparentní kontrola:** Srovnání nainstalovaného a dostupného git commit hashe s přímým odkazem na GitHub Compare Diff.
 - **1-Click TrueNAS Upgrade:** Uživatelé provozující aplikaci na TrueNAS SCALE mohou provést okamžitý restart a stažení nového kontejneru jedním kliknutím.
+
+---
+
+### 10. Rozhraní pro AI agenty (Antigravity Skill & FastMCP)
+- **Klientské rozhraní pro LLM:** Nativní REST API (`/api/agent/v1/*`), FastMCP stdio server a CLI klient (`listing-hub`) umožňují pokročilým agentům prozkoumávat inventář, spouštět tržní radar a připravovat inzeráty.
+- **Asistované dvoufázové vystavování (HITL):** Agent bezpečně předvyplní formulář (Fáze 1) a předá řízení uživateli k vizuální kontrole na živém screencastu. Finální odeslání zůstává plně v rukou uživatele (Fáze 2).
+- **Prevence chyb a detekce expirací:** Automatické upozorňování na blížící se 60denní expiraci inzerátů a doporučení cenových úprav u ležáků.
+

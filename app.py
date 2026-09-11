@@ -1973,6 +1973,11 @@ def background_refresh_worker():
             
         time.sleep(15)
 
+# Registrace rozhraní pro AI agenty (Antigravity & MCP)
+from listing_hub.agent.api import agent_bp
+app.register_blueprint(agent_bp, url_prefix="/api/agent/v1")
+app.register_blueprint(agent_bp, url_prefix="/api/agent", name="agent_api_alias")
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--dry-run":
         print("Flask syntax OK.")

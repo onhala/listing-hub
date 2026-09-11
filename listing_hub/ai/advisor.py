@@ -539,3 +539,8 @@ def get_price_recommendation(listing_id: str, api_key: str = "", gemini_model: s
         "sources_checked": analysis.get("sources_checked", ["Bazoš.cz", "Sbazar.cz"]),
         "listings": top_competitors
     }
+
+
+# Alias pro AI agentní rozhraní
+unified_market_price_radar = analyze_market_prices
+

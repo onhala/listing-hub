@@ -84,6 +84,12 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
     - Real-time čítače s varovným barevným tónem (žlutá/červená) u políček nadpisů.
     - Automatická backend sanitace zkracuje nadpisy na max 50 znaků k zamezení ořezání na straně Bazoše.
 
+14. **AI Agent Interface (Antigravity Skill, FastMCP & CLI)**:
+    - **Nativní podpora pro agenty**: Dedikované REST API (`/api/agent/v1/*`), FastMCP stdio server (`scripts/listing_hub_mcp.py`) a CLI klient (`scripts/listing_hub_cli.py`).
+    - **Dvoufázový Human-in-the-Loop protokol**: Robot předvyplní formulář na Bazoši (Fáze 1) a předá živý screencast uživateli. Teprve po odeslání potvrdí a aktivuje inzerát (Fáze 2).
+    - **Architektura & Use Casy**: Kanonický slovník v [CONTEXT.md](CONTEXT.md), architektonická rozhodnutí v [docs/adr/](docs/adr/) a podrobné scénáře v [docs/agent_use_cases.md](docs/agent_use_cases.md).
+
+
 ---
 
 ## 🛠️ Rychlé spuštění v Dockeru (Doporučeno)

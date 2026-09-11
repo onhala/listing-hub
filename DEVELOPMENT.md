@@ -175,6 +175,40 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
 - `GET /api/refresh/status`
   - Vrací stav background workeru (využíváno také pro Docker `HEALTHCHECK`).
 
+### AI Agent Interface (Antigravity & MCP):
+- `GET /api/agent/v1/summary`
+  - Tokenově efektivní dashboard JSON: počty inzerátů (Aktivní, Koncepty, Prodané, V kontrole), inzeráty blížící se 60denní expiraci a stav Playwright workeru včetně SMS guardu.
+- `GET /api/agent/v1/listings` *(query parametry `status=all|active|draft|sold|needs_review`, `search`, `limit`)*
+  - Filtrovatelný JSON index inzerátů s kanonickým životním cyklem.
+- `GET /api/agent/v1/listings/<id>`
+  - Kompletní agregát inzerátu včetně fotografií a stavů na portálech.
+- `POST /api/agent/v1/draft` *(JSON payload: `title`, `price`, `description`, `category`, `condition`, `local_photos_dir`, `auto_market_radar`)*
+  - Atomické založení konceptu inzerátu s volitelným automatickým naceněním tržním radarem.
+- `POST /api/agent/v1/actions/post` *(JSON payload: `id` nebo `listing_id`, `target_domain`)*
+  - Fáze 1 asistovaného vystavení: Playwright předvyplní formulář a zastaví se ve stavu `ready_for_review`.
+- `GET /api/agent/v1/actions/status`
+  - Aktuální stav běžící akce, workeru a URL živého screencastu.
+- `POST /api/agent/v1/actions/confirm`
+  - Fáze 2 lidského dohledu: ověří úspěch na portálu přes DOM a aktivuje inzerát v SQLite.
+- `POST /api/agent/v1/actions/cancel`
+  - Okamžité stornování relace prohlížeče.
+- `POST /api/agent/v1/actions/repost` *(JSON payload: `listing_id`, `new_price`, `target_domain`)*
+  - Znovuvystavení inzerátu (topování) se změnou ceny.
+- `DELETE /api/agent/v1/listings/<id>` *(volitelný parametr `delete_photos=true`)*
+  - Trvalé smazání inzerátu z DB s chroot guardem pro fotky.
+- `POST /api/agent/v1/radar` *(JSON payload: `query`, `brand`, `model`, `condition`, `fallback_price`)*
+  - Dotaz na multi-source cenový radar (Bazoš + Sbazar + Web).
+
+#### Klientské nástroje pro agenty:
+- **CLI klient**: `scripts/listing_hub_cli.py` (podpora přepínače `--json`, SQLite fallback při offline serveru).
+- **FastMCP Server**: `scripts/listing_hub_mcp.py` (stdio JSON-RPC 2.0 server pro Claude Desktop, Cursor, Antigravity).
+- **Architektonická dokumentace**:
+  - Ubiquitous Language: [CONTEXT.md](CONTEXT.md)
+  - ADR 0001 (Agent Interface Architecture): [docs/adr/0001-agent-interface-architecture.md](docs/adr/0001-agent-interface-architecture.md)
+  - ADR 0002 (Two-Phase HITL Protocol): [docs/adr/0002-two-phase-hitl-protocol.md](docs/adr/0002-two-phase-hitl-protocol.md)
+  - Agentic Use Cases: [docs/agent_use_cases.md](docs/agent_use_cases.md)
+
+
 ---
 
 ## 6. Docker & CI/CD workflow
