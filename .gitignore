@@ -34,3 +34,4 @@ data/listings.db
 photos/
 # Local Docker override
 docker-compose.override.yml
+logs/

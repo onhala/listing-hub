@@ -231,3 +231,41 @@ The Agent aggregates inventory state across all managed listings, provides an ex
 ### 7. Edge Cases & Safety Gates
 - **Corrupted or Partial Records**: If an item in `Sold` status lacks an explicit realized price, the Agent falls back to the original asking price and annotates the figure with an estimated marker `(~)` for transparency.
 - **Safe Purge Verification (`PurgeListing`)**: If the seller requests deletion of sold listings during the review, the Agent confirms whether local photo directories should also be deleted, enforcing path validation to protect system directories.
+
+---
+
+## UC-5: Live Browser DOM & Runtime Log Diagnostics (Autonomous Troubleshooting)
+
+### 1. Description & Intent
+When a worker automation task stalls, fails, or behaves unexpectedly (e.g. Bazoš credential rejection, SMS code challenge, rate limiting, or network timeout), the Agent performs autonomous multi-layer inspection without requiring manual user intervention or raw SSH access.
+
+### 2. Primary Actors
+- **AI Agent**: Diagnostic investigator querying live DOM and logs.
+- **Seller**: Informed user providing SMS codes or authorizations when prompted.
+
+### 3. Domain Entities & Operations Involved
+- **Entities**: `TwoPhaseSession`, `Listing`.
+- **Operations**: `InspectBrowserDOM`, `TailRuntimeLogs`, `CancelActiveAction`.
+
+### 4. Preconditions
+- A background worker task is either active or recently completed/failed.
+
+### 5. Interaction Flow
+1. **Live DOM Inspection (`InspectBrowserDOM`)**:
+   - The Agent queries the live Playwright browser page:
+     - Extracts the current URL, page title, and visible text snippets.
+     - Inspects for specific classifieds error selectors (`.chyba`, `.error`, `font[color='red']`).
+     - Detects keyword alerts: *"chybné heslo"*, *"příliš mnoho požadavků"*, *"inzerát byl vymazán"*.
+     - Checks whether an SMS verification input field is actively waiting for input (`has_sms_input: true`).
+2. **Log Stream Analysis (`TailRuntimeLogs`)**:
+   - The Agent fetches the most recent log entries from `logs/app.log` (filtered by `ERROR` or `WARNING`).
+   - Retrieves the last recorded Playwright worker traceback.
+3. **Root Cause Synthesis & Autonomous Remediation**:
+   - **Case A: SMS Verification Needed**: Agent informs the seller with direct screencast link to enter the code or submit it via API.
+   - **Case B: Bad Password**: Agent flags password mismatch to prevent infinite retry loops.
+   - **Case C: Worker Deadlock / Stalled Page**: Agent triggers `CancelActiveAction` to cleanly release the browser lock and reset state to `idle`.
+
+### 6. Postconditions & Invariants
+- Diagnostic read operations never modify persistent listing data.
+- Browser locks are released safely if an action cancellation is required.
+

@@ -661,3 +661,66 @@ def agent_market_radar():
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ============================================================================
+# 7. Agent Debugging & Diagnostics Endpoints
+# ============================================================================
+
+@agent_bp.route("/debug/dom", methods=["GET"])
+def agent_debug_dom():
+    """
+    Inspect live DOM, URL, alerts, and input state from the active Playwright browser.
+    Useful for diagnosing worker stalls, missing SMS codes, or portal rejections.
+    """
+    try:
+        from post_to_bazos import session_manager
+        dom_info = session_manager.inspect_dom()
+        return jsonify({
+            "status": "ok",
+            "dom": dom_info
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@agent_bp.route("/debug/logs", methods=["GET"])
+def agent_debug_logs():
+    """
+    Retrieve the most recent application and worker logs for troubleshooting.
+    Query parameters:
+    - lines: int (default: 50, max: 200)
+    - level: str (optional: ERROR, WARNING, INFO)
+    """
+    try:
+        from listing_hub.core.config import LOG_FILE_PATH
+        lines_count = min(int(request.args.get("lines", 50)), 200)
+        filter_level = request.args.get("level", "").upper().strip()
+
+        recent_logs = []
+        if LOG_FILE_PATH.exists():
+            with open(LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
+                all_lines = f.readlines()
+                if filter_level:
+                    all_lines = [l for l in all_lines if f"[{filter_level}]" in l]
+                recent_logs = [l.rstrip("\r\n") for l in all_lines[-lines_count:]]
+
+        # Also check /tmp/playwright_error.txt if exists
+        tmp_err = None
+        if os.path.exists("/tmp/playwright_error.txt"):
+            try:
+                with open("/tmp/playwright_error.txt", "r", encoding="utf-8") as f:
+                    tmp_err = f.read().strip()
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "ok",
+            "log_file": str(LOG_FILE_PATH),
+            "count": len(recent_logs),
+            "logs": recent_logs,
+            "last_playwright_error": tmp_err
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+

@@ -245,8 +245,37 @@ TOOLS_SCHEMA: List[Dict[str, Any]] = [
             "required": ["listing_id"],
             "additionalProperties": False
         }
+    },
+    {
+        "name": "listing_hub_inspect_dom",
+        "description": "Inspect the live DOM, current URL, page title, visible errors/warnings, and form input fields of the active Playwright browser session for real-time debugging.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False
+        }
+    },
+    {
+        "name": "listing_hub_get_logs",
+        "description": "Retrieve recent application and worker log entries to troubleshoot errors, exceptions, or stalled tasks.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "lines": {
+                    "type": "integer",
+                    "description": "Number of log lines to tail (default: 50, max: 200)"
+                },
+                "level": {
+                    "type": "string",
+                    "enum": ["INFO", "WARNING", "ERROR"],
+                    "description": "Filter by minimum log severity level"
+                }
+            },
+            "additionalProperties": False
+        }
     }
 ]
+
 
 
 class McpServer:
@@ -351,6 +380,19 @@ class McpServer:
             elif name == "listing_hub_delete_listing":
                 payload = {"delete_photos": arguments.get("delete_photos", False)}
                 res = self._api_request("DELETE", f"/listings/{arguments['listing_id']}", json_data=payload)
+                return json.dumps(res, indent=2, ensure_ascii=False)
+
+            elif name == "listing_hub_inspect_dom":
+                res = self._api_request("GET", "/debug/dom")
+                return json.dumps(res, indent=2, ensure_ascii=False)
+
+            elif name == "listing_hub_get_logs":
+                params = {}
+                if arguments.get("lines"):
+                    params["lines"] = arguments["lines"]
+                if arguments.get("level"):
+                    params["level"] = arguments["level"]
+                res = self._api_request("GET", "/debug/logs", params=params)
                 return json.dumps(res, indent=2, ensure_ascii=False)
 
             else:

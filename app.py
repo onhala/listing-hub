@@ -15,7 +15,7 @@ import threading
 import asyncio
 
 from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, LISTINGS_PATH, session_manager
-from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH, PHOTOS_DIR, PROJECT_ROOT
+from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH, PHOTOS_DIR, PROJECT_ROOT, LOGS_DIR, LOG_FILE_PATH
 import uuid
 import listing_hub.core.db as db
 from listing_hub.ai.gemini import improve_text_with_gemini
@@ -24,7 +24,26 @@ from listing_hub.core.version import get_version_status, is_docker, APP_VERSION
 from listing_hub.core.calendar import generate_ical_feed
 from listing_hub.ai.photo_editor import process_photo_pipeline
 
+import logging
+from logging.handlers import RotatingFileHandler
+
 app = Flask(__name__)
+
+# Konfigurace rotujícího logování do logs/app.log a konzole
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+_file_handler = RotatingFileHandler(str(LOG_FILE_PATH), maxBytes=2*1024*1024, backupCount=3, encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+_file_handler.setLevel(logging.INFO)
+
+_console_handler = logging.StreamHandler(sys.stdout)
+_console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+_console_handler.setLevel(logging.INFO)
+
+root_logger = logging.getLogger()
+if not any(isinstance(h, RotatingFileHandler) for h in root_logger.handlers):
+    root_logger.addHandler(_file_handler)
+root_logger.setLevel(logging.INFO)
+app.logger.addHandler(_file_handler)
 
 # Konfigurace Flasku pro běh za Nginx reverzní proxy
 from werkzeug.middleware.proxy_fix import ProxyFix

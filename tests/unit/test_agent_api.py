@@ -133,3 +133,50 @@ def test_agent_auth_bearer_token_enforcement(client):
             headers={"Authorization": "Bearer secret-agent-token-123"}
         )
         assert res_good_auth.status_code == 200
+
+
+def test_agent_debug_dom(client):
+    mock_dom = {
+        "active": True,
+        "url": "https://dum.bazos.cz/pridat-inzerat.php",
+        "title": "Bazoš.cz - Přidat inzerát",
+        "errors": ["Chybné heslo"],
+        "warnings": [],
+        "has_sms_input": True,
+        "inputs": [{"tag": "input", "name": "klic", "value": ""}],
+        "buttons": ["Odeslat"],
+        "body_snippet": "Bazoš přidání inzerátu..."
+    }
+    with patch("post_to_bazos.session_manager.inspect_dom", return_value=mock_dom):
+        res = client.get("/api/agent/v1/debug/dom")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "ok"
+        assert data["dom"]["active"] is True
+        assert data["dom"]["has_sms_input"] is True
+        assert "Chybné heslo" in data["dom"]["errors"]
+
+
+def test_agent_debug_logs(client, tmp_path):
+    mock_log_file = tmp_path / "test_app.log"
+    mock_log_file.write_text(
+        "2026-09-11 15:00:00 [INFO] app: Server started\n"
+        "2026-09-11 15:01:00 [ERROR] worker: Connection timeout\n",
+        encoding="utf-8"
+    )
+    with patch("listing_hub.core.config.LOG_FILE_PATH", mock_log_file):
+        # 1. Fetch all lines
+        res = client.get("/api/agent/v1/debug/logs?lines=10")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "ok"
+        assert len(data["logs"]) == 2
+        assert "Server started" in data["logs"][0]
+
+        # 2. Filter by level
+        res_filtered = client.get("/api/agent/v1/debug/logs?level=ERROR")
+        assert res_filtered.status_code == 200
+        data_filtered = json.loads(res_filtered.data)
+        assert len(data_filtered["logs"]) == 1
+        assert "Connection timeout" in data_filtered["logs"][0]
+

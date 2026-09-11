@@ -547,9 +547,116 @@ def handle_radar(args: argparse.Namespace) -> int:
     if stats.get("reference_new_price"):
         print(f"  • Reference New:     {stats.get('reference_new_price')} Kč")
     if radar.get("reasoning"):
-        print(f"AI Reasoning:    {radar.get('reasoning')}")
+        print("=" * 60)
+    return 0
+
+
+def handle_inspect(args) -> int:
+    url = f"{args.server.rstrip('/')}{API_PREFIX}/debug/dom"
+    headers = get_headers(args.token)
+
+    try:
+        resp = make_request("GET", url, headers, timeout=args.timeout)
+        data = resp.json()
+        if resp.status_code != 200:
+            print(f"Error {resp.status_code}: {data.get('message', resp.text)}", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"Failed to inspect browser DOM: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        return 0
+
+    dom = data.get("dom", {})
+    if not dom.get("active"):
+        print(f"⚠️  Browser is inactive: {dom.get('message', 'No active page.')}")
+        return 0
+
+    print("=" * 60)
+    print("🔍 Live Browser DOM Inspection")
+    print("=" * 60)
+    print(f"URL:           {dom.get('url')}")
+    print(f"Page Title:    {dom.get('title')}")
+    print(f"SMS Prompt:    {'⚠️  ANO (vyžaduje kód)' if dom.get('has_sms_input') else 'Ne'}")
+
+    errors = dom.get("errors", [])
+    if errors:
+        print("\n🚨 Chybové hlášky na stránce:")
+        for err in errors:
+            print(f"  • {err}")
+
+    warnings = dom.get("warnings", [])
+    if warnings:
+        print("\n⚠️  Upozornění:")
+        for w in warnings:
+            print(f"  • {w}")
+
+    inputs = dom.get("inputs", [])
+    if inputs:
+        print(f"\n📝 Viditelná formulářová pole ({len(inputs)}):")
+        for inp in inputs[:10]:
+            val = f"='{inp.get('value')}'" if inp.get("value") else ""
+            print(f"  • <{inp.get('tag')}> name={inp.get('name')}{val}")
+
+    buttons = dom.get("buttons", [])
+    if buttons:
+        print(f"\n🔘 Tlačítka: {', '.join(buttons)}")
+
+    snippet = dom.get("body_snippet")
+    if snippet:
+        print(f"\n📄 Náhled textu: {snippet[:200]}...")
     print("=" * 60)
     return 0
+
+
+def handle_logs(args) -> int:
+    url = f"{args.server.rstrip('/')}{API_PREFIX}/debug/logs"
+    headers = get_headers(args.token)
+    params = {"lines": args.lines}
+    if args.level:
+        params["level"] = args.level
+
+    try:
+        resp = make_request("GET", url, headers, params=params, timeout=args.timeout)
+        data = resp.json()
+        if resp.status_code != 200:
+            print(f"Error {resp.status_code}: {data.get('message', resp.text)}", file=sys.stderr)
+            return 1
+    except Exception as e:
+        # Fallback: direct local file read
+        from listing_hub.core.config import LOG_FILE_PATH
+        if LOG_FILE_PATH.exists():
+            with open(LOG_FILE_PATH, "r", encoding="utf-8", errors="ignore") as f:
+                lines = [l.rstrip("\r\n") for l in f.readlines()[-args.lines:]]
+            data = {"status": "ok", "mode": "local_file_fallback", "logs": lines, "count": len(lines)}
+        else:
+            print(f"Failed to fetch logs and local file not found: {e}", file=sys.stderr)
+            return 1
+
+    if args.json:
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        return 0
+
+    logs = data.get("logs", [])
+    last_err = data.get("last_playwright_error")
+
+    print("=" * 60)
+    print(f"📜 Runtime Logs (posledních {len(logs)} řádků)")
+    print("=" * 60)
+    if last_err:
+        print(f"🚨 Poslední chyba Playwrightu: {last_err}")
+        print("-" * 60)
+
+    if not logs:
+        print("Žádné záznamy v logu.")
+    else:
+        for line in logs:
+            print(line)
+    print("=" * 60)
+    return 0
+
 
 
 # ============================================================================
@@ -639,6 +746,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_radar.add_argument("--condition", default="Použité", help="Condition")
     p_radar.add_argument("--price", type=int, default=0, help="Fallback price in CZK")
     p_radar.set_defaults(func=handle_radar)
+
+    # inspect (DOM debug)
+    p_inspect = subparsers.add_parser("inspect", parents=[common_parser], help="Inspect live browser DOM, errors, inputs, and alerts")
+    p_inspect.set_defaults(func=handle_inspect)
+
+    # logs (app & worker log debug)
+    p_logs = subparsers.add_parser("logs", parents=[common_parser], help="Retrieve recent application and worker logs")
+    p_logs.add_argument("--lines", type=int, default=50, help="Number of lines to tail (default: 50, max: 200)")
+    p_logs.add_argument("--level", choices=["INFO", "WARNING", "ERROR"], default=None, help="Filter by log level")
+    p_logs.set_defaults(func=handle_logs)
 
     return parser
 

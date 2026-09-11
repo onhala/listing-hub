@@ -327,6 +327,109 @@ class PlaywrightSessionManager:
             except Exception:
                 pass
 
+    def inspect_dom(self) -> dict:
+        """
+        Inspect the live DOM of the currently active Playwright page.
+        Returns url, title, visible error messages, form inputs, and buttons.
+        """
+        if not self.running or not self.page or self.page.is_closed():
+            return {
+                "active": False,
+                "message": "Browser page is not open or worker is not running."
+            }
+
+        def _do_inspect(page, *args):
+            try:
+                info = {
+                    "active": True,
+                    "url": page.url or "",
+                    "title": page.title() or "",
+                    "errors": [],
+                    "warnings": [],
+                    "has_sms_input": False,
+                    "inputs": [],
+                    "buttons": [],
+                    "body_snippet": ""
+                }
+
+                # 1. Look for obvious error / warning elements on Bazos
+                error_locators = page.locator(".chyba, .error, .upozorneni, .hlaska, font[color='red'], span[style*='red'], div[style*='red']")
+                count = min(error_locators.count(), 10)
+                for i in range(count):
+                    try:
+                        el = error_locators.nth(i)
+                        if el.is_visible():
+                            txt = el.inner_text().strip()
+                            if txt and txt not in info["errors"]:
+                                info["errors"].append(txt)
+                    except Exception:
+                        pass
+
+                # 2. Check for SMS code input presence
+                sms_inputs = page.locator("input[name='klic'], input[id='klic'], input[name='kodd'], input[id='kodd'], input[name='cr'], input[name='kod'], input[name='overkod']")
+                if sms_inputs.count() > 0:
+                    for i in range(sms_inputs.count()):
+                        if sms_inputs.nth(i).is_visible():
+                            info["has_sms_input"] = True
+                            break
+
+                # 3. Check text on page for typical alerts
+                try:
+                    content_text = page.locator("body").inner_text() or ""
+                    lower = content_text.lower()
+                    if "chybné heslo" in lower:
+                        info["errors"].append("Detekován text: 'chybné heslo'")
+                    if "vyplňte kód" in lower or "zadejte kód" in lower or "ověřovací kód" in lower:
+                        info["warnings"].append("Detekována výzva k zadání SMS/ověřovacího kódu")
+                    if "příliš mnoho požadavků" in lower or "blokován" in lower:
+                        info["errors"].append("Detekována možná blokace / rate limit")
+                    if "inzerát byl vymazán" in lower or "inzerát vymazán" in lower:
+                        info["warnings"].append("Detekováno potvrzení o smazání inzerátu")
+                    if "inzerát byl vložen" in lower:
+                        info["warnings"].append("Detekováno potvrzení o vložení nového inzerátu")
+
+                    # Snippet textu pro rychlou orientaci (prvních 600 znaků)
+                    info["body_snippet"] = " ".join(content_text.split()[:80])
+                except Exception:
+                    pass
+
+                # 4. Form inputs summary
+                try:
+                    inputs = page.locator("input:not([type='hidden']), select, textarea")
+                    for i in range(min(inputs.count(), 15)):
+                        inp = inputs.nth(i)
+                        if inp.is_visible():
+                            name = inp.get_attribute("name") or inp.get_attribute("id") or ""
+                            tag = inp.evaluate("el => el.tagName.toLowerCase()")
+                            val = inp.input_value() if tag in ("input", "textarea") else ""
+                            info["inputs"].append({
+                                "tag": tag,
+                                "name": name,
+                                "value": val[:40] if val else ""
+                            })
+                except Exception:
+                    pass
+
+                # 5. Buttons summary
+                try:
+                    btns = page.locator("input[type='submit'], button[type='submit'], input[type='button']")
+                    for i in range(min(btns.count(), 8)):
+                        btn = btns.nth(i)
+                        if btn.is_visible():
+                            val = btn.get_attribute("value") or btn.inner_text() or ""
+                            info["buttons"].append(val.strip())
+                except Exception:
+                    pass
+
+                return info
+            except Exception as e:
+                return {"active": True, "error": str(e)}
+
+        try:
+            return self.run_on_worker(_do_inspect, timeout=10.0)
+        except Exception as e:
+            return {"active": False, "error": f"Failed to inspect DOM: {e}"}
+
     def cancel_current_action(self):
         self.cancel_requested = True
         if self.page:
@@ -335,6 +438,7 @@ class PlaywrightSessionManager:
             except Exception:
                 pass
         self.page = None
+
 
     def close(self):
         self.running = False

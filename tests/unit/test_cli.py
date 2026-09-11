@@ -57,7 +57,7 @@ def test_cli_list_sqlite_fallback(capsys):
     assert "listings" in data
 
 def test_mcp_server_tools_schema():
-    assert len(TOOLS_SCHEMA) >= 10
+    assert len(TOOLS_SCHEMA) >= 12
     tool_names = [t["name"] for t in TOOLS_SCHEMA]
     assert "listing_hub_summary" in tool_names
     assert "listing_hub_list_listings" in tool_names
@@ -65,6 +65,8 @@ def test_mcp_server_tools_schema():
     assert "listing_hub_create_draft" in tool_names
     assert "listing_hub_post_ad" in tool_names
     assert "listing_hub_confirm_submission" in tool_names
+    assert "listing_hub_inspect_dom" in tool_names
+    assert "listing_hub_get_logs" in tool_names
 
 def test_mcp_server_execute_summary():
     server = McpServer(server_url="http://127.0.0.1:59999")
@@ -79,3 +81,15 @@ def test_mcp_server_execute_list():
     data = json.loads(result_str)
     assert data["status"] == "ok"
     assert "listings" in data
+
+def test_cli_parser_inspect_and_logs():
+    parser = build_parser()
+    args_inspect = parser.parse_args(["inspect", "--json"])
+    assert args_inspect.subcommand == "inspect"
+    assert args_inspect.json is True
+
+    args_logs = parser.parse_args(["logs", "--lines", "100", "--level", "ERROR"])
+    assert args_logs.subcommand == "logs"
+    assert args_logs.lines == 100
+    assert args_logs.level == "ERROR"
+

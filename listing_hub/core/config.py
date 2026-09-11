@@ -10,9 +10,10 @@ PROJECT_ROOT = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
 CONFIG_DIR = PROJECT_ROOT / "config"
 DATA_DIR = PROJECT_ROOT / "data"
 PHOTOS_DIR = PROJECT_ROOT / "photos"
+LOGS_DIR = PROJECT_ROOT / "logs"
 
 # Automatické vytvoření složek
-for directory in [CONFIG_DIR, DATA_DIR, PHOTOS_DIR]:
+for directory in [CONFIG_DIR, DATA_DIR, PHOTOS_DIR, LOGS_DIR]:
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except Exception as e:
@@ -21,6 +22,7 @@ for directory in [CONFIG_DIR, DATA_DIR, PHOTOS_DIR]:
 # Cesty k datovým souborům
 CONFIG_PATH = CONFIG_DIR / "config.json"
 SESSION_STATE_PATH = CONFIG_DIR / "session.json"
+LOG_FILE_PATH = LOGS_DIR / "app.log"
 
 # Kontrola a automatická oprava práv pro zápis
 def check_write_permissions():
