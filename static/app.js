@@ -10,15 +10,25 @@
         const response = await originalFetch.apply(this, args);
         try {
             const urlStr = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url ? args[0].url : "");
+            const triggerReload = () => {
+                const lastReload = parseInt(sessionStorage.getItem("cf_access_last_reload") || "0", 10);
+                const now = Date.now();
+                if (now - lastReload > 20000) {
+                    sessionStorage.setItem("cf_access_last_reload", now.toString());
+                    window.location.reload();
+                } else {
+                    console.warn("Cloudflare Access 2FA reload throttled to avoid reload loop.");
+                }
+            };
             // Detekce přesměrování na Cloudflare Access Login při vypršení relace
             if (response.redirected && (response.url.includes("cloudflareaccess.com") || response.url.includes("/cdn-cgi/access/"))) {
-                window.location.reload();
+                triggerReload();
                 return response;
             }
             if (urlStr.includes("/api/") && !urlStr.includes("/feed.ics")) {
                 const contentType = response.headers.get("content-type") || "";
                 if (contentType.includes("text/html") && (response.status === 200 || response.status === 302 || response.status === 401 || response.status === 403)) {
-                    window.location.reload();
+                    triggerReload();
                     return response;
                 }
             }
@@ -157,6 +167,29 @@ document.addEventListener("DOMContentLoaded", () => {
     const addListingModal = document.getElementById("add-listing-modal");
     const editListingModal = document.getElementById("edit-listing-modal");
     const aiProposalModal = document.getElementById("ai-proposal-modal");
+    const repostConfirmModal = document.getElementById("repost-confirm-modal");
+    const deleteListingModal = document.getElementById("delete-listing-modal");
+    const browserReviewBanner = document.getElementById("browser-review-banner");
+    
+    // Parent/child modal state helper to preserve currentAd
+    let activeChildModal = null;
+    let pendingActionAd = null;
+
+    const openChildModal = (childModalEl) => {
+        if (!childModalEl) return;
+        childModalEl.style.display = "flex";
+        childModalEl.classList.add("active");
+        activeChildModal = childModalEl;
+    };
+
+    const closeChildModal = (childModalEl) => {
+        if (!childModalEl) return;
+        childModalEl.style.display = "none";
+        childModalEl.classList.remove("active");
+        if (activeChildModal === childModalEl) {
+            activeChildModal = null;
+        }
+    };
     
     // Forms & inputs in modals
     const addListingForm = document.getElementById("add-listing-form");
@@ -297,7 +330,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const populateVersionModal = (data) => {
         if (!data) return;
-        const appVer = data.app_version || "3.6.0";
+        const appVer = data.app_version || "3.8.7";
         const localHash = (data.local && data.local.hash) || data.local_hash || "unknown";
         const latestHash = (data.latest && data.latest.hash) || data.latest_hash || "unknown";
         const envName = (data.local && data.local.environment) || (data.is_docker ? "Docker kontejner" : "Lokální vývoj");
@@ -380,7 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
                 currentVersionData = data;
                 
-                const appVer = data.app_version || "3.6.0";
+                const appVer = data.app_version || "3.8.7";
                 const localHash = (data.local && data.local.hash !== "unknown") 
                     ? data.local.hash 
                     : (data.local_hash && data.local_hash !== "unknown" ? data.local_hash : "git");
@@ -719,7 +752,12 @@ document.addEventListener("DOMContentLoaded", () => {
             <div>
                 <div class="listing-header">
                     <h4 class="listing-title" title="Klikni pro editaci">${escapeHtml(titleText)}</h4>
-                    <span class="price-badge">${priceVal}</span>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="price-badge">${priceVal}</span>
+                        <button type="button" class="btn-card-delete" title="Smazat inzerát" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; font-size: 0.85rem; border-radius: 4px; transition: color 0.2s;">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="portal-badges" style="display: flex; gap: 0.5rem; margin-top: -0.25rem; margin-bottom: 0.75rem;">
                     <span class="portal-badge badge-bazos" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${ad.target_bazos ? 'background: rgba(131, 92, 223, 0.2); color: var(--accent); border: 1px solid rgba(131, 92, 223, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
@@ -761,7 +799,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <button class="btn btn-secondary btn-edit"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
                     ${!isSold ? `
                         <button class="btn btn-secondary btn-advisor" style="background: rgba(255,193,7,0.1); color: #ffc107; border: 1px solid rgba(255,193,7,0.3);"><i class="fa-solid fa-lightbulb"></i> Poradce</button>
-                        <button class="btn btn-primary btn-post-action"><i class="fa-solid fa-rocket"></i> Vystavit</button>
+                        <button class="btn btn-primary btn-post-action"><i class="fa-solid fa-cloud-arrow-up"></i> Vystavit</button>
                     ` : ""}
                 </div>
             </div>
@@ -771,15 +809,25 @@ document.addEventListener("DOMContentLoaded", () => {
         const editBtn = card.querySelector(".btn-edit");
         const titleEl = card.querySelector(".listing-title");
         const postBtn = card.querySelector(".btn-post-action");
+        const cardDeleteBtn = card.querySelector(".btn-card-delete");
 
         const openEditor = () => openEditModal(ad);
         editBtn.addEventListener("click", openEditor);
         titleEl.addEventListener("click", openEditor);
 
+        if (cardDeleteBtn) {
+            cardDeleteBtn.addEventListener("mouseenter", () => cardDeleteBtn.style.color = "#ef4444");
+            cardDeleteBtn.addEventListener("mouseleave", () => cardDeleteBtn.style.color = "var(--text-muted)");
+            cardDeleteBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openDeleteModal(ad);
+            });
+        }
+
         if (postBtn) {
             postBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
-                triggerPlaywrightAction(ad, "post");
+                openRepostModal(ad);
             });
         }
 
@@ -1858,10 +1906,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // 5. BAZOŠ AUTOMATIZACE (PLAYWRIGHT)
     // ==========================================
 
-    const triggerPlaywrightAction = async (ad, actionType, extraVal = null) => {
-        // Okamžitě zavřít modal, pokud je aktivní, abychom viděli VNC prohlížeč
+    const triggerPlaywrightAction = async (ad, actionType, extraVal = null, targetDomain = null) => {
+        // Okamžitě zavřít editační modal, pokud je aktivní, abychom viděli VNC prohlížeč
         if (editListingModal.classList.contains("active")) {
             editListingModal.classList.remove("active");
+        }
+        if (activeChildModal) {
+            closeChildModal(activeChildModal);
         }
 
         setPlaywrightActive(true);
@@ -1883,6 +1934,11 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
+        // Skryjeme banner kontroly z předchozích akcí
+        if (browserReviewBanner) {
+            browserReviewBanner.style.display = "none";
+        }
+
         // Automaticky přepnout na záložku s živým prohlížečem, aby uživatel viděl spuštěné okno
         switchToTab("browser");
         
@@ -1891,8 +1947,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    id: ad.id,
                     local_photos_dir: ad.local_photos_dir,
-                    extra_val: extraVal
+                    extra_val: extraVal,
+                    target_domain: targetDomain
                 })
             });
 
@@ -1904,6 +1962,18 @@ document.addEventListener("DOMContentLoaded", () => {
                         const statusRes = await fetch("/api/action/status");
                         if (statusRes.ok) {
                             const statusData = await statusRes.json();
+                            
+                            // Režim kontroly před odesláním (ready_for_review)
+                            if (statusData.state === "ready_for_review") {
+                                clearInterval(statusInterval);
+                                setPlaywrightActive(false);
+                                if (browserReviewBanner) {
+                                    browserReviewBanner.style.display = "flex";
+                                }
+                                showNotification("Formulář byl předvyplněn! Zkontroluj inzerát v prohlížeči a odešli jej.", "info");
+                                return;
+                            }
+
                             if (!statusData.running) {
                                 clearInterval(statusInterval);
                                 setPlaywrightActive(false);
@@ -1929,23 +1999,210 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // --- REPOST CONFIRM MODAL (Rubrika) LOGIKA ---
+    const openRepostModal = (ad) => {
+        pendingActionAd = ad;
+        const rubrikaSelect = document.getElementById("repost-rubrika-select");
+        if (rubrikaSelect) {
+            // Predikce z URL inzerátu nebo kategorie
+            let preselect = "dum.bazos.cz";
+            const url = ad.url || "";
+            if (url) {
+                const match = url.match(/https?:\/\/([^/]+\.bazos\.cz)/i);
+                if (match) preselect = match[1].toLowerCase();
+            } else {
+                const titleLower = (ad.title || "").toLowerCase();
+                const catLower = (ad.category || "").toLowerCase();
+                if (/\b(auto|skoda|vw|bmw|audi|ford|peugeot|renault)\b/.test(titleLower) || /auto/.test(catLower)) {
+                    preselect = "auto.bazos.cz";
+                } else if (/\b(motocykl|motork|skutr|yamaha|honda|suzuki|kawasaki)\b/.test(titleLower) || /moto/.test(catLower)) {
+                    preselect = "motorky.bazos.cz";
+                } else if (/\b(dum|zahrada|seka|trakt|pila|stepkovac|zahrad)\b/.test(titleLower) || /zahrada/.test(catLower)) {
+                    preselect = "dum.bazos.cz";
+                } else if (/\b(stroj|soustruh|freza|vrtacka|kompresor|svarecka)\b/.test(titleLower)) {
+                    preselect = "stroje.bazos.cz";
+                } else if (/\b(pc|notebook|pocitac|monitor|grafick|ram|intel|amd|ryzen|geforce|rtx)\b/.test(titleLower)) {
+                    preselect = "pc.bazos.cz";
+                } else if (/\b(elektro|tv|televize|audio|repro|telefon|mobil|iphone|samsung)\b/.test(titleLower)) {
+                    preselect = "elektro.bazos.cz";
+                }
+            }
+            rubrikaSelect.value = preselect;
+        }
+        openChildModal(repostConfirmModal);
+    };
+
+    // Zavření repost modalu
+    document.querySelectorAll(".btn-close-repost-modal").forEach(btn => {
+        btn.addEventListener("click", () => closeChildModal(repostConfirmModal));
+    });
+
+    // Spuštění z repost modalu
+    document.getElementById("btn-repost-confirm-start").addEventListener("click", () => {
+        const rubrikaSelect = document.getElementById("repost-rubrika-select");
+        const chosenDomain = rubrikaSelect ? rubrikaSelect.value : "dum.bazos.cz";
+        const targetAd = pendingActionAd || currentAd;
+        closeChildModal(repostConfirmModal);
+        if (targetAd) {
+            triggerPlaywrightAction(targetAd, "post", null, chosenDomain);
+        }
+    });
+
+    // --- DELETE MODAL LOGIKA ---
+    const openDeleteModal = (ad) => {
+        pendingActionAd = ad;
+        const titleEl = document.getElementById("delete-modal-listing-title");
+        if (titleEl) titleEl.textContent = ad.title || "Inzerát";
+
+        const choiceCards = document.getElementById("delete-choice-cards-container");
+        const draftNote = document.getElementById("delete-draft-note");
+        const deletePhotosCheckbox = document.getElementById("delete-photos-checkbox");
+        if (deletePhotosCheckbox) deletePhotosCheckbox.checked = false;
+
+        const isPublished = Boolean(ad.url && ad.url.trim());
+        if (isPublished) {
+            if (choiceCards) choiceCards.style.display = "flex";
+            if (draftNote) draftNote.style.display = "none";
+        } else {
+            if (choiceCards) choiceCards.style.display = "none";
+            if (draftNote) draftNote.style.display = "block";
+        }
+
+        openChildModal(deleteListingModal);
+    };
+
+    // Zavření delete modalu
+    document.querySelectorAll(".btn-close-delete-modal").forEach(btn => {
+        btn.addEventListener("click", () => closeChildModal(deleteListingModal));
+    });
+
+    // Tlačítko pro smazání v detailu inzerátu (v patičce)
+    const btnDeleteListingModal = document.getElementById("btn-delete-listing-modal");
+    if (btnDeleteListingModal) {
+        btnDeleteListingModal.addEventListener("click", () => {
+            if (currentAd) {
+                openDeleteModal(currentAd);
+            }
+        });
+    }
+
+    // Potvrzení smazání v delete modalu
+    document.getElementById("btn-confirm-delete-action").addEventListener("click", async () => {
+        const targetAd = pendingActionAd || currentAd;
+        if (!targetAd) return;
+
+        const deletePhotos = document.getElementById("delete-photos-checkbox")?.checked || false;
+        const isPublished = Boolean(targetAd.url && targetAd.url.trim());
+        const selectedScope = document.querySelector("input[name='delete_scope']:checked")?.value || "bazos_and_db";
+
+        closeChildModal(deleteListingModal);
+
+        if (isPublished && selectedScope === "bazos_and_db") {
+            // Smazání přes Bazoš robota a následné smazání z DB v backendu
+            triggerPlaywrightAction(targetAd, "delete");
+        } else {
+            // Pouze lokální smazání z databáze (a volitelně fotek)
+            try {
+                showNotification("Mažu inzerát z databáze...", "info");
+                const res = await fetch("/api/listings/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        id: targetAd.id,
+                        delete_photos: deletePhotos
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showNotification(data.message || "Inzerát byl úspěšně smazán.", "success");
+                    if (editListingModal.classList.contains("active")) {
+                        editListingModal.classList.remove("active");
+                    }
+                    loadListings();
+                } else {
+                    showNotification(data.message || "Chyba při mazání inzerátu.", "error");
+                }
+            } catch (err) {
+                showNotification("Chyba při komunikaci se serverem.", "error");
+            }
+        }
+    });
+
+    // --- BROWSER REVIEW BANNER LOGIKA (Potvrzení / Zrušení po předvyplnění) ---
+    const btnBrowserConfirmPost = document.getElementById("btn-browser-confirm-post");
+    if (btnBrowserConfirmPost) {
+        btnBrowserConfirmPost.addEventListener("click", async () => {
+            btnBrowserConfirmPost.disabled = true;
+            btnBrowserConfirmPost.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Ověřuji na Bazoši...`;
+            try {
+                const res = await fetch("/api/action/confirm", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" }
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showNotification(data.message || "Inzerát byl úspěšně potvrzen!", "success");
+                    if (browserReviewBanner) browserReviewBanner.style.display = "none";
+                    loadListings();
+                } else {
+                    showNotification(data.message || "Ověření selhalo. Zkontrolujte prohlížeč.", "warning");
+                }
+            } catch (err) {
+                showNotification("Chyba při potvrzování inzerátu.", "error");
+            } finally {
+                btnBrowserConfirmPost.disabled = false;
+                btnBrowserConfirmPost.innerHTML = `<i class="fa-solid fa-check"></i> Potvrdit odeslání`;
+            }
+        });
+    }
+
+    const btnBrowserCancelPost = document.getElementById("btn-browser-cancel-post");
+    if (btnBrowserCancelPost) {
+        btnBrowserCancelPost.addEventListener("click", async () => {
+            if (browserReviewBanner) browserReviewBanner.style.display = "none";
+            showNotification("Akce vystavení byla zrušena.", "info");
+            try {
+                await fetch(API.cancel, { method: "POST" });
+            } catch (e) {}
+        });
+    }
+
     // Připojení akčních tlačítek v detailu inzerátu
-    document.getElementById("action-post").addEventListener("click", () => {
-        if (currentAd) triggerPlaywrightAction(currentAd, "post");
+    document.getElementById("action-post").addEventListener("click", async () => {
+        if (!currentAd) return;
+        
+        // Auto-save form data before opening repost modal
+        const editTargetBazos = document.getElementById("edit-target-bazos");
+        const editTargetAukro = document.getElementById("edit-target-aukro");
+        const updatedAd = {
+            ...currentAd,
+            title: editTitle.value,
+            price: parseInt(editPrice.value) || 0,
+            category: editCategory.value.trim(),
+            description: editDescription.value,
+            notes: editNotes.value,
+            local_photos_dir: editPhotosDir.value,
+            excluded_photos: Array.from(excludedPhotos),
+            target_bazos: editTargetBazos && editTargetBazos.checked ? 1 : 0,
+            target_aukro: editTargetAukro && editTargetAukro.checked ? 1 : 0
+        };
+
+        try {
+            await fetch(API.saveAd, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedAd)
+            });
+            currentAd = updatedAd;
+        } catch (e) {}
+
+        openRepostModal(currentAd);
     });
 
     document.getElementById("action-edit-price").addEventListener("click", () => {
         if (currentAd) {
             const price = editPrice.value;
             triggerPlaywrightAction(currentAd, "edit_price", price);
-        }
-    });
-
-    document.getElementById("action-delete").addEventListener("click", () => {
-        if (currentAd) {
-            if (confirm(`Opravdu chceš smazat inzerát "${currentAd.title}" z Bazoše?`)) {
-                triggerPlaywrightAction(currentAd, "delete");
-            }
         }
     });
 
@@ -2965,6 +3222,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         } else {
                             inspectFieldsTable.innerHTML = data.inputs.map(inp => {
                                 const name = inp.name || inp.id || "(bezejmenné)";
+                                const safeName = escapeHtml(name);
+                                const safeVal = inp.value ? escapeHtml(inp.value) : '<span style="color: rgba(255,255,255,0.2);">&lt;prázdné&gt;</span>';
+                                const encName = encodeURIComponent(name);
                                 const isSMS = name === "klic" || name === "kodd";
                                 const isPhone = name === "teloverit" || name === "telefoni" || name === "telefon";
                                 const focusBadge = inp.focused ? `<span style="background: rgba(245, 158, 11, 0.2); color: #fcd34d; font-size: 0.7rem; padding: 1px 4px; border-radius: 4px; margin-left: 4px;">Fokus</span>` : "";
@@ -2974,19 +3234,19 @@ document.addEventListener("DOMContentLoaded", () => {
                                 return `
                                     <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); ${rowStyle}">
                                         <td style="padding: 0.45rem 0.5rem; font-family: monospace; font-weight: ${isSMS ? 'bold' : 'normal'}; color: ${isSMS ? '#a7f3d0' : '#fff'};">
-                                            ${isSMS ? '🔑 ' : (isPhone ? '📱 ' : '')}${name} ${focusBadge}
+                                            ${isSMS ? '🔑 ' : (isPhone ? '📱 ' : '')}${safeName} ${focusBadge}
                                         </td>
                                         <td style="padding: 0.45rem 0.5rem; font-size: 0.8rem; color: var(--text-muted);">
                                             ${inp.type || inp.tag} · ${visBadge}
                                         </td>
                                         <td style="padding: 0.45rem 0.5rem; font-family: monospace; font-size: 0.8rem; color: #cbd5e1;">
-                                            ${inp.value || '<span style="color: rgba(255,255,255,0.2);">&lt;prázdné&gt;</span>'}
+                                            ${safeVal}
                                         </td>
                                         <td style="padding: 0.45rem 0.5rem; text-align: right;">
-                                            <button class="btn btn-secondary btn-sm" onclick="window._fillInspectField('${name}', false)" style="padding: 2px 7px; font-size: 0.75rem; border-radius: 4px;" title="Zaměřit toto pole v prohlížeči">
+                                            <button class="btn btn-secondary btn-sm" onclick="window._fillInspectField(decodeURIComponent('${encName}'), false)" style="padding: 2px 7px; font-size: 0.75rem; border-radius: 4px;" title="Zaměřit toto pole v prohlížeči">
                                                 🎯 Zaměřit
                                             </button>
-                                            <button class="btn btn-primary btn-sm" onclick="window._fillInspectField('${name}', true)" style="padding: 2px 7px; font-size: 0.75rem; border-radius: 4px; margin-left: 4px;" title="Vepsat text z horního řádku a odeslat">
+                                            <button class="btn btn-primary btn-sm" onclick="window._fillInspectField(decodeURIComponent('${encName}'), true)" style="padding: 2px 7px; font-size: 0.75rem; border-radius: 4px; margin-left: 4px;" title="Vepsat text z horního řádku a odeslat">
                                                 ✏️ Vložit a odeslat
                                             </button>
                                         </td>

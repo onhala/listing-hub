@@ -264,7 +264,7 @@ class PlaywrightSessionManager:
             time.sleep(step)
         return False
 
-    def run_on_worker(self, func, *args, **kwargs):
+    def run_on_worker(self, func, *args, timeout=30.0, **kwargs):
         """Dispatches `func(self.page, *args, **kwargs)` to execute on the Playwright worker thread."""
         self.start_worker()
         res_q = queue.Queue()
@@ -276,9 +276,9 @@ class PlaywrightSessionManager:
             "result_queue": res_q
         })
         try:
-            res, err = res_q.get(timeout=12.0)
+            res, err = res_q.get(timeout=timeout)
         except queue.Empty:
-            raise TimeoutError("Vypršel limit (12s) pro zpracování požadavku v prohlížeči.")
+            raise TimeoutError(f"Vypršel limit ({timeout}s) pro zpracování požadavku v prohlížeči.")
         if err:
             raise err
         return res

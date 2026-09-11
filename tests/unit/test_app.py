@@ -377,4 +377,84 @@ def test_submit_sms_code_unfound(client):
         data = json.loads(res.data)
         assert data["status"] == "error"
         assert data["submitted"] is False
+def test_safe_delete_photos_dir(tmp_path):
+    from app import safe_delete_photos_dir
+    with patch("app.PHOTOS_DIR", str(tmp_path)):
+        # Normal deletion
+        target_dir = tmp_path / "valid_photos_dir"
+        target_dir.mkdir()
+        (target_dir / "photo.jpg").write_text("dummy")
+        assert target_dir.exists()
+        assert safe_delete_photos_dir("valid_photos_dir") is True
+        assert not target_dir.exists()
+
+        # Path traversal prevention
+        outside_dir = tmp_path.parent / "dangerous_dir"
+        outside_dir.mkdir(exist_ok=True)
+        assert safe_delete_photos_dir("../dangerous_dir") is False
+        assert safe_delete_photos_dir(str(tmp_path)) is False
+        assert outside_dir.exists()
+
+def test_delete_listing_endpoint_success(client):
+    with patch("app.db.get_listing_by_id", return_value={"id": "test-id", "local_photos_dir": "test_dir"}), \
+         patch("app.db.delete_listing") as mock_db_del, \
+         patch("app.safe_delete_photos_dir", return_value=True) as mock_safe_del:
+        res = client.post("/api/listings/delete", json={"id": "test-id", "delete_photos": True})
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        mock_safe_del.assert_called_once_with("test_dir")
+        mock_db_del.assert_called_once_with("test-id")
+
+def test_delete_listing_endpoint_missing_id(client):
+    res = client.post("/api/listings/delete", json={})
+    assert res.status_code == 400
+
+def test_action_confirm_still_on_form(client):
+    with patch("app.session_manager.run_on_worker", return_value={"still_on_form": True}):
+        res = client.post("/api/action/confirm")
+        assert res.status_code == 422
+        data = json.loads(res.data)
+        assert "Inzerát ještě nebyl odeslán" in data["message"]
+
+def test_action_confirm_success(client):
+    with patch("app.session_manager.run_on_worker", return_value={"still_on_form": False, "new_url": "https://dum.bazos.cz/inzerat/999/stepkovac.php"}), \
+         patch("app.action_state_mgr.get_status", return_value={"listing_id": "test-123"}), \
+         patch("app.db.get_listing_by_id", return_value={"id": "test-123", "title": "Štěpkovač"}), \
+         patch("app.db.save_listing") as mock_save:
+        res = client.post("/api/action/confirm")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        assert data["url"] == "https://dum.bazos.cz/inzerat/999/stepkovac.php"
+        mock_save.assert_called_once()
+
+def test_api_repost_with_new_price_success(client):
+    mock_row = {
+        "id": "item-123",
+        "title": "Štěpkovač Hecht",
+        "description": "Popis",
+        "price": 2500,
+        "local_photos_dir": "stepkovac",
+        "ad_password_b64": "MTIzNA=="
+    }
+    with patch("listing_hub.core.db.get_db_connection") as mock_conn, \
+         patch("listing_hub.core.db.save_listing") as mock_save, \
+         patch("app.load_data", return_value=({}, {"bazos_phone": "123"})), \
+         patch("threading.Thread.start") as mock_thread_start:
+        cursor_mock = MagicMock()
+        cursor_mock.fetchone.return_value = mock_row
+        cursor_mock.fetchall.return_value = [{"portal_name": "bazos", "url": "https://dum.bazos.cz/inzerat/123"}]
+        mock_conn.return_value.cursor.return_value = cursor_mock
+
+        res = client.post("/api/action/repost_with_new_price", json={
+            "listing_id": "item-123",
+            "new_price": 2200,
+            "target_domain": "dum.bazos.cz"
+        })
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        mock_save.assert_called_once()
+        mock_thread_start.assert_called_once()
 

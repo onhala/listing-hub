@@ -11,7 +11,7 @@
     <!-- FontAwesome for Premium Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom Glassmorphic Styles -->
-    <link rel="stylesheet" href="/static/style.css?v=3.2.1">
+    <link rel="stylesheet" href="/static/style.css?v=3.8.7">
 </head>
 <body>
     <!-- Background glowing shapes -->
@@ -27,7 +27,7 @@
                     <i class="fa-solid fa-robot"></i>
                 </div>
                 <div class="brand-text">
-                    <h1>Roboton</h1>
+                    <h1>Listing Hub</h1>
                     <span>Bazoš Automat</span>
                 </div>
             </div>
@@ -63,7 +63,7 @@
                 <div class="version-widget" id="app-version-widget" title="Zobrazit podrobnosti o verzi a aktualizacích" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); font-size: 0.76rem; color: var(--text-muted); transition: all 0.2s;">
                     <div style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                         <i class="fa-solid fa-code-branch" style="font-size: 0.72rem; color: var(--accent);"></i>
-                        <span id="app-version-label" style="font-weight: 600; color: var(--text-main);">v3.8.2</span>
+                        <span id="app-version-label" style="font-weight: 600; color: var(--text-main);">v3.8.7</span>
                         <code id="app-commit-hash" style="background: rgba(0,0,0,0.35); padding: 1px 4px; border-radius: 4px; font-size: 0.72rem; color: #a5d6ff;">...</code>
                     </div>
                     <span id="app-version-badge" style="display: none; background: #eab308; color: #000; font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 10px; margin-left: 4px; text-transform: uppercase;">Update</span>
@@ -208,6 +208,25 @@
                             </button>
                         </div>
                     </div>
+                    <!-- Banner pro finální kontrolu a potvrzení odeslání inzerátu -->
+                    <div id="browser-review-banner" style="display: none; justify-content: space-between; align-items: center; padding: 0.9rem 1.25rem; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 12px; animation: pulse 2s infinite;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem; color: #fff;">
+                            <i class="fa-solid fa-circle-check" style="color: #10b981; font-size: 1.3rem;"></i>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.95rem;">Formulář inzerátu byl předvyplněn!</div>
+                                <div style="font-size: 0.8rem; color: #cbd5e1;">Zkontroluj údaje na obrazovce, v prohlížeči klikni na <strong>Odeslat</strong> a poté potvrď zde:</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.75rem; align-items: center;">
+                            <button type="button" class="btn btn-secondary" id="btn-browser-cancel-post" style="padding: 0.45rem 0.9rem; font-size: 0.85rem;">
+                                <i class="fa-solid fa-xmark"></i> Zrušit akci
+                            </button>
+                            <button type="button" class="btn btn-primary" id="btn-browser-confirm-post" style="padding: 0.45rem 1.1rem; font-size: 0.85rem; font-weight: 600; background: #10b981; border-color: #059669; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);">
+                                <i class="fa-solid fa-check"></i> Potvrdit odeslání
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="browser-frame-wrapper" style="flex: 1; border-radius: 16px; overflow: hidden; background: #07050e; border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); display: flex; justify-content: center; align-items: center; position: relative;">
                         <canvas id="screencast-canvas" tabindex="0" style="display: block; cursor: crosshair; border-radius: 8px; outline: none; shadow: 0 4px 12px rgba(0,0,0,0.5);"></canvas>
                         <textarea id="screencast-hidden-input" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; resize: none; border: none; outline: none; padding: 0; margin: 0; z-index: 10;" tabindex="0" autocomplete="off" capitalize="off" spellcheck="false"></textarea>
@@ -671,24 +690,26 @@
                         
                         <div class="automation-actions">
                             <button class="btn btn-primary btn-block" id="action-post">
-                                <i class="fa-solid fa-rocket"></i> Vystavit / Obnovit inzerát
+                                <i class="fa-solid fa-cloud-arrow-up"></i> Znovu vystavit (jako nový)
                             </button>
                             <button class="btn btn-secondary btn-block" id="action-edit-price">
                                 <i class="fa-solid fa-tag"></i> Synchronizovat cenu online
-                            </button>
-                            <button class="btn btn-danger btn-block" id="action-delete">
-                                <i class="fa-solid fa-trash-can"></i> Smazat z Bazoše
                             </button>
                         </div>
                     </div>
                 </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary btn-close-modal">Zavřít</button>
-                <button type="button" class="btn btn-primary" id="btn-save-listing-changes">
-                    <i class="fa-solid fa-floppy-disk"></i> Uložit změny
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn btn-danger" id="btn-delete-listing-modal" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fa-solid fa-trash-can"></i> Smazat inzerát...
                 </button>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary btn-close-modal">Zavřít</button>
+                    <button type="button" class="btn btn-primary" id="btn-save-listing-changes">
+                        <i class="fa-solid fa-floppy-disk"></i> Uložit změny
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -777,7 +798,7 @@
                         <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
                             <i class="fa-solid fa-hard-drive"></i> Nainstalováno
                         </div>
-                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-local-version">v3.8.2</div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-local-version">v3.8.7</div>
                         <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.45rem;">
                             Commit: <code id="modal-local-hash" style="background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 4px; color: #a5d6ff; font-family: monospace;">...</code>
                         </div>
@@ -792,7 +813,7 @@
                             <span><i class="fa-brands fa-github"></i> Nejnovější na GitHubu</span>
                             <span id="modal-update-badge" style="background: #10b981; color: #000; font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 8px;">Aktuální</span>
                         </div>
-                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-latest-version">v3.8.2</div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-latest-version">v3.8.7</div>
                         <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.45rem;">
                             Commit: <code id="modal-latest-hash" style="background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 4px; color: #a5d6ff; font-family: monospace;">...</code>
                         </div>
@@ -1093,8 +1114,104 @@
         </div>
     </div>
 
+    <!-- REPOST CONFIRM MODAL (Rubrika confirmation) -->
+    <div class="modal-overlay" id="repost-confirm-modal" style="display: none; z-index: 1050;">
+        <div class="modal" style="max-width: 520px; width: 95%;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-cloud-arrow-up" style="color: var(--primary-color);"></i> Znovu vystavit inzerát</h3>
+                <button type="button" class="btn-close-repost-modal" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem;">
+                <p style="margin-top: 0; font-size: 0.9rem; color: #cbd5e1; line-height: 1.5;">
+                    Před spuštěním robota na Bazoši prosím potvrď nebo zvol správnou rubriku. Zabrání se tím smazání vyplněných údajů při pozdější změně sekce na Bazoši.
+                </p>
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="repost-rubrika-select" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
+                        Cílová rubrika (Bazoš.cz):
+                    </label>
+                    <select id="repost-rubrika-select" style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.95rem; outline: none;">
+                        <option value="dum.bazos.cz">Dům a zahrada (dum.bazos.cz)</option>
+                        <option value="stroje.bazos.cz">Stroje a nářadí (stroje.bazos.cz)</option>
+                        <option value="auto.bazos.cz">Auto (auto.bazos.cz)</option>
+                        <option value="motorky.bazos.cz">Motorky (motorky.bazos.cz)</option>
+                        <option value="pc.bazos.cz">PC a počítače (pc.bazos.cz)</option>
+                        <option value="elektro.bazos.cz">Elektro (elektro.bazos.cz)</option>
+                        <option value="sport.bazos.cz">Sport (sport.bazos.cz)</option>
+                        <option value="nabytek.bazos.cz">Nábytek (nabytek.bazos.cz)</option>
+                        <option value="obleceni.bazos.cz">Oblečení (obleceni.bazos.cz)</option>
+                        <option value="ostatni.bazos.cz">Ostatní (ostatni.bazos.cz)</option>
+                    </select>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); background: rgba(59, 130, 246, 0.08); border-left: 3px solid var(--primary-color); padding: 0.6rem 0.8rem; border-radius: 4px; margin-top: 1rem;">
+                    <i class="fa-solid fa-circle-info" style="color: var(--primary-color); margin-right: 4px;"></i>
+                    Robot vyplní formulář a nahraje fotky. Finální odeslání zkontroluješ v záložce <strong>Živý prohlížeč</strong>.
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 0.85rem 1.25rem;">
+                <button type="button" class="btn btn-secondary btn-close-repost-modal">Zrušit</button>
+                <button type="button" class="btn btn-primary" id="btn-repost-confirm-start" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fa-solid fa-play"></i> Spustit vystavení
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DELETE LISTING MODAL (Choice cards) -->
+    <div class="modal-overlay" id="delete-listing-modal" style="display: none; z-index: 1050;">
+        <div class="modal" style="max-width: 540px; width: 95%;">
+            <div class="modal-header">
+                <h3 style="color: #ef4444;"><i class="fa-solid fa-trash-can"></i> Smazat inzerát</h3>
+                <button type="button" class="btn-close-delete-modal" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem;">
+                <p style="margin-top: 0; font-size: 0.9rem; color: #cbd5e1;">
+                    Opravdu si přeješ odstranit inzerát <strong id="delete-modal-listing-title" style="color: #fff;">-</strong>?
+                </p>
+
+                <!-- Choice Cards for Published Listings -->
+                <div id="delete-choice-cards-container" style="display: flex; flex-direction: column; gap: 0.75rem; margin: 1rem 0;">
+                    <label class="delete-choice-card" style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.85rem 1rem; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; background: rgba(239, 68, 68, 0.08); cursor: pointer;">
+                        <input type="radio" name="delete_scope" value="bazos_and_db" checked style="margin-top: 3px; accent-color: #ef4444;">
+                        <div>
+                            <div style="font-weight: 600; color: #fff; font-size: 0.92rem;">Smazat z Bazoše i z aplikace (Doporučeno)</div>
+                            <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 2px;">Robot smaže inzerát online na Bazoš.cz pomocí hesla a poté jej vymaže z lokální databáze.</div>
+                        </div>
+                    </label>
+
+                    <label class="delete-choice-card" style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.85rem 1rem; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(255, 255, 255, 0.03); cursor: pointer;">
+                        <input type="radio" name="delete_scope" value="db_only" style="margin-top: 3px; accent-color: var(--primary-color);">
+                        <div>
+                            <div style="font-weight: 600; color: #fff; font-size: 0.92rem;">Smazat pouze z této aplikace</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Inzerát na Bazoši zůstane beze změny. Odstraní se pouze záznam z této databáze.</div>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Unadvertised / Draft Note -->
+                <div id="delete-draft-note" style="display: none; font-size: 0.85rem; color: #94a3b8; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 0.85rem; margin: 1rem 0;">
+                    <i class="fa-solid fa-info-circle" style="color: var(--primary-color); margin-right: 4px;"></i>
+                    Tento inzerát ještě není vystaven na Bazoši. Bude okamžitě vymazán z databáze.
+                </div>
+
+                <!-- Delete Photos Checkbox -->
+                <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+                    <label style="display: flex; align-items: center; gap: 0.6rem; cursor: pointer; font-size: 0.88rem; color: #cbd5e1;">
+                        <input type="checkbox" id="delete-photos-checkbox" style="width: 17px; height: 17px; cursor: pointer; accent-color: #ef4444;">
+                        <span>Smazat také složku s lokálními fotografiemi na disku</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 0.85rem 1.25rem;">
+                <button type="button" class="btn btn-secondary btn-close-delete-modal">Zrušit</button>
+                <button type="button" class="btn btn-danger" id="btn-confirm-delete-action" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fa-solid fa-trash-can"></i> Smazat inzerát
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Client application logic -->
-    <script src="/static/app.js?v=3.8.5"></script>
+    <script src="/static/app.js?v=3.8.7"></script>
 </body>
 </html>
 

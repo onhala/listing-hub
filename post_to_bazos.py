@@ -27,7 +27,7 @@ from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH
 
 
 from listing_hub.portals.bazos.session import session_manager, PlaywrightSessionManager
-from listing_hub.portals.bazos.categories import normalize_cz, match_best_category_option
+from listing_hub.portals.bazos.categories import normalize_cz, match_best_category_option, get_target_domain, extract_ad_id, extract_subdomain
 
 
 
@@ -443,50 +443,7 @@ def extract_subdomain(url):
         return match.group(1)
     return "dum.bazos.cz"
 
-def get_target_domain(title, original_url="", category=""):
-    url_lower = (original_url or "").lower()
-    title_lower = (title or "").lower()
-    cat_lower = (category or "").lower()
-
-    if "deti" in url_lower or "deti" in cat_lower:
-        return "deti.bazos.cz"
-    if "nabytek" in url_lower or "nabytek" in cat_lower:
-        return "nabytek.bazos.cz"
-    if "sport" in url_lower or "sport" in cat_lower:
-        return "sport.bazos.cz"
-    if "elektro" in url_lower or "elektro" in cat_lower:
-        return "elektro.bazos.cz"
-    if "auto" in url_lower or "auto" in cat_lower:
-        return "auto.bazos.cz"
-    if "moto" in url_lower or "moto" in cat_lower:
-        return "motorky.bazos.cz"
-
-    # Děti / Hračky / Plameňák / Vodní hračky
-    deti_kw = ["plameňák", "hračk", "kočárek", "postýlka", "dětsk", "odrážedlo", "autosedačka", "plena", "bábov"]
-    if any(kw in title_lower or kw in cat_lower for kw in deti_kw):
-        return "deti.bazos.cz"
-
-    # Nábytek
-    nabytek_kw = ["stůl", "židle", "skříň", "komoda", "postel", "matrace", "sedačka", "pohovka", "křeslo", "stoly", "jídelní", "sedák", "skříňka", "polička"]
-    if any(kw in title_lower or kw in cat_lower for kw in nabytek_kw):
-        return "nabytek.bazos.cz"
-
-    # Sport / Vodní sporty
-    sport_kw = ["kolo", "lyže", "snowboard", "fitness", "činky", "stan", "spací pytel", "raketa", "kolečkové korčule", "surfing", "paddleboard"]
-    if any(kw in title_lower or kw in cat_lower for kw in sport_kw):
-        return "sport.bazos.cz"
-
-    # Elektro
-    elektro_kw = ["tv", "televize", "telefon", "mobil", "notebook", "počítač", "monitor", "pračka", "lednice", "kávovar", "vysavač", "reproduktor", "sluchátka"]
-    if any(kw in title_lower or kw in cat_lower for kw in elektro_kw):
-        return "elektro.bazos.cz"
-
-    # Dům a Zahrada (sekačky, drtiče, nářadí)
-    dum_kw = ["sekač", "drtič", "štěpkov", "zahrada", "vrtačka", "pila", "křovinořez", "nářadí", "baterie", "gril"]
-    if any(kw in title_lower or kw in cat_lower for kw in dum_kw):
-        return "dum.bazos.cz"
-
-    return "deti.bazos.cz" if ("vodní" in title_lower or "vodní" in cat_lower) else "dum.bazos.cz"
+# get_target_domain, extract_ad_id a extract_subdomain jsou importovány z listing_hub.portals.bazos.categories
 
 # --- Zobrazení terminálové tabulky (UX) ---
 def display_listings_summary(data):
@@ -1125,57 +1082,82 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
         
         # --- AKCE: SMAZÁNÍ (DELETE) ---
         if action == "delete":
-            if not ad_id:
-                print(f"{Colors.FAIL}Chyba: Chybí ID inzerátu pro smazání!{Colors.ENDC}")
+            if not url:
+                print(f"{Colors.FAIL}Chyba: Chybí URL inzerátu pro smazání z Bazoše!{Colors.ENDC}")
                 return False
                 
-            print(f"\n{Colors.BLUE}Směřuji na mazací formulář: https://{subdomain}/delete.php?id={ad_id}...{Colors.ENDC}")
-            page.goto(f"https://{subdomain}/delete.php?id={ad_id}")
-            
+            print(f"\n{Colors.BLUE}Otevírám inzerát na Bazoši: {url}...{Colors.ENDC}")
             try:
-                # Vyplníme heslo
+                page.goto(url, timeout=30000)
+            except Exception as nav_e:
+                print(f"Chyba navigace na inzerát: {nav_e}")
+            
+            # 1. Kontrola, zda inzerát již nebyl dříve smazán nebo neexpiroval
+            try:
+                page_content = page.content().lower()
+                if "inzerát neexistuje" in page_content or "inzerat neexistuje" in page_content or "byl smazán" in page_content or "byl vymazán" in page_content:
+                    print(f"  {Colors.GREEN}✓ Inzerát již na Bazoši neexistuje (již byl smazán nebo expiroval).{Colors.ENDC}")
+                    return True
+            except Exception:
+                pass
+                
+            try:
+                # 2. Vyvoláme zobrazení akcí inzerátu na Bazoši (odeslatakci('edit', id))
+                try:
+                    page.evaluate("""(id) => {
+                        if (typeof odeslatakci === 'function') {
+                            odeslatakci('edit', id);
+                        } else {
+                            const f = document.forms['formaction'] || document.querySelector("form[name='formaction']");
+                            if (f) {
+                                f.elements['postaction'].value = 'edit';
+                                f.elements['postv1'].value = id;
+                                f.submit();
+                            }
+                        }
+                    }""", ad_id)
+                except Exception:
+                    pass
+                
+                # Případně klikneme na prvek 'Smazat/ Upravit/ Topovat'
+                action_span = page.locator("span.paction, span:has-text('Smazat'), a:has-text('Smazat')")
+                if action_span.count() > 0 and action_span.first.is_visible():
+                    action_span.first.click()
+                
+                # 3. Vyplníme heslo inzerátu
                 password_input = page.locator("input[name='heslobazar'], #heslobazar, input[name='heslo'], #heslo, input[type='password'], input[name*='hesl']")
-                password_input.first.wait_for(timeout=5000)
+                password_input.first.wait_for(timeout=6000)
                 password_input.first.scroll_into_view_if_needed(timeout=1000)
                 password_input.first.fill(password)
                 print(f"  {Colors.GREEN}✓ Heslo inzerátu předvyplněno.{Colors.ENDC}")
                 
-                # Zaškrtneme Smazat (pokud jsou radio buttons)
-                radio_delete = page.locator("input[type='radio'][value='delete'], input[value='2']")
+                # 4. Zaškrtneme radio button 'Vymazat inzerát' (hodnota 2)
+                radio_delete = page.locator("input[type='radio'][value='2'], input[type='radio'][value='delete']")
                 if radio_delete.count() > 0:
-                    radio_delete.click()
-                    print(f"  {Colors.GREEN}✓ Možnost 'Smazat' vybrána.{Colors.ENDC}")
+                    radio_delete.first.click()
+                    print(f"  {Colors.GREEN}✓ Možnost 'Vymazat inzerát' vybrána.{Colors.ENDC}")
                 
-                # Klikneme na odeslat/potvrdit
-                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], form:has(input[name*='hesl']) button[type='submit']")
+                # 5. Odeslání formuláře pro smazání
+                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], input[type='submit'][value*='Vymazat'], input[type='submit'][value*='Potvrdit']")
                 if submit_btn.count() > 0:
                     submit_btn.first.click()
                 else:
-                    page.locator("input[type='submit'][value*='Potvrdit'], input[type='submit'][value*='Smazat']").first.click()
-                print(f"\n{Colors.GREEN}✓ Formulář odeslán.{Colors.ENDC}")
-                print(f"{Colors.BOLD}👉 Dokonči smazání v prohlížeči (např. výběr důvodu)...{Colors.ENDC}")
-                if not is_web:
-                    print("stiskni [Enter] v terminálu pro pokračování...")
-                    input()
+                    page.keyboard.press("Enter")
+                    
+                time.sleep(2.0)
+                res_content = page.content().lower()
+                if "vymazán" in res_content or "smazán" in res_content or "neexistuje" in res_content:
+                    print(f"\n{Colors.GREEN}✓ Inzerát byl úspěšně vymazán z Bazoše!{Colors.ENDC}")
                 else:
-                    print(f"\n{Colors.BLUE}💬 [WEB] Čekám na dokončení smazání uživatelem v prohlížeči...{Colors.ENDC}")
-                    try:
-                        session_manager.wait_while(lambda: "delete.php" in page.url, timeout=300)
-                        print(f"  {Colors.GREEN}✓ Detekováno dokončení smazání (změna URL). Relace se zavře za 5 sekund...{Colors.ENDC}")
-                        time.sleep(5)
-                    except Exception as e:
-                        print(f"  {Colors.WARNING}Čekání na smazání vypršelo nebo bylo přerušeno: {e}{Colors.ENDC}")
+                    print(f"\n{Colors.BLUE}💬 Požadavek na smazání odeslán.{Colors.ENDC}")
+
                 try:
                     context.storage_state(path=str(SESSION_STATE_PATH))
                 except Exception:
                     pass
                 return True
             except Exception as delete_err:
-                print(f"{Colors.FAIL}Chyba při mazání inzerátu: {delete_err}{Colors.ENDC}")
-                print("Dokonči prosím smazání ručně v otevřeném prohlížeči...")
-                if not is_web:
-                    print("stiskni [Enter] v terminálu pro pokračování...")
-                    input()
+                print(f"{Colors.FAIL}Chyba při automatickém mazání inzerátu: {delete_err}{Colors.ENDC}")
                 return False
                 
         # --- AKCE: ZMĚNA CENY / EDITACE ---
@@ -1243,7 +1225,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
 
         # --- AKCE: POST / VYSTAVENÍ (DEFAULT) ---
         else:
-            target_domain = get_target_domain(title, url, ad.get("category", ""))
+            target_domain = ad.get("target_domain") or get_target_domain(title, url, ad.get("category", ""))
             print(f"\n{Colors.BLUE}Směřuji na přidání inzerátu: https://{target_domain}/pridat-inzerat.php{Colors.ENDC}")
             page.goto(f"https://{target_domain}/pridat-inzerat.php")
             
@@ -1277,6 +1259,8 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 return filled
 
             def select_rubrika_first():
+                # Záměrně nic neměníme – cílová rubrika (doména) byla již potvrzena uživatelem
+                return False
                 try:
                     selector = "select[name='rubrikyvybrat']"
                     select_loc = page.locator(selector)
@@ -1552,17 +1536,13 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                         print(f"{Colors.BOLD}👉 Zkontroluj inzerát v prohlížeči, ulož jej a zkopíruj si jeho URL.{Colors.ENDC}")
                         
                         if is_web:
-                            print(f"\n{Colors.BLUE}💬 [WEB] Čekám na ruční odeslání inzerátu uživatelem v prohlížeči...{Colors.ENDC}")
+                            print(f"\n{Colors.BLUE}💬 [WEB] Formulář i fotky předvyplněny. Přepínám do režimu kontroly uživatelem.{Colors.ENDC}")
                             try:
-                                # Čekáme až 5 minut (300 sekund) s průběžnou obsluhou událostí z webu
-                                session_manager.wait_while(
-                                    lambda: "pridat-inzerat.php" in page.url,
-                                    timeout=300
-                                )
-                                print(f"  {Colors.GREEN}✓ Detekováno odeslání inzerátu (změna URL). Relace bude uzavřena za 5 sekund...{Colors.ENDC}")
-                                time.sleep(5)
-                            except Exception as wait_err:
-                                print(f"  {Colors.WARNING}Čekání na odeslání inzerátu vypršelo nebo bylo přerušeno: {wait_err}{Colors.ENDC}")
+                                context.storage_state(path=str(SESSION_STATE_PATH))
+                            except Exception:
+                                pass
+                            form_filled = True
+                            return True
                         
                         form_filled = True
                         break
@@ -1595,9 +1575,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
 
 def run_playwright_action(*args, **kwargs):
     try:
+        timeout = kwargs.pop("timeout", 180.0)
         def _worker_wrapper(page, *w_args, **w_kwargs):
             return _run_playwright_action_impl(*w_args, **w_kwargs)
-        return session_manager.run_on_worker(_worker_wrapper, *args, **kwargs)
+        return session_manager.run_on_worker(_worker_wrapper, *args, timeout=timeout, **kwargs)
     except Exception as e:
         print(f"\n{Colors.FAIL}Playwright operace byla přerušena nebo selhala: {e}{Colors.ENDC}")
         try:
@@ -1664,8 +1645,8 @@ def cli_repost_listing(data, user_config):
 
 # --- Hlavní spouštěcí funkce a menu ---
 def main():
-    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Bazoš Automat v3.0.0{Colors.ENDC}")
-    print(f"{Colors.BLUE}Komplexní správa inzerce, historie prodejů a synchronizace na OneDrive TERMS.{Colors.ENDC}\n")
+    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Listing Hub & Bazoš Automat v3.8.7{Colors.ENDC}")
+    print(f"{Colors.BLUE}Komplexní správa inzerce, historie prodejů a synchronizace.{Colors.ENDC}\n")
 
     while True:
         data, user_config = load_data()

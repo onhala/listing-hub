@@ -18,20 +18,68 @@ def extract_subdomain(url: str) -> str:
         return match.group(1)
     return "dum.bazos.cz"
 
-def get_target_domain(title: str, original_url: str = "") -> str:
-    """Určí cílovou subdoménu Bazoše na základě názvu věci nebo původní URL."""
-    if original_url and "nabytek" in original_url:
-        return "nabytek.bazos.cz"
-    # Fallback podle klíčových slov
-    nabytek_keywords = [
+def get_target_domain(title: str, original_url: str = "", category: str = "") -> str:
+    """Určí cílovou subdoménu Bazoše na základě názvu věci, původní URL a kategorie."""
+    url_lower = (original_url or "").lower()
+    title_lower = (title or "").lower()
+    cat_lower = (category or "").lower()
+
+    # 1. Priorita: existující platná subdoména z původní Bazoš URL
+    if original_url:
+        sub = extract_subdomain(original_url)
+        if sub and sub.endswith("bazos.cz") and sub != "www.bazos.cz":
+            return sub
+
+    # 2. Děti / Hračky
+    deti_kw = ["plameňák", "hračk", "kočárek", "postýlka", "dětsk", "odrážedlo", "autosedačka", "plena", "bábov", "panenka"]
+    if "deti" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in deti_kw):
+        return "deti.bazos.cz"
+
+    # 3. Nábytek
+    nabytek_kw = [
         "stůl", "židle", "skříň", "komoda", "postel", "matrace", 
-        "sedačka", "pohovka", "křeslo", "stoly", "židle", "nabytek", 
-        "jídelní", "sedák"
+        "sedačka", "pohovka", "křeslo", "stoly", "jídelní", "sedák", 
+        "skříňka", "polička", "nábytek", "nabytek", "obyvaci", "kuchyn"
     ]
-    title_lower = title.lower()
-    if any(kw in title_lower for kw in nabytek_keywords):
+    if "nabytek" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in nabytek_kw):
         return "nabytek.bazos.cz"
-    return "dum.bazos.cz"
+
+    # 4. Sport
+    sport_kw = ["kolo", "lyže", "snowboard", "fitness", "činky", "stan", "spací pytel", "raketa", "kolečkové korčule", "surfing", "paddleboard"]
+    if "sport" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in sport_kw):
+        return "sport.bazos.cz"
+
+    # 5. Elektro
+    elektro_kw = ["tv", "televize", "telefon", "mobil", "notebook", "počítač", "monitor", "pračka", "lednice", "kávovar", "vysavač", "reproduktor", "sluchátka"]
+    if "elektro" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in elektro_kw):
+        return "elektro.bazos.cz"
+
+    # 6. Motorky (Striktní regex celých slov, aby se zabránilo falešné shodě s 'motor', 'elektromotor'!)
+    moto_pattern = r'\b(moto|motorka|motorky|motocykl|motocykly|skutr|skútr|čtyřkolka|čtyřkolky|moped|enduro|babeta|babetta)\b'
+    if re.search(moto_pattern, cat_lower) or re.search(moto_pattern, title_lower):
+        return "motorky.bazos.cz"
+
+    # 7. Auto
+    auto_kw = ["automobil", "osobní auto", "alu kola", "zimní pneu", "letní pneu", "autodíly"]
+    if cat_lower == "auto" or any(kw in title_lower or kw in cat_lower for kw in auto_kw):
+        return "auto.bazos.cz"
+
+    # 8. Stroje
+    stroje_kw = ["soustruh", "frézka", "vysokozdviž", "traktorbagr", "vzv", "hydraulick"]
+    if "stroje" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in stroje_kw):
+        return "stroje.bazos.cz"
+
+    # 9. Dům a Zahrada (sekačky, drtiče, štěpkovače, nářadí)
+    dum_kw = [
+        "sekač", "sekack", "drtič", "drtic", "štěpkov", "stepkov", "zahrada", "zahradní", 
+        "vrtačka", "vrtack", "pila", "křovinořez", "krovinorez", "nářadí", "naradi", 
+        "baterie", "gril", "bazén", "bazen", "čerpadlo", "cerpadlo", "kotel", "kamna", 
+        "dveře", "dvere", "okna", "malotraktor", "kultivátor", "vyžínač", "strunovka"
+    ]
+    if "dum" in cat_lower or "zahrada" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in dum_kw):
+        return "dum.bazos.cz"
+
+    return "deti.bazos.cz" if ("vodní" in title_lower or "vodní" in cat_lower) else "dum.bazos.cz"
 
 
 def normalize_cz(text: str) -> str:

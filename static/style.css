@@ -11,6 +11,7 @@
     --card-hover-border: rgba(131, 92, 223, 0.3);
     
     --primary: #835cdf;         /* Premium fialová TERMS */
+    --primary-color: var(--primary);
     --primary-glow: rgba(131, 92, 223, 0.35);
     --secondary: #00d2ff;       /* Cyan */
     --accent-blue: #324cf6;     /* Deep blue */

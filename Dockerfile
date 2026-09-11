@@ -9,7 +9,7 @@ FROM python:3.11-slim-bookworm
 # OpenContainers, TrueNAS SCALE & Unraid Metadata Labels
 LABEL org.opencontainers.image.title="Listing Hub & AI Editor" \
       org.opencontainers.image.description="Autonomní správa inzerce pro Bazoš.cz a Aukro.cz s AI Gemini Vision poradcem pro fotky a ceny" \
-      org.opencontainers.image.version="3.6.0" \
+      org.opencontainers.image.version="3.8.7" \
       org.opencontainers.image.authors="Ondřej Hála <ondrej.hala@roboton.com>" \
       org.opencontainers.image.vendor="Ondřej Hála" \
       org.opencontainers.image.url="https://github.com/onhala/listing-hub" \

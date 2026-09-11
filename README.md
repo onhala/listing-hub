@@ -1,4 +1,4 @@
-# 🤖 Listing Hub & AI Editor v3.8.2
+# 🤖 Listing Hub & AI Editor v3.8.7
 
 Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií a automatickou synchronizací do Google Kalendáře.
 
@@ -17,57 +17,72 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
    - **Aktivní inzeráty**: Přehled živých inzerátů z Bazoše se statistikami zhlédnutí a počtem fotek.
    - **Věci k prodeji**: Sekce pro expirované věci, koncepty (drafty) a položky, které se zrovna nenabízí aktivně.
    - **Prodané věci**: Kompletní historie prodejů se statistikou zisků.
-   - **Živý prohlížeč (VNC)**: Integrované okno noVNC přímo v aplikaci pro sledování práce robota na Bazoši a bezpečné jednorázové zadání SMS kódu.
-   - **Nastavení**: Plně grafická konfigurace uživatelského jména, e-mailu, telefonu, města/lokality (Český Krumlov / České Budějovice), výchozího hesla pro inzeráty, vlastního stylu a kontextu prodejce pro AI, možností předání/dopravy, Gemini AI modelu a iCal kalendáře.
+   - **Živý prohlížeč (VNC & Screencast)**: Integrované interaktivní okno přímo v aplikaci pro sledování práce robota na Bazoši a bezpečné jednorázové zadání SMS kódu.
+   - **Nastavení**: Plně grafická konfigurace uživatelského profilu, výchozího hesla pro inzeráty, Gemini AI modelu a iCal kalendáře.
 
-2. **Multi-Source Tržní Cenový Radar (Bazoš + Sbazar + Web + Gemini)**:
+2. **Dvoufázové neblokující vystavování (Two-Phase Posting) & Playwright 30s Timeout**:
+   - **Fáze 1 (Automatické předvyplnění)**: Robot Playwright na pozadí otevře správnou sekci Bazoše, vyplní veškeré texty, kontaktní údaje, heslo (`heslobazar`), podkategorii a nahraje fotografie. Ihned poté uvolní proces a v aplikaci aktivuje **Revizní banner**.
+   - **Fáze 2 (Kontrola a potvrzení)**: Uživatel v živém prohlížeči inzerát zkontroluje, klikne na Bazoši na *Odeslat* a v Listing Hubu stiskne tlačítko **Potvrdit odeslání** (`POST /api/action/confirm`). Systém ověří publikování, získá trvalou URL inzerátu a atomicky jej v DB přepne mezi aktivní.
+   - **Optimalizovaný timeout**: Výchozí timeout Playwright operací je sjednocen na 30 sekund s průběžným odbavováním událostí na dedikovaném worker vlákně.
+
+3. **Předvýběr rubriky & prevence reloadu (Bazoš Subdomains)**:
+   - **Rubrika Confirmation Modal**: Před vystavením nebo znovuvystavením inzerátu systém nabídne potvrzení cílové subdomény (`dum.bazos.cz`, `pc.bazos.cz`, `nabytek.bazos.cz`, `elektro.bazos.cz`, `stroje.bazos.cz` apod.).
+   - **Inteligentní heuristika**: Algoritmus automaticky předvybere subdoménu podle klíčových slov a synonym v titulku a kategorii (s ochranou proti falešným shodám, např. motorky vs. elektromotor).
+   - **Ochrana před smazáním formuláře**: Změna rubriky na Bazoši vyvolává reload celé stránky, který maže předvyplněná pole. Směrováním bota přímo na cílovou subdoménu je toto riziko 100% eliminováno.
+
+4. **Bezpečné mazání inzerátů s Choice Cards & úklidem fotografií**:
+   - **Volba rozsahu smazání**: U publikovaných inzerátů si uživatel v modalu vybere mezi *Smazat pouze z databáze* a *Smazat z Bazoše i databáze* (s automatickým vyplněním hesla pro výmaz na Bazoši).
+   - **Úklid disku**: Volitelný checkbox *Smazat také lokální složku s fotkami* (`delete_photos: true`) spolehlivě uvolní místo na disku.
+   - **Bezpečnostní pojistka**: Mazání složek probíhá přes `safe_delete_photos_dir()` s kontrolou relativních cest a striktní ochranou proti Path Traversal.
+
+5. **Multi-Source Tržní Cenový Radar (Bazoš + Sbazar + Web + Gemini)**:
    - **Komplexní přehled trhu**: Automatické prohledávání Bazoš.cz, veřejného API Sbazar.cz a webu pro zjištění reálných tržních cen z druhé ruky.
-   - **Vyloučení vlastního inzerátu**: Cenový poradce chytře vyřazuje ze srovnání tvůj vlastní inzerát, aby nedocházelo k falešnému samohodnocení.
-   - **Tři cenové úrovně**: Okamžitý výpočet hladin *Rychlý prodej (-10 %)*, *Férová mediánová cena* a *Prémiový stav (+10 %)*.
+   - **Vyloučení vlastního inzerátu**: Cenový poradce chytře vyřazuje ze srovnání tvůj vlastní inzerát.
+   - **Tři cenové úrovně**: Výpočet hladin *Rychlý prodej (-10 %)*, *Férová mediánová cena* a *Prémiový stav (+10 %)*.
    - **Inteligentní AI odhad**: Pokud na inzertních serverech chybí nabídky, Gemini AI doplní tržní ocenění nového i použitého kusu.
    - **Tlačítko „Přepočítat trh“**: V průvodci novým inzerátem lze kdykoliv po úpravě titulku jedním kliknutím bleskově ověřit aktuální ceny konkurence.
 
-3. **Čisté inženýrské popisy pro Bazoš (Clean Plaintext Standard)**:
-   - **Striktní eliminace hvězdiček**: Popisy generované AI neobsahují žádné nepodporované markdown hvězdičky (`*`, `**`), které Bazoš zobrazuje surově a nehezky.
-   - **Přehledná struktura**: Odrážky s pomlčkou (`- `) a jasně oddělené sekce velkými písmeny bez formátování (`PARAMETRY:`, `STAV:`, `PŘÍSLUŠENSTVÍ:`).
+6. **Čisté inženýrské popisy pro Bazoš (Clean Plaintext Standard)**:
+   - **Striktní eliminace hvězdiček**: Popisy generované AI neobsahují žádné nepodporované markdown hvězdičky (`*`, `**`).
+   - **Přehledná struktura**: Odrážky s pomlčkou (`- `) a sekce oddělené velkými písmeny (`PARAMETRY:`, `STAV:`, `PŘÍSLUŠENSTVÍ:`).
    - **Plně nastavitelný kontext prodejce & dopravy**: V Nastavení lze kdykoliv upravit styl prodejce (inženýrský, férový, bez slopu) i šablonu osobního předání a odeslání přes Zásilkovnu/Balíkovnu (výchozí: Český Krumlov / České Budějovice).
 
-4. **Google Kalendář & iCal Synchronizace (RFC 5545 Webcal)**:
-   - **Automatický odběr termínů vypršení**: Přímý Webcal/iCal feed zabezpečený privátním tokenem (`/api/calendar/feed.ics?token=...`).
-   - **60denní cyklus Bazoše**: Celodenní událost v den expirace s notifikacemi 3 dny předem a v den expirace.
-   - **Přímé prolinkování**: Každá událost obsahuje přímý odkaz na Bazoš i lokální Listing Hub pro okamžité obnovení či editaci.
-   - **Archiv prodejů**: Prodané věci zůstávají v kalendáři jako vizuální archiv (`✅ PRODÁNO: ...`).
-
-5. **AI Bokeh & SPZ Editor fotografií (`rembg` + Pillow)**:
+7. **AI Bokeh & SPZ Editor fotografií (`rembg` + Pillow)**:
    - **Profesionální Bokeh efekt**: Automatická detekce popředí předmětu a plynulé rozostření pozadí s přirozeným gradientem podlahy (Jemné / Střední / Silné).
    - **Zamazání citlivých údajů**: Interaktivní nástroj pro tažení myší přes SPZ automobilů, sériová čísla či obličeje.
    - **Porovnání s originálem & Přímý zápis**: Tlačítko pro okamžité srovnání s původním snímkem a uložení přímo do složky inzerátu nebo průvodce.
 
-6. **AI Vision-First tvorba inzerátu ("Drop & Sell")**:
+8. **AI Vision-First tvorba inzerátu ("Drop & Sell")**:
    - **Blesková analýza z fotek**: Přetáhněte fotky (drag & drop), vyberte ze souborů nebo vložte přímo ze schránky (`Cmd+V`).
    - Multimodální model **Gemini 2.5 Flash** z fotek rozpozná značku, přesný model, vizuální stav, příslušenství a klíčové parametry.
    - **Varianty nadpisů s vysokým CTR**: AI navrhne 3–5 úderných variant nadpisů s garantovanou délkou do 50 znaků. Výběr jedním kliknutím.
    - **Výběr hlavní fotky**: AI doporučí nejlepší fotku na úvod inzerátu (označení hvězdičkou), kterou Playwright nahraje jako první.
 
-7. **Automatický refresh na pozadí (Background Worker)**:
-   - Daemon vlákno periodicky aktualizuje stavy, platnost a zhlédnutí inzerátů z Bazoše.
-   - **SMS Guard**: Pokud Bazoš při refreshu vyžaduje SMS, proces se čistě zastaví, stav se přepne na `"needs_sms"` a v UI vyskočí červený varovný banner. Další SMS na pozadí se neodesílají, dokud uživatel neprovede ruční přihlášení.
-   - **Timing**: Interval auto-refreshu je plně nastavitelný přímo v Nastavení (od 15 minut do 24 hodin).
-   - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
+9. **Google Kalendář & iCal Synchronizace (RFC 5545 Webcal)**:
+   - **Automatický odběr termínů vypršení**: Přímý Webcal/iCal feed zabezpečený privátním tokenem (`/api/calendar/feed.ics?token=...`).
+   - **60denní cyklus Bazoše**: Celodenní událost v den expirace s notifikacemi 3 dny předem a v den expirace.
+   - **Přímé prolinkování**: Každá událost obsahuje přímý odkaz na Bazoš i lokální Listing Hub pro okamžité obnovení či editaci.
+   - **Archiv prodejů**: Prodané věci zůstávají v kalendáři jako vizuální archiv (`✅ PRODÁNO: ...`).
 
-8. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
-   - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.2 • [hash]`).
-   - Nenásilný plovoucí toast s možností odložení do `localStorage` (žádné rušivé celoobrazovkové bannery).
-   - Dialog srovnání nainstalované verze a hashe proti GitHubu s přímým odkazem na diff změn a 1-click upgradem na TrueNAS.
+10. **Automatický refresh na pozadí (Background Worker & SMS Guard)**:
+    - Daemon vlákno periodicky aktualizuje stavy, platnost a zhlédnutí inzerátů z Bazoše.
+    - **SMS Guard**: Pokud Bazoš při refreshu vyžaduje SMS, proces se čistě zastaví, stav se přepne na `"needs_sms"` a v UI vyskočí červený varovný banner. Další SMS na pozadí se neodesílají, dokud uživatel neprovede ruční přihlášení.
+    - **Timing**: Interval auto-refreshu je plně nastavitelný přímo v Nastavení (od 15 minut do 24 hodin).
+    - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
 
-5. **Správa a vyloučení fotografií**:
-   - V detailu inzerátu se zobrazují Base64 náhledy všech fotek z lokální složky.
-   - Kliknutím na fotku ji lze označit jako vyloučenou – Playwright ji při vystavování přeskočí.
-   - Karta inzerátu zobrazuje stav např. `📷 4/5 fotek`.
+11. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
+    - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.7 • [hash]`).
+    - Nenásilný plovoucí toast s možností odložení do `localStorage` (žádné rušivé celoobrazovkové bannery).
+    - Dialog srovnání nainstalované verze a hashe proti GitHubu s přímým odkazem na diff změn a 1-click upgradem na TrueNAS.
 
-6. **Čítače a ochrana nadpisů (Limit 50 znaků)**:
-   - Real-time čítače s varovným barevným tónem (žlutá/červená) u políček nadpisů.
-   - Automatická backend sanitace zkracuje nadpisy na max 50 znaků k zamezení ořezání na straně Bazoše.
+12. **Správa a vyloučení fotografií**:
+    - V detailu inzerátu se zobrazují Base64 náhledy všech fotek z lokální složky.
+    - Kliknutím na fotku ji lze označit jako vyloučenou – Playwright ji při vystavování přeskočí.
+    - Karta inzerátu zobrazuje stav např. `📷 4/5 fotek`.
+
+13. **Čítače a ochrana nadpisů (Limit 50 znaků)**:
+    - Real-time čítače s varovným barevným tónem (žlutá/červená) u políček nadpisů.
+    - Automatická backend sanitace zkracuje nadpisy na max 50 znaků k zamezení ořezání na straně Bazoše.
 
 ---
 

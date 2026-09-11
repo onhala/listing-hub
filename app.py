@@ -33,6 +33,91 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 playwright_process = None
 
 from datetime import datetime
+import shutil
+
+class ActionStateManager:
+    IDLE = "idle"
+    RUNNING = "running"
+    READY_FOR_REVIEW = "ready_for_review"
+    COMPLETED = "completed"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self.state = self.IDLE
+        self.action_type = None
+        self.listing_id = None
+        self.ad_data = None
+        self.error_message = None
+
+    def start_action(self, action_type, listing_id=None, ad_data=None):
+        with self._lock:
+            self.state = self.RUNNING
+            self.action_type = action_type
+            self.listing_id = listing_id
+            self.ad_data = ad_data
+            self.error_message = None
+
+    def set_ready_for_review(self):
+        with self._lock:
+            self.state = self.READY_FOR_REVIEW
+
+    def set_completed(self):
+        with self._lock:
+            self.state = self.COMPLETED
+
+    def set_error(self, message):
+        with self._lock:
+            self.state = self.ERROR
+            self.error_message = message
+
+    def set_cancelled(self):
+        with self._lock:
+            self.state = self.CANCELLED
+
+    def reset(self):
+        with self._lock:
+            self.state = self.IDLE
+            self.action_type = None
+            self.listing_id = None
+            self.ad_data = None
+            self.error_message = None
+
+    def get_status(self):
+        with self._lock:
+            return {
+                "state": self.state,
+                "action_type": self.action_type,
+                "listing_id": self.listing_id,
+                "error": self.error_message
+            }
+
+action_state_mgr = ActionStateManager()
+
+def safe_delete_photos_dir(raw_photos_dir):
+    """Safely delete directory of photos within PHOTOS_DIR, preventing path traversal."""
+    if not raw_photos_dir:
+        return False
+    try:
+        photos_base = Path(PHOTOS_DIR).resolve()
+        target = Path(raw_photos_dir)
+        if not target.is_absolute():
+            target = (photos_base / target).resolve()
+        else:
+            target = target.resolve()
+        
+        if target == photos_base or not target.is_relative_to(photos_base):
+            log_debug(f"Security: Refusing to delete path outside PHOTOS_DIR: {target}")
+            return False
+            
+        if target.exists() and target.is_dir():
+            shutil.rmtree(target)
+            log_debug(f"Photos directory safely removed: {target}")
+            return True
+    except Exception as e:
+        log_debug(f"Error removing photos dir {raw_photos_dir}: {e}")
+    return False
 
 def log_debug(msg):
     try:
@@ -43,6 +128,8 @@ def log_debug(msg):
 
 def process_target(ad, user_config, action_type, extra_val):
     log_debug("1. Background thread started")
+    ad_id = (ad.get("id") or ad.get("local_photos_dir")) if ad else None
+    action_state_mgr.start_action(action_type, listing_id=ad_id, ad_data=ad)
     
     # Monkey-patch save_listings to avoid race conditions/overwriting
     import post_to_bazos
@@ -136,11 +223,25 @@ def process_target(ad, user_config, action_type, extra_val):
             log_debug("4. Calling run_playwright_action")
             success = run_playwright_action(ad, user_config, action=action_type, extra_val=extra_val, is_web=True)
             log_debug(f"5. Done run_playwright_action, success={success}")
-            if not success:
+            if success:
+                if action_type == "post":
+                    action_state_mgr.set_ready_for_review()
+                elif action_type == "delete":
+                    if ad and ad.get("id"):
+                        try:
+                            db.delete_listing(ad["id"])
+                        except Exception as del_err:
+                            log_debug(f"Error cascading db delete: {del_err}")
+                    action_state_mgr.set_completed()
+                else:
+                    action_state_mgr.set_completed()
+            else:
+                action_state_mgr.set_error("Akce byla stornována nebo selhala.")
                 with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
                     f.write("Akce byla stornována nebo selhala.")
     except Exception as e:
         log_debug(f"ERR: {e}")
+        action_state_mgr.set_error(str(e))
         with open("/tmp/playwright_error.txt", "w", encoding="utf-8") as f:
             f.write(str(e))
     finally:
@@ -195,7 +296,7 @@ def screencast_input():
         try:
             session_manager.get_session()
             if session_manager.page:
-                session_manager.page.goto("https://www.bazos.cz/moje-inzeraty.php")
+                session_manager.run_on_worker(lambda p, *_: p.goto("https://www.bazos.cz/moje-inzeraty.php"))
         except Exception as e:
             return jsonify({"status": "error", "message": f"Cannot initialize browser session: {e}"}), 500
         
@@ -761,7 +862,7 @@ def delete_photo():
         data = request.json or {}
         raw_dir = data.get("photos_dir", "").strip()
         photos_dir = resolve_photos_dir(raw_dir)
-        filename = data.get("filename", "").strip()
+        filename = os.path.basename(data.get("filename", "").strip())
         if not photos_dir or not filename:
             return jsonify({"status": "error", "message": "Chybí složka nebo název fotky."}), 400
             
@@ -779,7 +880,7 @@ def rotate_photo():
         data = request.json or {}
         raw_dir = data.get("photos_dir", "").strip()
         photos_dir = resolve_photos_dir(raw_dir)
-        filename = data.get("filename", "").strip()
+        filename = os.path.basename(data.get("filename", "").strip())
         angle = int(data.get("angle", 90))
         if not photos_dir or not filename:
             return jsonify({"status": "error", "message": "Chybí složka nebo název fotky."}), 400
@@ -880,7 +981,8 @@ def api_photo_edit_save():
     try:
         payload = request.get_json(silent=True) or {}
         operations = payload.get("operations", [])
-        filename = payload.get("filename", "")
+        raw_fn = payload.get("filename", "").strip()
+        filename = os.path.basename(raw_fn)
         raw_photos_dir = payload.get("photos_dir", "")
         listing_id = payload.get("listing_id", "")
         raw_b64 = payload.get("image_b64", "")
@@ -893,6 +995,9 @@ def api_photo_edit_save():
                 raw_photos_dir = row["local_photos_dir"]
 
         photos_dir = resolve_photos_dir(raw_photos_dir)
+        if not filename or not photos_dir:
+            return jsonify({"status": "error", "message": "Chybí složka nebo název souboru."}), 400
+
         photo_path = Path(photos_dir) / filename
 
         if raw_b64:
@@ -1201,12 +1306,27 @@ def add_listing_endpoint():
 
 @app.route("/api/listings/delete", methods=["POST", "DELETE"])
 def delete_listing_endpoint():
-    """Endpoint pro kompletní smazání inzerátu z databázi."""
+    """Endpoint pro kompletní smazání inzerátu z databáze a volitelně i lokálních fotek."""
     try:
         data = request.json or {}
         listing_id = data.get("id")
+        delete_photos = data.get("delete_photos", False)
         if not listing_id:
             return jsonify({"status": "error", "message": "Chybí ID inzerátu"}), 400
+        
+        # Načteme inzerát z DB pro zjištění složky s fotkami
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            # Zkusíme najít podle local_photos_dir
+            for item in db.get_all_listings():
+                if item.get("local_photos_dir") == listing_id:
+                    listing = item
+                    listing_id = item.get("id")
+                    break
+
+        if delete_photos and listing and listing.get("local_photos_dir"):
+            safe_delete_photos_dir(listing["local_photos_dir"])
+
         db.delete_listing(listing_id)
         return jsonify({"status": "success", "message": "Inzerát úspěšně smazán."})
     except Exception as e:
@@ -1228,6 +1348,7 @@ def run_action(action_type):
 
         payload = request.json or {}
         ad_id = payload.get("local_photos_dir") or payload.get("id")
+        target_domain = payload.get("target_domain")
         
         listings_data, user_config = load_data()
         
@@ -1246,6 +1367,9 @@ def run_action(action_type):
             if not selected_ad:
                 return jsonify({"status": "error", "message": f"Inzerát '{ad_id}' nebyl nalezen."}), 404
                 
+        if selected_ad and target_domain:
+            selected_ad["target_domain"] = target_domain
+
         # Pro ostatní akce (post, edit_price, delete)
         extra_val = payload.get("extra_val") # např. nová cena
         
@@ -1265,24 +1389,110 @@ def run_action(action_type):
 @app.route("/api/action/status", methods=["GET"])
 def action_status():
     global playwright_process
+    status_info = action_state_mgr.get_status()
     running = False
-    error = None
+    error = status_info.get("error")
     
-    if playwright_process:
-        if playwright_process.is_alive():
-            running = True
-        else:
-            if os.path.exists("/tmp/playwright_error.txt"):
-                try:
-                    with open("/tmp/playwright_error.txt", "r", encoding="utf-8") as f:
-                        error = f.read().strip()
-                except Exception:
-                    pass
+    if playwright_process and playwright_process.is_alive():
+        running = True
+    elif status_info.get("state") == ActionStateManager.RUNNING:
+        # Vlákno možná skončilo neočekávaně
+        running = False
+    
+    if not error and os.path.exists("/tmp/playwright_error.txt"):
+        try:
+            with open("/tmp/playwright_error.txt", "r", encoding="utf-8") as f:
+                error = f.read().strip()
+        except Exception:
+            pass
                     
     return jsonify({
         "running": running,
+        "state": status_info.get("state"),
+        "action_type": status_info.get("action_type"),
+        "listing_id": status_info.get("listing_id"),
         "error": error
     })
+
+@app.route("/api/action/confirm", methods=["POST"])
+def confirm_action():
+    """Potvrzení odeslání inzerátu uživatelem z webu: ověří úspěch na Bazoši a uloží URL do DB."""
+    try:
+        def _check_page_submitted(page, *args):
+            if not page or page.is_closed():
+                return {"submitted": False, "error": "Prohlížeč není otevřen."}
+            
+            cur_url = page.url or ""
+            # Bazoš po odeslání zůstává na /pridat-inzerat.php s potvrzovacím textem nebo přesměruje na /inzerat/<id>/
+            # Hledáme odkaz na nově vytvořený inzerát
+            ad_link_loc = page.locator("a[href*='/inzerat/']")
+            new_ad_url = ""
+            if ad_link_loc.count() > 0:
+                try:
+                    first_link = ad_link_loc.first
+                    href = first_link.get_attribute("href") or ""
+                    if href:
+                        if href.startswith("http"):
+                            new_ad_url = href
+                        else:
+                            # relativní URL např. /inzerat/12345/nadpis.php
+                            from urllib.parse import urlparse
+                            parsed = urlparse(cur_url)
+                            new_ad_url = f"{parsed.scheme}://{parsed.netloc}{href}"
+                except Exception:
+                    pass
+
+            if "/inzerat/" in cur_url:
+                new_ad_url = cur_url
+
+            still_on_form = ("pridat-inzerat.php" in cur_url and 
+                             page.locator("input[name='nadpis']").count() > 0 and 
+                             page.locator("input[name='nadpis']").first.is_visible())
+
+            return {
+                "submitted": bool(new_ad_url) or not still_on_form,
+                "new_url": new_ad_url,
+                "current_url": cur_url,
+                "still_on_form": still_on_form
+            }
+
+        inspect_res = session_manager.run_on_worker(_check_page_submitted, timeout=10.0)
+        
+        if inspect_res.get("still_on_form"):
+            return jsonify({
+                "status": "error", 
+                "message": "Inzerát ještě nebyl odeslán na Bazoši. Zkontrolujte formulář a klikněte v prohlížeči na 'Odeslat'."
+            }), 422
+
+        new_url = inspect_res.get("new_url")
+        status_info = action_state_mgr.get_status()
+        listing_id = status_info.get("listing_id")
+        
+        if listing_id:
+            listing = db.get_listing_by_id(listing_id)
+            if listing:
+                listing_data = dict(listing)
+                portal_states = {
+                    "bazos": {
+                        "portal_item_id": re.search(r'/inzerat/(\d+)/', new_url).group(1) if new_url and re.search(r'/inzerat/(\d+)/', new_url) else None,
+                        "url": new_url or listing.get("url", ""),
+                        "status": "Aktivní",
+                        "views": 0,
+                        "last_synced": datetime.now().isoformat()
+                    }
+                }
+                listing_data["created_at"] = datetime.today().strftime('%Y-%m-%d')
+                db.save_listing(listing_data, portal_states)
+
+        action_state_mgr.set_completed()
+        return jsonify({
+            "status": "success", 
+            "message": "Inzerát byl úspěšně potvrzen a uložen do databáze jako aktivní!",
+            "url": new_url
+        })
+    except Exception as e:
+        log_debug(f"CONFIRM ERR: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/action/cancel", methods=["POST"])
 def cancel_action():
@@ -1297,6 +1507,7 @@ def cancel_action():
         except Exception as sm_e:
             log_debug(f"CANCEL: session_manager.cancel_current_action error: {sm_e}")
 
+        action_state_mgr.set_cancelled()
         playwright_process = None
         return jsonify({"status": "success", "message": "Operace byla přerušena."})
     except Exception as e:
@@ -1650,6 +1861,9 @@ def api_repost_with_new_price():
         if not listing_id or new_price is None:
             return jsonify({"status": "error", "message": "Chybí listing_id nebo new_price."}), 400
 
+        listings_data, user_config = load_data()
+        target_domain = payload.get("target_domain")
+
         # 1. Aktualizujeme cenu v SQLite databázi
         from listing_hub.core.db import get_db_connection, save_listing
         conn = get_db_connection()
@@ -1680,7 +1894,8 @@ def api_repost_with_new_price():
             "price": listing_data["price"],
             "local_photos_dir": listing_data["local_photos_dir"],
             "url": portal_states.get("bazos", {}).get("url", ""),
-            "ad_password_b64": listing_data["ad_password_b64"]
+            "ad_password_b64": listing_data["ad_password_b64"],
+            "target_domain": target_domain
         }
 
         playwright_process = threading.Thread(

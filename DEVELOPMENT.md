@@ -35,15 +35,20 @@ Listing Hub je postaven na modulární vrstvené architektuře v Pythonu (Flask)
 1. **`listing_hub.core`**:
    - **`db.py`**: SQLite databázová vrstva (`listings.db`). Ukládá inzeráty s dynamickým JSON sloupcem `portal_states`, což umožňuje flexibilní evidenci stavu na Bazoši (URL, zhlédnutí, datum) i budoucí integraci Aukra.
    - **`config.py`**: Správa perzistentní konfigurace (`config/config.json`), base64 hesla a automatická verifikace/oprava přístupových práv svazků pro TrueNAS ZFS.
-   - **`version.py`**: Robustní správa verzí s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
+   - **`version.py`**: Správa verzí (v3.8.7) s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
+   - **Bezpečnost souborového systému**: Funkce `safe_delete_photos_dir()` v `app.py` ověřuje absolutní cesty vůči `PHOTOS_DIR` pomocí `target.is_relative_to(photos_base)` a blokuje jakékoliv pokusy o Directory/Path Traversal útoky (`../`).
 
 2. **`listing_hub.ai`**:
    - **`vision.py`**: Multimodální analýza fotografií pomocí modelu `gemini-2.5-flash`. Provádí automatické EXIF otočení a kompresi obrázků na max 1280 px (odezva do 2 s). Extrahuje parametry, navrhuje 3–5 úderných variant nadpisů do 50 znaků a vybírá nejlepší titulní fotografii. Propojeno s cenovým radarem z Bazoše.
-   - **`gemini.py`**: Jazykový model pro dodatečné úpravy a přepisy textů popisu či nadpisu existujících inzerátů.
-   - **`advisor.py`**: Cenový poradce a scraper tržních cen z Bazoše. Počítá tržní medián, rychlý prodej (-10 %) a prémiovou hladinu (+10 %).
+   - **`gemini.py`**: Jazykový model pro dodatečné úpravy a přepisy textů popisu či nadpisu existujících inzerátů (čistý text bez markdown formátování).
+   - **`advisor.py`**: Cenový poradce a scraper tržních cen z Bazoše a Sbazaru. Počítá tržní medián, rychlý prodej (-10 %) a prémiovou hladinu (+10 %).
 
 3. **`listing_hub.portals`**:
-   - **`bazos/`**: Session manager pro Playwright, scraping aktivních inzerátů z HTML účtu Bazoše, vystavování, prodlužování platnosti a mazání inzerátů.
+   - **`bazos/session.py`**: Správce relace Playwright běžící na dedikovaném worker vlákně. Obsahuje CDP Screencast streamování obrazu, frontu uživatelských vstupů a sjednocený timeout 30 sekund (`context.set_default_timeout(30000)` a `run_on_worker(timeout=30.0)`).
+   - **`bazos/categories.py`**: Deterministická rezoluce cílové subdomény Bazoše (`get_target_domain`), extrakce subdomény a ID z existujících URL (`extract_subdomain`, `extract_ad_id`), normalizace češtiny s odstraněním diakritiky (`normalize_cz`) a synonymická mapa podkategorií.
+   - **Dvoufázové vystavování inzerátů (Two-Phase Posting Lifecycle)**:
+     - **Fáze 1 (Předvyplnění formuláře)**: Worker provede navigaci na `https://{target_domain}/pridat-inzerat.php`, vyplní nadpis, popis, cenu, osobní údaje, heslo (`heslobazar`), zvolí podkategorii a nahraje fotky. Při volání z webu (`is_web=True`) worker po nahrání fotek neblokuje proces čekáním, uloží `SESSION_STATE_PATH` a vrací řízení frontendu.
+     - **Fáze 2 (Uživatelská revize & Potvrzení)**: Uživatel v živém prohlížeči inzerát zkontroluje, klikne na *Odeslat* a následně v rozhraní Listing Hubu potvrdí akci přes `POST /api/action/confirm`. Backend ověří přesměrování / opuštění formuláře, extrahuje nové URL a zapíše inzerát jako aktivní do SQLite databáze.
    - **`aukro/`**: Modulární rozhraní pro budoucí aukční vystavování.
 
 ---
@@ -112,12 +117,12 @@ pytest
 pytest -v --tb=short
 
 # Spuštění specifických sad:
-pytest tests/unit/test_vision.py    # Testy AI Vision a práce s fotkami
-pytest tests/unit/test_version.py   # Testy detekce verzí, GitHub cache a diff linku
-pytest tests/unit/test_app.py       # Testy REST API endpointů a TrueNAS upgradu
-pytest tests/unit/test_config.py    # Testy perzistence nastavení
-pytest tests/unit/test_advisor.py   # Testy cenového poradce a výpočtu mediánu
-pytest tests/unit/test_db.py        # Testy CRUD operací SQLite databáze
+pytest tests/unit/test_categories.py # Testy rezoluce subdomén Bazoše, synonym a normalizace CZ
+pytest tests/unit/test_app.py        # Testy REST API (včetně /api/action/confirm, delete a safe_delete_photos_dir)
+pytest tests/unit/test_vision.py     # Testy AI Vision a práce s fotkami
+pytest tests/unit/test_version.py    # Testy detekce verzí (v3.8.7), GitHub cache a diff linku
+pytest tests/unit/test_advisor.py    # Testy cenového poradce a výpočtu mediánu
+pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
 ```
 
 ---
@@ -131,8 +136,23 @@ pytest tests/unit/test_db.py        # Testy CRUD operací SQLite databáze
   - Uloží změny v inzerátu (automaticky zkracuje `title` na max 50 znaků).
 - `POST /api/listings/create-with-photos` *(Multipart form-data)*
   - Atomicky založí inzerát v DB, uloží nahrané fotky a nastaví označenou titulní fotku jako `foto_1.jpg`.
-- `POST /api/listings/delete/<listing_id>`
-  - Smaže inzerát z lokální evidence (případně odešle povel k výmazu na portál).
+- `POST /api/listings/delete` *(podporuje také metodu `DELETE`, JSON payload: `{"id": "<listing_id>", "delete_photos": true|false}`)*
+  - Odstraní inzerát z databáze SQLite. Pokud je `delete_photos: true`, bezpečně smaže odpovídající lokální složku fotografií s validací proti Path Traversal přes `safe_delete_photos_dir()`.
+
+### Automatizace & Browser akce (Playwright):
+- `POST /api/action/<action_type>` *(kde `<action_type>` je `post`, `edit_price` nebo `delete`, JSON payload: `{"id": "<listing_id>", "target_domain": "dum.bazos.cz", "extra_val": ...}`)*
+  - Spustí neblokující úlohu na pozadí na dedikovaném worker vlákně.
+  - Parametr `target_domain` explicitně určuje cílovou subdoménu Bazoše a předchází nechtěnému reloadu stránky.
+- `GET /api/action/status`
+  - Vrací aktuální stav workeru: `{"running": bool, "state": "IDLE|RUNNING|READY_FOR_REVIEW|COMPLETED|CANCELLED", "action_type": str, "listing_id": str, "error": str}`.
+- `POST /api/action/confirm`
+  - Dokončení 2. fáze vystavení: worker zkontroluje stav stránky na Bazoši (`_check_page_submitted`).
+  - Pokud je uživatel stále na formuláři `pridat-inzerat.php`, vrátí `HTTP 422 Unprocessable Entity`.
+  - Pokud byl inzerát odeslán, extrahuje novou URL adresu (`/inzerat/<id>/...`), aktualizuje stav inzerátu v DB na `Aktivní`, nastaví `created_at` a označí akci za dokončenou.
+- `POST /api/action/cancel`
+  - Okamžitě přeruší běžící worker vlákno, resetuje stav akce a zavře relaci prohlížeče.
+- `POST /api/action/repost_with_new_price` *(JSON payload: `{"listing_id": "...", "new_price": 1500, "target_domain": "..."}`)*
+  - Přenastaví cenu v DB a automaticky spustí znovuvystavení inzerátu (topování) na pozadí.
 
 ### AI Analýza, Gemini & Tržní Radar:
 - `POST /api/ai/analyze-photos` *(Multipart form-data)*

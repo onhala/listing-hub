@@ -8,6 +8,7 @@ DB_PATH = DATA_DIR / "listings.db"
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -151,13 +152,31 @@ def get_all_listings():
     conn.close()
     return result
 
-def delete_listing(listing_id):
-    """Smaže inzerát a jeho kaskádované stavy z databáze."""
+def get_listing_by_id(listing_id: str):
+    """Vrátí jeden inzerát podle ID včetně stavů portálů nebo None."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM listings WHERE id = ?", (listing_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+    listing = dict(row)
+    cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (listing_id,))
+    states_rows = cursor.fetchall()
+    listing["portal_states"] = {state["portal_name"]: dict(state) for state in states_rows}
+    conn.close()
+    return listing
+
+def delete_listing(listing_id: str) -> bool:
+    """Smaže inzerát a jeho navázané stavy z databáze v atomické transakci."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM listings WHERE id = ?", (listing_id,))
-        conn.commit()
+        with conn:
+            cursor.execute("DELETE FROM portal_states WHERE listing_id = ?", (listing_id,))
+            cur = cursor.execute("DELETE FROM listings WHERE id = ?", (listing_id,))
+            return cur.rowcount > 0
     except Exception as e:
         conn.rollback()
         raise e
