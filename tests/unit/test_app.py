@@ -696,4 +696,43 @@ def test_api_sold_stats_error_handling(client):
         assert "DB query failed" in data["message"]
 
 
+def test_api_get_bazos_rubriky_endpoint(client):
+    res = client.get("/api/bazos/rubriky")
+    assert res.status_code == 200
+    data = json.loads(res.data)
+    assert data["status"] == "success"
+    assert len(data["rubriky"]) == 20
+    domains = [r["domain"] for r in data["rubriky"]]
+    assert "deti.bazos.cz" in domains
+    assert "dum.bazos.cz" in domains
+
+
+def test_api_suggest_rubrika_endpoint(client):
+    # 1. Payload with title
+    res = client.post("/api/ai/suggest-rubrika", json={
+        "title": "XXL Plameňák ostrov pro 5 osob",
+        "description": "Nafukovací ostrov plameňák do vody"
+    })
+    assert res.status_code == 200
+    data = json.loads(res.data)
+    assert data["status"] == "success"
+    assert data["top_domain"] == "deti.bazos.cz"
+    assert len(data["recommended"]) >= 1
+
+    # 2. Payload with listing_id
+    mock_ad = {
+        "id": "sekacka-100",
+        "title": "Elektrická sekačka AL-KO",
+        "description": "Lehká sekačka na trávu",
+        "category": "dum.bazos.cz"
+    }
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=mock_ad):
+        res2 = client.post("/api/ai/suggest-rubrika", json={"listing_id": "sekacka-100"})
+        assert res2.status_code == 200
+        data2 = json.loads(res2.data)
+        assert data2["status"] == "success"
+        assert data2["top_domain"] == "dum.bazos.cz"
+
+
+
 

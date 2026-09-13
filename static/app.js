@@ -1205,6 +1205,170 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // --- KOMPLETNÍ SEZNAM VŠECH 20 RUBRIK BAZOŠE S AI DOPORUČENÍM ---
+    const BAZOS_ALL_RUBRIKY = [
+        { domain: "deti.bazos.cz", label: "Děti a hračky", icon: "fa-child" },
+        { domain: "dum.bazos.cz", label: "Dům a zahrada", icon: "fa-house-chimney-window" },
+        { domain: "nabytek.bazos.cz", label: "Nábytek", icon: "fa-couch" },
+        { domain: "elektro.bazos.cz", label: "Elektro a spotřebiče", icon: "fa-bolt" },
+        { domain: "sport.bazos.cz", label: "Sport a outdoor", icon: "fa-person-running" },
+        { domain: "auto.bazos.cz", label: "Auto", icon: "fa-car" },
+        { domain: "motorky.bazos.cz", label: "Motorky a čtyřkolky", icon: "fa-motorcycle" },
+        { domain: "stroje.bazos.cz", label: "Stroje a dílna", icon: "fa-gears" },
+        { domain: "pc.bazos.cz", label: "PC a počítače", icon: "fa-laptop" },
+        { domain: "mobil.bazos.cz", label: "Mobily a chytré hodinky", icon: "fa-mobile-screen" },
+        { domain: "foto.bazos.cz", label: "Foto a kamery", icon: "fa-camera" },
+        { domain: "hudba.bazos.cz", label: "Hudba a nástroje", icon: "fa-guitar" },
+        { domain: "obleceni.bazos.cz", label: "Oblečení a obuv", icon: "fa-shirt" },
+        { domain: "knihy.bazos.cz", label: "Knihy a časopisy", icon: "fa-book" },
+        { domain: "zvirata.bazos.cz", label: "Zvířata a chovatelství", icon: "fa-paw" },
+        { domain: "vstupenky.bazos.cz", label: "Vstupenky a lístky", icon: "fa-ticket" },
+        { domain: "reality.bazos.cz", label: "Reality a nemovitosti", icon: "fa-building" },
+        { domain: "prace.bazos.cz", label: "Práce a brigády", icon: "fa-briefcase" },
+        { domain: "sluzby.bazos.cz", label: "Služby a řemesla", icon: "fa-handshake" },
+        { domain: "ostatni.bazos.cz", label: "Ostatní", icon: "fa-box-archive" }
+    ];
+
+    const BAZOS_DOMAIN_KEYWORDS = {
+        "deti.bazos.cz": ["plamenak", "hrack", "kocarek", "postylk", "detsk", "odrazedlo", "autosedack", "plen", "babov", "panenk", "lego", "plysak", "stavebnic", "duplo", "kojeneck", "choditko", "nositko", "fusak", "detske", "detska", "detsky"],
+        "dum.bazos.cz": ["sekac", "sekack", "drtic", "stepkov", "zahrada", "zahradni", "vrtack", "pila", "krovinorez", "naradi", "gril", "bazen", "cerpadlo", "kotel", "kamna", "dvere", "okna", "malotraktor", "kultivator", "vyzinac", "strunovka", "kosa", "hadice", "sklenik", "foliovnik", "plot", "dlazba", "stavebni", "thuje", "rostlin"],
+        "nabytek.bazos.cz": ["stul", "stoly", "zidle", "skrin", "komoda", "postel", "matrace", "sedacka", "pohovka", "kreslo", "stolek", "jidelni", "sedak", "skrinka", "policka", "police", "nabytek", "obyvaci", "kuchyn", "linka", "botnik", "regal", "knihovna", "valenda", "palanda", "letiste", "satna"],
+        "elektro.bazos.cz": ["prack", "lednic", "mrazak", "susick", "kavovar", "vysavac", "televiz", "tv", "mikrovln", "trouba", "sporak", "mycka", "reproduktor", "repro", "soundbar", "mixer", "zehlicka", "ventilator", "klimatizace", "robot"],
+        "sport.bazos.cz": ["kolo", "horske kolo", "silnicni kolo", "ebike", "elektrokolo", "lyze", "snowboard", "fitness", "cinky", "stan", "spacak", "raketa", "brusle", "kolobezka", "paddleboard", "surfing", "kajak", "clun", "posilovac", "rotoped", "helma lyzarska"],
+        "auto.bazos.cz": ["auto", "automobil", "osobni auto", "skoda", "vw", "volkswagen", "audi", "bmw", "ford", "peugeot", "renault", "mercedes", "hyundai", "kia", "alu kola", "pneumatiky", "pneu", "zimni pneu", "letni pneu", "autodily", "tazne", "stresni box", "r line", "tsi", "tdi"],
+        "motorky.bazos.cz": ["motorka", "motorky", "motocykl", "skutr", "ctyrkolka", "moped", "enduro", "babeta", "babetta", "yamaha", "honda", "suzuki", "kawasaki", "ktm", "pitbike", "helma na moto", "moto bunda", "kombineza moto"],
+        "stroje.bazos.cz": ["stroj", "soustruh", "frezk", "freza", "vysokozdviz", "traktorbagr", "vzv", "hydraulick", "svarecka", "kompresor", "lis", "hoblovka", "protahovacka", "pasova pila", "zetor", "desta"],
+        "pc.bazos.cz": ["pocitac", "notebook", "laptop", "monitor", "grafick", "rtx", "gtx", "geforce", "intel", "amd", "ryzen", "ram", "ssd", "procesor", "zakladni deska", "klavesnice", "mys herni", "ipad", "macbook", "imac"],
+        "mobil.bazos.cz": ["mobil", "telefon", "mobilni telefon", "iphone", "samsung galaxy", "xiaomi", "redmi", "smartphone", "smartwatch", "apple watch", "kryt na mobil", "nabijecka"],
+        "foto.bazos.cz": ["foto", "fotoaparat", "objektiv", "zrcadlovka", "bezzrcadlovka", "canon", "nikon", "sony alpha", "fujifilm", "gopro", "stativ", "blesk", "dron", "dji"],
+        "hudba.bazos.cz": ["kytara", "akusticka kytara", "elektricka kytara", "baskytara", "klavesy", "piano", "klavir", "bici", "kombo", "mikrofon", "syntezator", "housle", "akordeon", "harmonika"],
+        "obleceni.bazos.cz": ["obleceni", "bunda", "kabat", "saty", "sukne", "kalhoty", "dziny", "boty", "tenisky", "lodicky", "kabelka", "mikina", "tricko", "svetr", "sako", "oblek"],
+        "knihy.bazos.cz": ["kniha", "knihy", "roman", "encyklopedie", "ucebnice", "komiks", "casopis", "cteni", "sci fi", "fantasy", "knizka", "knizky"],
+        "zvirata.bazos.cz": ["pes", "fena", "stene", "kocka", "kote", "kun", "akvarium", "terarium", "klec", "papousek", "kralik", "morce", "granule", "jezdecke"],
+        "vstupenky.bazos.cz": ["vstupenk", "listek", "listky", "voucher", "darkovy poukaz", "permanentka", "koncert", "festival", "divadlo", "zapas"],
+        "reality.bazos.cz": ["byt", "byty", "pozemek", "chata", "chalupa", "pronajem", "garaz", "kancelar", "nebytovy", "prodej bytu", "najem"],
+        "prace.bazos.cz": ["prace", "brigada", "zamestnani", "volne misto", "prijmeme", "hpp", "dpp", "mzda", "plat", "nastup"],
+        "sluzby.bazos.cz": ["sluzby", "remeslo", "zednik", "instalater", "stehovani", "rekonstrukce", "doucovani", "opravy", "malir", "preprava", "cisteni"],
+        "ostatni.bazos.cz": ["ostatni", "sberatel", "mince", "bankovky", "znamky", "starozitnost", "vojenske", "odznak", "model"]
+    };
+
+    const normalizeCzStr = (str) => {
+        if (!str) return "";
+        return str.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, " ").trim();
+    };
+
+    const rankRubrikyForAd = (ad) => {
+        if (!ad) return [{ domain: "dum.bazos.cz", label: "Dům a zahrada", score: 0, matched: [] }];
+        const titleNorm = normalizeCzStr(ad.title || "");
+        const descNorm = normalizeCzStr(ad.description || "");
+        const catNorm = normalizeCzStr(ad.category || "");
+        const urlStr = (ad.url || "").toLowerCase();
+
+        let existingSub = "";
+        const m = urlStr.match(/https?:\/\/([^/]+\.bazos\.cz)/i);
+        if (m && m[1] !== "www.bazos.cz") existingSub = m[1].toLowerCase();
+
+        const results = BAZOS_ALL_RUBRIKY.map(item => {
+            let score = 0;
+            const matched = [];
+            if (existingSub && existingSub === item.domain) {
+                score += 1000;
+                matched.push(`původní adresa (${item.domain})`);
+            }
+            if (item.domain === "motorky.bazos.cz") {
+                if (/\b(moto|motorka|motorky|motocykl|skutr|ctyrkolka|moped|enduro|babeta)\b/.test(titleNorm)) {
+                    score += 120;
+                    matched.push("motocykl/skútr");
+                }
+            }
+            const domBase = item.domain.split(".")[0];
+            if (catNorm && catNorm.includes(domBase)) {
+                score += 80;
+                matched.push(`kategorie (${domBase})`);
+            }
+            const kws = BAZOS_DOMAIN_KEYWORDS[item.domain] || [];
+            for (const kw of kws) {
+                if (titleNorm.includes(kw)) {
+                    score += 90;
+                    if (!matched.includes(kw)) matched.push(kw);
+                } else if (descNorm.includes(kw)) {
+                    score += 20;
+                    if (!matched.includes(kw) && matched.length < 4) matched.push(kw);
+                }
+            }
+            return {
+                domain: item.domain,
+                label: item.label,
+                icon: item.icon,
+                score,
+                matched
+            };
+        });
+
+        results.sort((a, b) => b.score - a.score);
+        return results;
+    };
+
+    const predictRubrikaDomain = (ad) => {
+        const ranked = rankRubrikyForAd(ad);
+        if (ranked.length > 0 && ranked[0].score > 0) {
+            return ranked[0].domain;
+        }
+        return "dum.bazos.cz";
+    };
+
+    const populateRubrikaSelect = (selectEl, ad, badgeEl = null) => {
+        if (!selectEl) return;
+        const ranked = rankRubrikyForAd(ad);
+        const topChoice = ranked[0] || { domain: "dum.bazos.cz", label: "Dům a zahrada", score: 0, matched: [] };
+        
+        let recommended = ranked.filter(r => r.score > 0).slice(0, 3);
+        if (recommended.length === 0) {
+            recommended = [topChoice];
+        }
+
+        selectEl.innerHTML = "";
+
+        // 1. Optgroup Doporučené
+        const optGroupRec = document.createElement("optgroup");
+        optGroupRec.label = "✨ Doporučené podle inzerátu (AI)";
+        recommended.forEach(rec => {
+            const opt = document.createElement("option");
+            opt.value = rec.domain;
+            opt.textContent = `${rec.label} (${rec.domain})${rec.score > 0 ? " — doporučeno" : ""}`;
+            if (rec.domain === topChoice.domain) {
+                opt.selected = true;
+            }
+            optGroupRec.appendChild(opt);
+        });
+        selectEl.appendChild(optGroupRec);
+
+        // 2. Optgroup Všechny rubriky
+        const optGroupAll = document.createElement("optgroup");
+        optGroupAll.label = "Všechny rubriky Bazoše";
+        BAZOS_ALL_RUBRIKY.forEach(rub => {
+            const opt = document.createElement("option");
+            opt.value = rub.domain;
+            opt.textContent = `${rub.label} (${rub.domain})`;
+            optGroupAll.appendChild(opt);
+        });
+        selectEl.appendChild(optGroupAll);
+
+        selectEl.value = topChoice.domain;
+
+        if (badgeEl) {
+            const badgeTextEl = badgeEl.querySelector("#repost-rubrika-badge-text") || badgeEl;
+            if (topChoice.score > 0 && topChoice.matched && topChoice.matched.length > 0) {
+                const kwStr = topChoice.matched.slice(0, 3).join(", ");
+                badgeTextEl.innerHTML = `AI doporučuje: <strong>${escapeHtml(topChoice.label)}</strong> (na základě: <em>${escapeHtml(kwStr)}</em>)`;
+                badgeEl.style.display = "flex";
+            } else {
+                badgeTextEl.innerHTML = `AI doporučuje výchozí rubriku: <strong>${escapeHtml(topChoice.label)}</strong>`;
+                badgeEl.style.display = "flex";
+            }
+        }
+    };
+
     // Modal dávkového znovuvystavení
     const batchRepostModal = document.getElementById("batch-repost-modal");
     const btnBatchRepostOpen = document.getElementById("btn-batch-repost-open");
@@ -1226,7 +1390,6 @@ document.addEventListener("DOMContentLoaded", () => {
             row.setAttribute("data-ad-id", ad.id);
             row.style.cssText = "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;";
             
-            const predictedDomain = typeof predictRubrikaDomain === "function" ? predictRubrikaDomain(ad) : "dum.bazos.cz";
             const daysOld = getDaysOld(ad.date_created);
 
             row.innerHTML = `
@@ -1239,17 +1402,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.6rem;">
-                    <select class="batch-row-rubrika" style="background: rgba(11,8,22,0.9); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 0.35rem 0.55rem; border-radius: 6px; font-size: 0.82rem; outline: none;">
-                        <option value="dum.bazos.cz" ${predictedDomain === "dum.bazos.cz" ? "selected" : ""}>Dům a zahrada</option>
-                        <option value="stroje.bazos.cz" ${predictedDomain === "stroje.bazos.cz" ? "selected" : ""}>Stroje a nářadí</option>
-                        <option value="auto.bazos.cz" ${predictedDomain === "auto.bazos.cz" ? "selected" : ""}>Auto</option>
-                        <option value="motorky.bazos.cz" ${predictedDomain === "motorky.bazos.cz" ? "selected" : ""}>Motorky</option>
-                        <option value="pc.bazos.cz" ${predictedDomain === "pc.bazos.cz" ? "selected" : ""}>PC / počítače</option>
-                        <option value="elektro.bazos.cz" ${predictedDomain === "elektro.bazos.cz" ? "selected" : ""}>Elektro</option>
-                        <option value="sport.bazos.cz" ${predictedDomain === "sport.bazos.cz" ? "selected" : ""}>Sport</option>
-                        <option value="nabytek.bazos.cz" ${predictedDomain === "nabytek.bazos.cz" ? "selected" : ""}>Nábytek</option>
-                        <option value="obleceni.bazos.cz" ${predictedDomain === "obleceni.bazos.cz" ? "selected" : ""}>Oblečení</option>
-                        <option value="ostatni.bazos.cz" ${predictedDomain === "ostatni.bazos.cz" ? "selected" : ""}>Ostatní</option>
+                    <select class="batch-row-rubrika" style="background: rgba(11,8,22,0.9); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 0.35rem 0.55rem; border-radius: 6px; font-size: 0.82rem; outline: none; max-width: 220px;">
                     </select>
                     <div style="display: flex; align-items: center; gap: 0.25rem;">
                         <input type="number" class="batch-row-price" value="${ad.price || 0}" style="width: 80px; background: rgba(11,8,22,0.9); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 0.35rem 0.55rem; border-radius: 6px; font-size: 0.82rem; text-align: right; outline: none;">
@@ -1260,6 +1413,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     </button>
                 </div>
             `;
+
+            const rubrikaSelect = row.querySelector(".batch-row-rubrika");
+            if (rubrikaSelect) {
+                populateRubrikaSelect(rubrikaSelect, ad);
+            }
 
             const btnRemove = row.querySelector(".btn-remove-batch-row");
             if (btnRemove) {
@@ -2614,38 +2772,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // Pomocná predikce vhodné rubriky Bazoše z inzerátu
-    const predictRubrikaDomain = (ad) => {
-        let preselect = "dum.bazos.cz";
-        const url = ad.url || "";
-        if (url) {
-            const match = url.match(/https?:\/\/([^/]+\.bazos\.cz)/i);
-            if (match) return match[1].toLowerCase();
-        }
-        const titleLower = (ad.title || "").toLowerCase();
-        const catLower = (ad.category || "").toLowerCase();
-        if (/\b(auto|skoda|vw|bmw|audi|ford|peugeot|renault)\b/.test(titleLower) || /auto/.test(catLower)) {
-            return "auto.bazos.cz";
-        } else if (/\b(motocykl|motork|skutr|yamaha|honda|suzuki|kawasaki)\b/.test(titleLower) || /moto/.test(catLower)) {
-            return "motorky.bazos.cz";
-        } else if (/\b(dum|zahrada|seka|trakt|pila|stepkovac|zahrad)\b/.test(titleLower) || /zahrada/.test(catLower)) {
-            return "dum.bazos.cz";
-        } else if (/\b(stroj|soustruh|freza|vrtacka|kompresor|svarecka)\b/.test(titleLower)) {
-            return "stroje.bazos.cz";
-        } else if (/\b(pc|notebook|pocitac|monitor|grafick|ram|intel|amd|ryzen|geforce|rtx)\b/.test(titleLower)) {
-            return "pc.bazos.cz";
-        } else if (/\b(elektro|tv|televize|audio|repro|telefon|mobil|iphone|samsung)\b/.test(titleLower)) {
-            return "elektro.bazos.cz";
-        }
-        return preselect;
-    };
-
     // --- REPOST CONFIRM MODAL (Rubrika) LOGIKA ---
     const openRepostModal = (ad) => {
         pendingActionAd = ad;
         const rubrikaSelect = document.getElementById("repost-rubrika-select");
+        const badgeEl = document.getElementById("repost-rubrika-badge");
         if (rubrikaSelect) {
-            rubrikaSelect.value = predictRubrikaDomain(ad);
+            populateRubrikaSelect(rubrikaSelect, ad, badgeEl);
         }
 
         const priceInput = document.getElementById("repost-price-input");
@@ -2659,6 +2792,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         openChildModal(repostConfirmModal);
     };
+
+    // Naslouchání na ruční změnu rubriky pro aktualizaci badge
+    const repostRubrikaSelectEl = document.getElementById("repost-rubrika-select");
+    if (repostRubrikaSelectEl) {
+        repostRubrikaSelectEl.addEventListener("change", () => {
+            const badgeEl = document.getElementById("repost-rubrika-badge");
+            if (badgeEl) {
+                const selOpt = repostRubrikaSelectEl.options[repostRubrikaSelectEl.selectedIndex];
+                const badgeTextEl = badgeEl.querySelector("#repost-rubrika-badge-text") || badgeEl;
+                badgeTextEl.innerHTML = `Vybraná rubrika: <strong>${escapeHtml(selOpt ? selOpt.textContent : "")}</strong>`;
+            }
+        });
+    }
 
     // Zavření repost modalu
     document.querySelectorAll(".btn-close-repost-modal").forEach(btn => {

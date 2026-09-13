@@ -1281,17 +1281,36 @@
                         Cílová rubrika (Bazoš.cz):
                     </label>
                     <select id="repost-rubrika-select" style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.95rem; outline: none;">
-                        <option value="dum.bazos.cz">Dům a zahrada (dum.bazos.cz)</option>
-                        <option value="stroje.bazos.cz">Stroje a nářadí (stroje.bazos.cz)</option>
-                        <option value="auto.bazos.cz">Auto (auto.bazos.cz)</option>
-                        <option value="motorky.bazos.cz">Motorky (motorky.bazos.cz)</option>
-                        <option value="pc.bazos.cz">PC a počítače (pc.bazos.cz)</option>
-                        <option value="elektro.bazos.cz">Elektro (elektro.bazos.cz)</option>
-                        <option value="sport.bazos.cz">Sport (sport.bazos.cz)</option>
-                        <option value="nabytek.bazos.cz">Nábytek (nabytek.bazos.cz)</option>
-                        <option value="obleceni.bazos.cz">Oblečení (obleceni.bazos.cz)</option>
-                        <option value="ostatni.bazos.cz">Ostatní (ostatni.bazos.cz)</option>
+                        <optgroup id="repost-rubrika-optgroup-rec" label="✨ Doporučené podle inzerátu (AI)">
+                            <option value="dum.bazos.cz">Dům a zahrada (dum.bazos.cz)</option>
+                        </optgroup>
+                        <optgroup id="repost-rubrika-optgroup-all" label="Všechny rubriky Bazoše">
+                            <option value="deti.bazos.cz">Děti a hračky (deti.bazos.cz)</option>
+                            <option value="dum.bazos.cz">Dům a zahrada (dum.bazos.cz)</option>
+                            <option value="nabytek.bazos.cz">Nábytek (nabytek.bazos.cz)</option>
+                            <option value="elektro.bazos.cz">Elektro a spotřebiče (elektro.bazos.cz)</option>
+                            <option value="sport.bazos.cz">Sport a outdoor (sport.bazos.cz)</option>
+                            <option value="auto.bazos.cz">Auto (auto.bazos.cz)</option>
+                            <option value="motorky.bazos.cz">Motorky a čtyřkolky (motorky.bazos.cz)</option>
+                            <option value="stroje.bazos.cz">Stroje a dílna (stroje.bazos.cz)</option>
+                            <option value="pc.bazos.cz">PC a počítače (pc.bazos.cz)</option>
+                            <option value="mobil.bazos.cz">Mobily a chytré hodinky (mobil.bazos.cz)</option>
+                            <option value="foto.bazos.cz">Foto a kamery (foto.bazos.cz)</option>
+                            <option value="hudba.bazos.cz">Hudba a nástroje (hudba.bazos.cz)</option>
+                            <option value="obleceni.bazos.cz">Oblečení a obuv (obleceni.bazos.cz)</option>
+                            <option value="knihy.bazos.cz">Knihy a časopisy (knihy.bazos.cz)</option>
+                            <option value="zvirata.bazos.cz">Zvířata a chovatelství (zvirata.bazos.cz)</option>
+                            <option value="vstupenky.bazos.cz">Vstupenky a lístky (vstupenky.bazos.cz)</option>
+                            <option value="reality.bazos.cz">Reality a nemovitosti (reality.bazos.cz)</option>
+                            <option value="prace.bazos.cz">Práce a brigády (prace.bazos.cz)</option>
+                            <option value="sluzby.bazos.cz">Služby a řemesla (sluzby.bazos.cz)</option>
+                            <option value="ostatni.bazos.cz">Ostatní (ostatni.bazos.cz)</option>
+                        </optgroup>
                     </select>
+                    <div id="repost-rubrika-badge" style="font-size: 0.8rem; color: #38bdf8; margin-top: 0.4rem; display: flex; align-items: center; gap: 0.4rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); padding: 0.4rem 0.65rem; border-radius: 6px;">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span id="repost-rubrika-badge-text">AI doporučuje rubriku podle textu inzerátu</span>
+                    </div>
                 </div>
                 <div class="form-group" style="margin-top: 1rem;">
                     <label for="repost-price-input" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">

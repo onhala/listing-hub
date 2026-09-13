@@ -1953,6 +1953,66 @@ def api_get_gemini_models():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/bazos/rubriky", methods=["GET"])
+def api_get_bazos_rubriky():
+    """Vrátí kompletní seznam všech 20 rubrik Bazoše."""
+    try:
+        from listing_hub.portals.bazos.categories import BAZOS_ALL_SUBDOMAINS
+        return jsonify({
+            "status": "success",
+            "rubriky": BAZOS_ALL_SUBDOMAINS
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/ai/suggest-rubrika", methods=["POST"])
+def api_suggest_rubrika():
+    """
+    Doporučí nejvhodnější rubriky Bazoše na základě analýzy inzerátu (název, popis, kategorie, url).
+    """
+    try:
+        from listing_hub.portals.bazos.categories import rank_target_domains
+        payload = request.get_json(silent=True) or {}
+        listing_id = payload.get("listing_id")
+        
+        title = payload.get("title", "")
+        description = payload.get("description", "")
+        category = payload.get("category", "")
+        url = payload.get("url", "")
+        
+        if listing_id and not title:
+            listing = db.get_listing_by_id(listing_id)
+            if listing:
+                title = listing.get("title", "")
+                description = listing.get("description", "")
+                category = listing.get("category", "")
+                bazos_state = listing.get("portal_states", {}).get("bazos", {})
+                url = bazos_state.get("url", "") or listing.get("url", "")
+                
+        ranked = rank_target_domains(title=title, description=description, category=category, original_url=url)
+        top = ranked[0] if ranked else {"domain": "dum.bazos.cz", "label": "Dům a zahrada", "score": 0, "matched_keywords": []}
+        recommended = [r for r in ranked if r["score"] > 0][:3]
+        if not recommended:
+            recommended = [top]
+            
+        reason = ""
+        if top.get("matched_keywords"):
+            kw_str = ", ".join(top["matched_keywords"][:3])
+            reason = f"Doporučeno na základě: {kw_str}"
+        else:
+            reason = "Výchozí doporučená rubrika"
+
+        return jsonify({
+            "status": "success",
+            "top_domain": top["domain"],
+            "top_label": top["label"],
+            "recommended": recommended,
+            "all": ranked,
+            "reason": reason
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/ai/test", methods=["POST"])
 def api_test_gemini():
     try:

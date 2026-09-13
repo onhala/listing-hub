@@ -18,68 +18,193 @@ def extract_subdomain(url: str) -> str:
         return match.group(1)
     return "dum.bazos.cz"
 
-def get_target_domain(title: str, original_url: str = "", category: str = "") -> str:
-    """Určí cílovou subdoménu Bazoše na základě názvu věci, původní URL a kategorie."""
+BAZOS_ALL_SUBDOMAINS = [
+    {"domain": "deti.bazos.cz", "label": "Děti a hračky", "icon": "fa-child"},
+    {"domain": "dum.bazos.cz", "label": "Dům a zahrada", "icon": "fa-house-chimney-window"},
+    {"domain": "nabytek.bazos.cz", "label": "Nábytek", "icon": "fa-couch"},
+    {"domain": "elektro.bazos.cz", "label": "Elektro a spotřebiče", "icon": "fa-bolt"},
+    {"domain": "sport.bazos.cz", "label": "Sport a outdoor", "icon": "fa-person-running"},
+    {"domain": "auto.bazos.cz", "label": "Auto", "icon": "fa-car"},
+    {"domain": "motorky.bazos.cz", "label": "Motorky a čtyřkolky", "icon": "fa-motorcycle"},
+    {"domain": "stroje.bazos.cz", "label": "Stroje a dílna", "icon": "fa-gears"},
+    {"domain": "pc.bazos.cz", "label": "PC a počítače", "icon": "fa-laptop"},
+    {"domain": "mobil.bazos.cz", "label": "Mobily a chytré hodinky", "icon": "fa-mobile-screen"},
+    {"domain": "foto.bazos.cz", "label": "Foto a kamery", "icon": "fa-camera"},
+    {"domain": "hudba.bazos.cz", "label": "Hudba a nástroje", "icon": "fa-guitar"},
+    {"domain": "obleceni.bazos.cz", "label": "Oblečení a obuv", "icon": "fa-shirt"},
+    {"domain": "knihy.bazos.cz", "label": "Knihy a časopisy", "icon": "fa-book"},
+    {"domain": "zvirata.bazos.cz", "label": "Zvířata a chovatelství", "icon": "fa-paw"},
+    {"domain": "vstupenky.bazos.cz", "label": "Vstupenky a lístky", "icon": "fa-ticket"},
+    {"domain": "reality.bazos.cz", "label": "Reality a nemovitosti", "icon": "fa-building"},
+    {"domain": "prace.bazos.cz", "label": "Práce a brigády", "icon": "fa-briefcase"},
+    {"domain": "sluzby.bazos.cz", "label": "Služby a řemesla", "icon": "fa-handshake"},
+    {"domain": "ostatni.bazos.cz", "label": "Ostatní", "icon": "fa-box-archive"},
+]
+
+DOMAIN_KEYWORDS = {
+    "deti.bazos.cz": [
+        "plamenak", "hrack", "kocarek", "postylka", "detsk", "odrazedlo", "autosedacka", 
+        "plen", "babov", "panenk", "lego", "plysak", "stavebnice", "duplo", "kojeneck",
+        "choditko", "nositko", "lehatko detske", "fusak", "detske", "detska", "detsky"
+    ],
+    "dum.bazos.cz": [
+        "sekac", "sekack", "drtic", "stepkov", "zahrada", "zahradni", "vrtack", "pila",
+        "krovinorez", "naradi", "gril", "bazen", "cerpadlo", "kotel", "kamna", "dvere",
+        "okna", "malotraktor", "kultivator", "vyzinac", "strunovka", "kosa", "hadice",
+        "hnojivo", "sklenik", "foliovnik", "plot", "dlazba", "stavebni", "thuje", "rostlin"
+    ],
+    "nabytek.bazos.cz": [
+        "stul", "stoly", "zidle", "skrin", "komoda", "postel", "matrace", "sedacka",
+        "pohovka", "kreslo", "stolek", "jidelni", "sedak", "skrinka", "policka", "police",
+        "nabytek", "obyvaci", "kuchyn", "linka", "botnik", "regal", "knihovna", "valenda",
+        "palanda", "letiste", "satna"
+    ],
+    "elektro.bazos.cz": [
+        "prack", "lednic", "mrazak", "susick", "kavovar", "vysavac", "televiz", "tv",
+        "mikrovln", "trouba", "sporak", "mycka", "reproduktor", "repro", "soundbar",
+        "mixer", "zehlicka", "ventilator", "klimatizace", "robot"
+    ],
+    "sport.bazos.cz": [
+        "kolo", "horske kolo", "silnicni kolo", "ebike", "elektrokolo", "lyze", "snowboard",
+        "fitness", "cinky", "stan", "spacak", "raketa", "brusle", "kolobezka", "paddleboard",
+        "surfing", "kajak", "clun", "posilovac", "rotoped", "helma lyzarska"
+    ],
+    "auto.bazos.cz": [
+        "auto", "automobil", "osobni auto", "skoda", "vw", "volkswagen", "audi", "bmw", "ford",
+        "peugeot", "renault", "mercedes", "hyundai", "kia", "alu kola", "pneumatiky", "pneu",
+        "zimni pneu", "letni pneu", "autodily", "tazne", "stresni box", "r line", "tsi", "tdi"
+    ],
+    "motorky.bazos.cz": [
+        "motorka", "motorky", "motocykl", "skutr", "ctyrkolka", "moped", "enduro",
+        "babeta", "babetta", "yamaha", "honda", "suzuki", "kawasaki", "ktm", "pitbike",
+        "helma na moto", "moto bunda", "kombineza moto"
+    ],
+    "stroje.bazos.cz": [
+        "soustruh", "frezk", "freza", "vysokozdviz", "traktorbagr", "vzv", "hydraulick",
+        "svarecka", "kompresor", "lis", "hoblovka", "protahovacka", "pasova pila", "zetor", "desta"
+    ],
+    "pc.bazos.cz": [
+        "pocitac", "notebook", "laptop", "monitor", "grafick", "rtx", "gtx", "geforce",
+        "intel", "amd", "ryzen", "ram", "ssd", "procesor", "zakladni deska", "klavesnice",
+        "mys herni", "ipad", "macbook", "imac"
+    ],
+    "mobil.bazos.cz": [
+        "mobil", "telefon", "mobilni telefon", "iphone", "samsung galaxy", "xiaomi",
+        "redmi", "smartphone", "smartwatch", "apple watch", "kryt na mobil", "nabijecka"
+    ],
+    "foto.bazos.cz": [
+        "foto", "fotoaparat", "objektiv", "zrcadlovka", "bezzrcadlovka", "canon", "nikon",
+        "sony alpha", "fujifilm", "gopro", "stativ", "blesk", "dron", "dji"
+    ],
+    "hudba.bazos.cz": [
+        "kytara", "akusticka kytara", "elektricka kytara", "baskytara", "klavesy", "piano",
+        "klavir", "bici", "kombo", "mikrofon", "syntezator", "housle", "akordeon", "harmonika"
+    ],
+    "obleceni.bazos.cz": [
+        "obleceni", "bunda", "kabat", "saty", "sukne", "kalhoty", "dziny", "boty", "tenisky",
+        "lodicky", "kabelka", "mikina", "tricko", "svetr", "sako", "oblek"
+    ],
+    "knihy.bazos.cz": [
+        "kniha", "knihy", "roman", "encyklopedie", "ucebnice", "komiks", "casopis", "cteni",
+        "sci fi", "fantasy", "knizka", "knizky"
+    ],
+    "zvirata.bazos.cz": [
+        "pes", "fena", "stene", "kocka", "kote", "kun", "akvarium", "terarium", "klec",
+        "papousek", "kralik", "morce", "granule", "jezdecke"
+    ],
+    "vstupenky.bazos.cz": [
+        "vstupenk", "listek", "listky", "voucher", "darkovy poukaz", "permanentka",
+        "koncert", "festival", "divadlo", "zapas"
+    ],
+    "reality.bazos.cz": [
+        "byt", "byty", "pozemek", "chata", "chalupa", "pronajem", "garaz", "kancelar",
+        "nebytovy", "prodej bytu", "najem"
+    ],
+    "prace.bazos.cz": [
+        "prace", "brigada", "zamestnani", "volne misto", "prijmeme", "hpp", "dpp", "mzda",
+        "plat", "nastup"
+    ],
+    "sluzby.bazos.cz": [
+        "sluzby", "remeslo", "zednik", "instalater", "stehovani", "rekonstrukce", "doucovani",
+        "opravy", "malir", "preprava", "cisteni"
+    ],
+    "ostatni.bazos.cz": [
+        "ostatni", "sberatel", "mince", "bankovky", "znamky", "starozitnost", "vojenske",
+        "odznak", "model"
+    ]
+}
+
+def rank_target_domains(title: str, description: str = "", category: str = "", original_url: str = "") -> list:
+    """
+    Ohodnotí a seřadí všech 20 subdomén Bazoše podle relevance k inzerátu.
+    Vrací seznam dictů seřazených sestupně podle score:
+    [{'domain': '...', 'label': '...', 'score': int, 'matched_keywords': list[str], 'icon': '...'}]
+    """
+    t_norm = normalize_cz(title)
+    d_norm = normalize_cz(description)
+    c_norm = normalize_cz(category)
     url_lower = (original_url or "").lower()
-    title_lower = (title or "").lower()
-    cat_lower = (category or "").lower()
 
-    # 1. Priorita: existující platná subdoména z původní Bazoš URL
-    if original_url:
-        sub = extract_subdomain(original_url)
-        if sub and sub.endswith("bazos.cz") and sub != "www.bazos.cz":
-            return sub
+    # Zjistíme doménu z existující URL
+    existing_sub = extract_subdomain(original_url) if original_url else ""
+    if existing_sub == "www.bazos.cz":
+        existing_sub = ""
 
-    # 2. Děti / Hračky
-    deti_kw = ["plameňák", "hračk", "kočárek", "postýlka", "dětsk", "odrážedlo", "autosedačka", "plena", "bábov", "panenka"]
-    if "deti" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in deti_kw):
-        return "deti.bazos.cz"
+    results = []
+    for item in BAZOS_ALL_SUBDOMAINS:
+        dom = item["domain"]
+        lbl = item["label"]
+        icon = item.get("icon", "fa-tag")
+        score = 0
+        matched = []
 
-    # 3. Nábytek
-    nabytek_kw = [
-        "stůl", "židle", "skříň", "komoda", "postel", "matrace", 
-        "sedačka", "pohovka", "křeslo", "stoly", "jídelní", "sedák", 
-        "skříňka", "polička", "nábytek", "nabytek", "obyvaci", "kuchyn"
-    ]
-    if "nabytek" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in nabytek_kw):
-        return "nabytek.bazos.cz"
+        # 1. Původní URL je nejsilnější vazba
+        if existing_sub and existing_sub == dom:
+            score += 1000
+            matched.append(f"původní adresa ({dom})")
 
-    # 4. Sport
-    sport_kw = ["kolo", "lyže", "snowboard", "fitness", "činky", "stan", "spací pytel", "raketa", "kolečkové korčule", "surfing", "paddleboard"]
-    if "sport" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in sport_kw):
-        return "sport.bazos.cz"
+        # 2. Specifická pravidla pro motorky (aby se nepletly se slovem motor/elektromotor)
+        if dom == "motorky.bazos.cz":
+            if re.search(r'\b(moto|motorka|motorky|motocykl|skutr|ctyrkolka|moped|enduro|babeta)\b', t_norm):
+                score += 120
+                matched.append("motocykl/skútr")
+        # 3. Kategoriová shoda
+        dom_base = dom.split('.')[0]
+        if c_norm and dom_base in c_norm:
+            score += 80
+            matched.append(f"kategorie ({dom_base})")
 
-    # 5. Elektro
-    elektro_kw = ["tv", "televize", "telefon", "mobil", "notebook", "počítač", "monitor", "pračka", "lednice", "kávovar", "vysavač", "reproduktor", "sluchátka"]
-    if "elektro" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in elektro_kw):
-        return "elektro.bazos.cz"
+        # 4. Klíčová slova v titulku (nejvyšší váha) a popisu
+        kw_list = DOMAIN_KEYWORDS.get(dom, [])
+        for kw in kw_list:
+            if kw in t_norm:
+                score += 90
+                if kw not in matched:
+                    matched.append(kw)
+            elif kw in d_norm:
+                score += 20
+                if kw not in matched and len(matched) < 4:
+                    matched.append(kw)
 
-    # 6. Motorky (Striktní regex celých slov, aby se zabránilo falešné shodě s 'motor', 'elektromotor'!)
-    moto_pattern = r'\b(moto|motorka|motorky|motocykl|motocykly|skutr|skútr|čtyřkolka|čtyřkolky|moped|enduro|babeta|babetta)\b'
-    if re.search(moto_pattern, cat_lower) or re.search(moto_pattern, title_lower):
-        return "motorky.bazos.cz"
+        results.append({
+            "domain": dom,
+            "label": lbl,
+            "icon": icon,
+            "score": score,
+            "matched_keywords": matched
+        })
 
-    # 7. Auto
-    auto_kw = ["automobil", "osobní auto", "alu kola", "zimní pneu", "letní pneu", "autodíly"]
-    if cat_lower == "auto" or any(kw in title_lower or kw in cat_lower for kw in auto_kw):
-        return "auto.bazos.cz"
+    # Seřadíme sestupně podle skóre
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
 
-    # 8. Stroje
-    stroje_kw = ["soustruh", "frézka", "vysokozdviž", "traktorbagr", "vzv", "hydraulick"]
-    if "stroje" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in stroje_kw):
-        return "stroje.bazos.cz"
+def get_target_domain(title: str, original_url: str = "", category: str = "", description: str = "") -> str:
+    """Určí cílovou subdoménu Bazoše na základě názvu věci, původní URL, kategorie a popisu."""
+    ranked = rank_target_domains(title=title, description=description, category=category, original_url=original_url)
+    if ranked and ranked[0]["score"] > 0:
+        return ranked[0]["domain"]
+    return "dum.bazos.cz"
 
-    # 9. Dům a Zahrada (sekačky, drtiče, štěpkovače, nářadí)
-    dum_kw = [
-        "sekač", "sekack", "drtič", "drtic", "štěpkov", "stepkov", "zahrada", "zahradní", 
-        "vrtačka", "vrtack", "pila", "křovinořez", "krovinorez", "nářadí", "naradi", 
-        "baterie", "gril", "bazén", "bazen", "čerpadlo", "cerpadlo", "kotel", "kamna", 
-        "dveře", "dvere", "okna", "malotraktor", "kultivátor", "vyžínač", "strunovka"
-    ]
-    if "dum" in cat_lower or "zahrada" in cat_lower or any(kw in title_lower or kw in cat_lower for kw in dum_kw):
-        return "dum.bazos.cz"
-
-    return "deti.bazos.cz" if ("vodní" in title_lower or "vodní" in cat_lower) else "dum.bazos.cz"
 
 
 def normalize_cz(text: str) -> str:
