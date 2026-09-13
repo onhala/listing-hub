@@ -88,14 +88,20 @@ def init_db() -> None:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_pubs_item_id ON listing_publications(portal_item_id)")
 
         # Automatická migrace: prodejní atributy pro archivaci prodaných věcí
-        for col, col_type in [("sale_price", "INTEGER"), ("sold_at", "TEXT"), ("sold_notes", "TEXT")]:
+        for col, col_type in [("sale_price", "INTEGER"), ("sold_at", "TEXT"), ("sold_notes", "TEXT"), ("sold_channel", "TEXT")]:
             try:
                 cursor.execute(f"ALTER TABLE listings ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError:
                 pass
 
-        # Automatická migrace: TOP status pro Bazoš
-        for col, col_type in [("is_top", "INTEGER DEFAULT 0"), ("top_expires_at", "TEXT"), ("top_info", "TEXT")]:
+        # Automatická migrace: TOP status pro Bazoš a metadata portálů
+        for col, col_type in [
+            ("is_top", "INTEGER DEFAULT 0"), 
+            ("top_expires_at", "TEXT"), 
+            ("top_info", "TEXT"),
+            ("portal_label", "TEXT"),
+            ("published_at", "TEXT")
+        ]:
             try:
                 cursor.execute(f"ALTER TABLE portal_states ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError:
@@ -141,8 +147,8 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                 id, title, description, price, category, condition, 
                 local_photos_dir, location, notes, ad_password_b64, 
                 bookmarklet_uri, days_old, created_at, target_bazos, target_aukro,
-                sale_price, sold_at, sold_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                sale_price, sold_at, sold_notes, sold_channel
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title,
                 description=excluded.description,
@@ -160,7 +166,8 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                 target_aukro=excluded.target_aukro,
                 sale_price=COALESCE(excluded.sale_price, listings.sale_price),
                 sold_at=COALESCE(excluded.sold_at, listings.sold_at),
-                sold_notes=COALESCE(excluded.sold_notes, listings.sold_notes)
+                sold_notes=COALESCE(excluded.sold_notes, listings.sold_notes),
+                sold_channel=COALESCE(excluded.sold_channel, listings.sold_channel)
         """, (
             listing_data.get("id"),
             listing_data.get("title"),
@@ -179,7 +186,8 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
             listing_data.get("target_aukro", 0),
             listing_data.get("sale_price"),
             listing_data.get("sold_at"),
-            listing_data.get("sold_notes")
+            listing_data.get("sold_notes"),
+            listing_data.get("sold_channel")
         ))
         
         if portal_states:
@@ -187,8 +195,8 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                 cursor.execute("""
                     INSERT INTO portal_states (
                         listing_id, portal_name, portal_item_id, url, status, views, last_synced,
-                        is_top, top_expires_at, top_info
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        is_top, top_expires_at, top_info, portal_label, published_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(listing_id, portal_name) DO UPDATE SET
                         portal_item_id=excluded.portal_item_id,
                         url=excluded.url,
@@ -197,7 +205,9 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                         last_synced=excluded.last_synced,
                         is_top=excluded.is_top,
                         top_expires_at=excluded.top_expires_at,
-                        top_info=excluded.top_info
+                        top_info=excluded.top_info,
+                        portal_label=COALESCE(excluded.portal_label, portal_states.portal_label),
+                        published_at=COALESCE(excluded.published_at, portal_states.published_at)
                 """, (
                     listing_data.get("id"),
                     portal_name,
@@ -208,7 +218,9 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                     state.get("last_synced") or datetime.now().isoformat(),
                     1 if state.get("is_top") else 0,
                     state.get("top_expires_at"),
-                    state.get("top_info")
+                    state.get("top_info"),
+                    state.get("portal_label"),
+                    state.get("published_at")
                 ))
                 
         conn.commit()
@@ -422,14 +434,15 @@ def mark_listing_as_sold(
     listing_id: str,
     sale_price: Optional[Union[int, float, str]] = None,
     sold_at: Optional[str] = None,
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
+    sold_channel: Optional[str] = None
 ) -> bool:
     """Označí inzerát jako prodaný, nastaví prodejní cenu, datum a uzavře aktivní publikace."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         # Ověření existence inzerátu
-        cursor.execute("SELECT price FROM listings WHERE id = ?", (listing_id,))
+        cursor.execute("SELECT price, sold_channel FROM listings WHERE id = ?", (listing_id,))
         row = cursor.fetchone()
         if not row:
             return False
@@ -445,12 +458,13 @@ def mark_listing_as_sold(
 
         clean_sold_at = sold_at.strip() if isinstance(sold_at, str) and sold_at.strip() else datetime.now().strftime("%Y-%m-%d")
         clean_notes = notes.strip() if isinstance(notes, str) else (str(notes) if notes is not None else None)
+        clean_channel = sold_channel.strip() if isinstance(sold_channel, str) and sold_channel.strip() else None
 
         cursor.execute("""
             UPDATE listings
-            SET sale_price = ?, sold_at = ?, sold_notes = ?
+            SET sale_price = ?, sold_at = ?, sold_notes = ?, sold_channel = COALESCE(?, sold_channel)
             WHERE id = ?
-        """, (final_price, clean_sold_at, clean_notes, listing_id))
+        """, (final_price, clean_sold_at, clean_notes, clean_channel, listing_id))
 
         cursor.execute("""
             UPDATE portal_states
@@ -472,6 +486,77 @@ def mark_listing_as_sold(
 
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+def record_manual_publication(
+    listing_id: str,
+    portal_name: str,
+    portal_label: Optional[str] = None,
+    url: Optional[str] = None,
+    notes: Optional[str] = None
+) -> bool:
+    """Zaznamená ruční publikaci inzerátu na externím portálu (FB, Sbazar, Vinted, Aukro, atd.)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, price, title FROM listings WHERE id = ?", (listing_id,))
+        listing = cursor.fetchone()
+        if not listing:
+            return False
+
+        now_iso = datetime.now().isoformat()
+        today = datetime.now().strftime("%Y-%m-%d")
+        clean_url = url.strip() if url and url.strip() else ""
+        clean_portal_name = (portal_name or "custom").strip().lower()
+        clean_label = portal_label.strip() if portal_label and portal_label.strip() else clean_portal_name.capitalize()
+
+        cursor.execute("""
+            INSERT INTO portal_states (
+                listing_id, portal_name, url, status, views, last_synced, portal_label, published_at
+            ) VALUES (?, ?, ?, 'Aktivní', 0, ?, ?, ?)
+            ON CONFLICT(listing_id, portal_name) DO UPDATE SET
+                url = CASE WHEN excluded.url != '' THEN excluded.url ELSE portal_states.url END,
+                status = 'Aktivní',
+                last_synced = excluded.last_synced,
+                portal_label = excluded.portal_label,
+                published_at = COALESCE(portal_states.published_at, excluded.published_at)
+        """, (listing_id, clean_portal_name, clean_url, now_iso, clean_label, today))
+
+        cursor.execute("""
+            INSERT INTO listing_publications (
+                listing_id, portal_name, url, price, status, views, published_at
+            ) VALUES (?, ?, ?, ?, 'active', 0, ?)
+        """, (listing_id, clean_portal_name, clean_url, listing["price"] or 0, today))
+
+        if notes and notes.strip():
+            cursor.execute("SELECT notes FROM listings WHERE id = ?", (listing_id,))
+            curr_notes = cursor.fetchone()["notes"] or ""
+            new_notes = (curr_notes + "\n" + notes.strip()).strip() if curr_notes else notes.strip()
+            cursor.execute("UPDATE listings SET notes = ? WHERE id = ?", (new_notes, listing_id))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+def update_listing_portal_url(listing_id: str, portal_name: str, url: str) -> bool:
+    """Aktualizuje externí URL pro konkrétní portál inzerátu."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        clean_url = url.strip() if url else ""
+        clean_portal_name = (portal_name or "custom").strip().lower()
+        cursor.execute("""
+            UPDATE portal_states
+            SET url = ?, last_synced = ?
+            WHERE listing_id = ? AND portal_name = ?
+        """, (clean_url, datetime.now().isoformat(), listing_id, clean_portal_name))
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -501,7 +586,7 @@ def restore_sold_listing(listing_id: str) -> bool:
     finally:
         conn.close()
 
-def get_sold_statistics() -> Dict[str, Any]:
+def get_sold_statistics(include_channels: bool = False) -> Dict[str, Any]:
     """Spočítá souhrnné statistiky pro sekci Prodané věci s ochranou proti duplicitám při multi-portálech."""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -518,17 +603,26 @@ def get_sold_statistics() -> Dict[str, Any]:
             ) OR sold_at IS NOT NULL
         """)
         row = cursor.fetchone()
-        if not row:
-            return {
-                "total_sold": 0,
-                "total_profit": 0,
-                "avg_price": 0
-            }
-        return {
-            "total_sold": row["total_sold"] or 0,
-            "total_profit": int(row["total_profit"] or 0),
-            "avg_price": int(round(row["avg_price"] or 0))
+        res = {
+            "total_sold": (row["total_sold"] or 0) if row else 0,
+            "total_profit": int(row["total_profit"] or 0) if row else 0,
+            "avg_price": int(round(row["avg_price"] or 0)) if row else 0,
         }
+
+        if include_channels:
+            cursor.execute("""
+                SELECT COALESCE(sold_channel, 'bazos') as channel, COUNT(*) as count, SUM(COALESCE(sale_price, price, 0)) as profit
+                FROM listings
+                WHERE id IN (
+                    SELECT listing_id FROM portal_states 
+                    WHERE status IN ('Prodané', 'Sold', 'prodané')
+                ) OR sold_at IS NOT NULL
+                GROUP BY COALESCE(sold_channel, 'bazos')
+            """)
+            channel_rows = cursor.fetchall()
+            res["by_channel"] = {r["channel"]: {"count": r["count"], "profit": int(r["profit"] or 0)} for r in channel_rows}
+
+        return res
     finally:
         conn.close()
 

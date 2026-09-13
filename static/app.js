@@ -191,6 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const repostConfirmModal = document.getElementById("repost-confirm-modal");
     const deleteListingModal = document.getElementById("delete-listing-modal");
     const markSoldModal = document.getElementById("mark-sold-modal");
+    const manualPublishModal = document.getElementById("manual-publish-modal");
     const browserReviewBanner = document.getElementById("browser-review-banner");
     
     // Parent/child modal state helper to preserve currentAd
@@ -896,6 +897,130 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${parseInt(day)}. ${parseInt(month)}.`;
     };
 
+    const formatChannelName = (channel) => {
+        if (!channel) return "";
+        const ch = channel.toLowerCase();
+        if (ch === "bazos") return "Bazoš.cz";
+        if (ch === "facebook" || ch === "fb") return "FB Marketplace";
+        if (ch === "sbazar") return "Sbazar.cz";
+        if (ch === "vinted") return "Vinted";
+        if (ch === "aukro") return "Aukro.cz";
+        if (ch === "osobne") return "Osobní předání / Známý";
+        if (ch === "jiny") return "Jiný kanál";
+        return channel;
+    };
+
+    const getPortalBadgeConfig = (portalKey, label) => {
+        const key = (portalKey || "").toLowerCase();
+        switch (key) {
+            case "bazos":
+                return { icon: "fa-solid fa-cube", color: "var(--accent, #835cdf)", bg: "rgba(131, 92, 223, 0.18)", border: "rgba(131, 92, 223, 0.4)", name: "Bazoš" };
+            case "facebook":
+            case "fb":
+                return { icon: "fa-brands fa-facebook", color: "#38bdf8", bg: "rgba(56, 189, 248, 0.18)", border: "rgba(56, 189, 248, 0.4)", name: "FB Marketplace" };
+            case "sbazar":
+                return { icon: "fa-solid fa-store", color: "#f87171", bg: "rgba(248, 113, 113, 0.18)", border: "rgba(248, 113, 113, 0.4)", name: "Sbazar" };
+            case "vinted":
+                return { icon: "fa-solid fa-shirt", color: "#2dd4bf", bg: "rgba(45, 212, 191, 0.18)", border: "rgba(45, 212, 191, 0.4)", name: "Vinted" };
+            case "aukro":
+                return { icon: "fa-solid fa-gavel", color: "#eab308", bg: "rgba(234, 179, 8, 0.18)", border: "rgba(234, 179, 8, 0.4)", name: "Aukro" };
+            default:
+                return { icon: "fa-solid fa-globe", color: "#cbd5e1", bg: "rgba(255, 255, 255, 0.08)", border: "rgba(255, 255, 255, 0.2)", name: label || portalKey || "Portál" };
+        }
+    };
+
+    const renderPortalBadgesHtml = (ad) => {
+        let badgesHtml = "";
+        const pStates = ad.portal_states || {};
+        const renderedPortals = new Set();
+
+        // 1. Vykreslit všechny portály přítomné v portal_states
+        Object.entries(pStates).forEach(([portalKey, state]) => {
+            const normKey = portalKey.toLowerCase();
+            renderedPortals.add(normKey);
+            const cfg = getPortalBadgeConfig(normKey, state.portal_label);
+            const label = escapeHtml(state.portal_label || cfg.name);
+            const url = state.url || (normKey === "bazos" ? ad.url : "");
+
+            let actionHtml = "";
+            if (url) {
+                actionHtml = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none; margin-left: 2px;" title="Přejít na živý inzerát (${label})"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.65rem;"></i></a>`;
+            } else {
+                actionHtml = `<span class="badge-add-url" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" data-portal-label="${label}" style="cursor: pointer; opacity: 0.7; font-size: 0.65rem; margin-left: 2px; text-decoration: underline;" title="Klikni pro doplnění odkazu">+URL</span>`;
+            }
+
+            badgesHtml += `
+                <span class="portal-badge badge-${escapeHtml(normKey)}" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.3rem; background: ${cfg.bg}; color: ${cfg.color}; border: 1px solid ${cfg.border};">
+                    <i class="${cfg.icon}"></i> ${label} ${actionHtml}
+                </span>
+            `;
+        });
+
+        // 2. Fallbacky pro Bazoš a Aukro pokud nejsou v portal_states
+        if (!renderedPortals.has("bazos")) {
+            const hasBazos = ad.target_bazos || Boolean(ad.url);
+            badgesHtml += `
+                <span class="portal-badge badge-bazos" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${hasBazos ? 'background: rgba(131, 92, 223, 0.2); color: var(--accent); border: 1px solid rgba(131, 92, 223, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
+                    <i class="fa-solid ${hasBazos ? 'fa-square-check' : 'fa-square'}"></i> Bazoš ${ad.url ? `<a href="${escapeHtml(ad.url)}" target="_blank" style="color: inherit; text-decoration: none; margin-left: 2px;"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.65rem;"></i></a>` : ''}
+                </span>
+            `;
+        }
+
+        if (!renderedPortals.has("aukro") && ad.target_aukro) {
+            badgesHtml += `
+                <span class="portal-badge badge-aukro" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4);">
+                    <i class="fa-solid fa-square-check"></i> Aukro
+                </span>
+            `;
+        }
+
+        // 3. Počet vystavení / obnovení
+        if (ad.is_reposted) {
+            badgesHtml += `
+                <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4);" title="${ad.publication_count}. vystavení (přeceněno/obnoveno)">
+                    <i class="fa-solid fa-arrows-rotate"></i> ${ad.publication_count}. vystavení
+                </span>
+            `;
+        }
+
+        // 4. Bazoš TOP odznak
+        if (ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at)) {
+            badgesHtml += `
+                <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 165, 0, 0.2); color: #ff9900; border: 1px solid rgba(255, 165, 0, 0.5); box-shadow: 0 0 6px rgba(255,140,0,0.3);" title="${escapeHtml(ad.top_info || 'Aktivní placené TOPování na Bazoši')}">
+                    🔥 TOP <span style="font-size:0.65rem;opacity:0.85;">(do ${formatTopExpiry(ad.top_expires_at)})</span>
+                </span>
+            `;
+        }
+
+        return badgesHtml;
+    };
+
+    const promptUpdatePortalUrl = async (listingId, portalName, portalLabel, currentUrl) => {
+        const url = prompt(`Vlož odkaz na inzerát pro portál ${portalLabel}:`, currentUrl || "");
+        if (url === null) return;
+        const cleanUrl = url.trim();
+        try {
+            showNotification(`Ukládám odkaz na ${portalLabel}...`, "info");
+            const res = await fetch(`/api/listings/${listingId}/portal-url`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    portal_name: portalName,
+                    url: cleanUrl
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                showNotification(`Odkaz pro ${portalLabel} byl uložen!`, "success");
+                loadListings();
+            } else {
+                showNotification(data.message || "Chyba při ukládání odkazu.", "error");
+            }
+        } catch (err) {
+            showNotification("Chyba při ukládání odkazu: " + err.message, "error");
+        }
+    };
+
     const createAdCard = (ad, isSold) => {
         const card = document.createElement("div");
         card.className = "listing-card";
@@ -948,20 +1073,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
                 <div class="portal-badges" style="display: flex; gap: 0.5rem; margin-top: -0.25rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
-                    <span class="portal-badge badge-bazos" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${ad.target_bazos ? 'background: rgba(131, 92, 223, 0.2); color: var(--accent); border: 1px solid rgba(131, 92, 223, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
-                        <i class="fa-solid ${ad.target_bazos ? 'fa-square-check' : 'fa-square'}"></i> Bazoš
-                    </span>
-                    <span class="portal-badge badge-aukro" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${ad.target_aukro ? 'background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4);' : 'background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);'}">
-                        <i class="fa-solid ${ad.target_aukro ? 'fa-square-check' : 'fa-square'}"></i> Aukro
-                    </span>
-                    ${ad.is_reposted ? `
-                    <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4);" title="${ad.publication_count}. vystavení (přeceněno/obnoveno)">
-                        <i class="fa-solid fa-arrows-rotate"></i> ${ad.publication_count}. vystavení
-                    </span>` : ''}
-                    ${ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at) ? `
-                    <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 165, 0, 0.2); color: #ff9900; border: 1px solid rgba(255, 165, 0, 0.5); box-shadow: 0 0 6px rgba(255,140,0,0.3);" title="${escapeHtml(ad.top_info || 'Aktivní placené TOPování na Bazoši')}">
-                        🔥 TOP <span style="font-size:0.65rem;opacity:0.85;">(do ${formatTopExpiry(ad.top_expires_at)})</span>
-                    </span>` : ''}
+                    ${renderPortalBadgesHtml(ad)}
                 </div>
                 <p class="listing-desc">${escapeHtml(descText)}</p>
                 ${!isSold && ad.price ? `
@@ -995,6 +1107,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="listing-actions">
                     <button class="btn btn-secondary btn-edit"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
                     ${!isSold ? `
+                        <button class="btn btn-secondary btn-manual-publish-action" title="Zveřejnit ručně na FB Marketplace, Sbazar, Vinted..."><i class="fa-solid fa-share-nodes"></i> Zveřejnit jinde...</button>
                         <button class="btn btn-secondary btn-mark-sold" title="Zaznamenat prodej položky"><i class="fa-solid fa-handshake"></i> Prodáno</button>
                         <button class="btn btn-secondary btn-advisor" style="background: rgba(255,193,7,0.1); color: #ffc107; border: 1px solid rgba(255,193,7,0.3);"><i class="fa-solid fa-lightbulb"></i> Poradce</button>
                         <button class="btn btn-primary btn-post-action">
@@ -1040,6 +1153,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span style="color: var(--text-muted);"><i class="fa-solid fa-receipt"></i> Realizovaná cena:</span>
                     <strong style="color: #10b981; font-size: 1.05rem;">${realizedPrice.toLocaleString("cs-CZ")} Kč ${diffBadgeHtml}</strong>
                 </div>
+                ${ad.sold_channel ? `
+                <div class="sold-info-row">
+                    <span style="color: var(--text-muted);"><i class="fa-solid fa-store"></i> Prodejní kanál:</span>
+                    <span style="color: #38bdf8; font-weight: 600;">${escapeHtml(formatChannelName(ad.sold_channel))}</span>
+                </div>
+                ` : ""}
                 <div class="sold-info-row">
                     <span style="color: var(--text-muted);"><i class="fa-solid fa-calendar-check"></i> Datum prodeje:</span>
                     <span style="color: #cbd5e1;">${soldDateFormatted}</span>
@@ -1085,10 +1204,29 @@ document.addEventListener("DOMContentLoaded", () => {
         const cardDeleteBtn = card.querySelector(".btn-card-delete");
         const markSoldBtn = card.querySelector(".btn-mark-sold");
         const restoreSoldBtn = card.querySelector(".btn-restore-sold");
+        const manualPublishBtn = card.querySelector(".btn-manual-publish-action");
 
         const openEditor = () => openEditModal(ad);
         editBtn.addEventListener("click", openEditor);
         titleEl.addEventListener("click", openEditor);
+
+        if (manualPublishBtn) {
+            manualPublishBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openManualPublishModal(ad);
+            });
+        }
+
+        // Doplnění URL k portálovým odznakům
+        card.querySelectorAll(".badge-add-url").forEach(span => {
+            span.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const listingId = span.getAttribute("data-ad-id");
+                const portal = span.getAttribute("data-portal");
+                const pLabel = span.getAttribute("data-portal-label");
+                promptUpdatePortalUrl(listingId, portal, pLabel, "");
+            });
+        });
 
         if (markSoldBtn) {
             markSoldBtn.addEventListener("click", (e) => {
@@ -1606,6 +1744,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 btnMarkSold.innerHTML = `<i class="fa-solid fa-handshake"></i> Označit jako prodané`;
                 btnMarkSold.title = "Zaznamenat prodej položky a přesunout do archivu";
             }
+        }
+
+        const btnManualPublishOpen = document.getElementById("btn-manual-publish-open");
+        if (btnManualPublishOpen) {
+            btnManualPublishOpen.onclick = () => {
+                if (currentAd) {
+                    openManualPublishModal(currentAd);
+                }
+            };
         }
 
         // Zobrazit modal
@@ -3036,6 +3183,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (notesInput) notesInput.value = ad.sold_notes || "";
 
+        const channelSelect = document.getElementById("mark-sold-channel-select");
+        if (channelSelect) {
+            channelSelect.value = ad.sold_channel || "bazos";
+        }
+
         // Smazání na Bazoši zobrazit jen pokud má inzerát URL
         const hasUrl = Boolean(ad.url && ad.url.trim());
         if (deleteBazosWrapper) {
@@ -3101,11 +3253,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const priceInput = document.getElementById("mark-sold-price");
             const dateInput = document.getElementById("mark-sold-date");
             const notesInput = document.getElementById("mark-sold-notes");
+            const channelSelect = document.getElementById("mark-sold-channel-select");
             const deleteBazosCheckbox = document.getElementById("mark-sold-delete-bazos");
 
             const salePrice = priceInput && priceInput.value ? parseInt(priceInput.value, 10) : (targetAd.price || 0);
             const soldAt = dateInput ? dateInput.value : "";
             const notes = notesInput ? notesInput.value.trim() : "";
+            const soldChannel = channelSelect ? channelSelect.value : "";
             const deleteOnBazos = deleteBazosCheckbox ? deleteBazosCheckbox.checked : false;
 
             closeChildModal(markSoldModal);
@@ -3119,6 +3273,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         sale_price: salePrice,
                         sold_at: soldAt,
                         notes: notes,
+                        sold_channel: soldChannel,
                         delete_on_bazos: deleteOnBazos
                     })
                 });
@@ -3162,8 +3317,197 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // --- MANUAL PUBLISH MODAL LOGIKA ---
+    let pendingManualPublishAd = null;
+    let selectedManualPortal = "facebook";
+    let selectedManualLabel = "Facebook Marketplace";
+
+    const openManualPublishModal = (ad) => {
+        pendingManualPublishAd = ad;
+
+        const adTitleHeader = document.getElementById("manual-publish-ad-title");
+        if (adTitleHeader) {
+            adTitleHeader.textContent = ad.title || "Inzerát";
+        }
+
+        // 1-click copy inputs
+        const copyTitleInput = document.getElementById("manual-copy-title-input");
+        const copyPriceInput = document.getElementById("manual-copy-price-input");
+        const copyDescInput = document.getElementById("manual-copy-desc-input");
+        const zipBtnLabel = document.getElementById("manual-zip-btn-label");
+
+        if (copyTitleInput) copyTitleInput.value = ad.title || "";
+        if (copyPriceInput) copyPriceInput.value = ad.price ? `${ad.price} Kč` : "Dohodou";
+        if (copyDescInput) copyDescInput.value = ad.description || "";
+        if (zipBtnLabel) zipBtnLabel.textContent = `Stáhnout fotky (ZIP: ${ad.photos_count || 0})`;
+
+        // Reset inputs
+        const urlInput = document.getElementById("manual-portal-url-input");
+        const notesInput = document.getElementById("manual-portal-notes-input");
+        const customContainer = document.getElementById("manual-custom-portal-input-container");
+        const customNameInput = document.getElementById("manual-custom-portal-name");
+
+        if (urlInput) urlInput.value = "";
+        if (notesInput) notesInput.value = "";
+        if (customNameInput) customNameInput.value = "";
+        if (customContainer) customContainer.style.display = "none";
+
+        // Default: Facebook Marketplace
+        selectedManualPortal = "facebook";
+        selectedManualLabel = "Facebook Marketplace";
+
+        const chips = document.querySelectorAll(".btn-portal-chip");
+        chips.forEach(chip => {
+            const p = chip.getAttribute("data-portal");
+            if (p === "facebook") {
+                chip.classList.add("active");
+            } else {
+                chip.classList.remove("active");
+            }
+        });
+
+        // Prefill existing URL for default portal if present
+        if (ad.portal_states && ad.portal_states.facebook && ad.portal_states.facebook.url) {
+            if (urlInput) urlInput.value = ad.portal_states.facebook.url;
+        }
+
+        openChildModal(manualPublishModal);
+    };
+
+    // Přepínání čipů portálů v manual publish modalu
+    document.querySelectorAll(".btn-portal-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+            document.querySelectorAll(".btn-portal-chip").forEach(c => c.classList.remove("active"));
+            chip.classList.add("active");
+            selectedManualPortal = chip.getAttribute("data-portal");
+            selectedManualLabel = chip.getAttribute("data-label") || selectedManualPortal;
+
+            const customContainer = document.getElementById("manual-custom-portal-input-container");
+            const customInput = document.getElementById("manual-custom-portal-name");
+            const urlInput = document.getElementById("manual-portal-url-input");
+
+            if (selectedManualPortal === "custom") {
+                if (customContainer) customContainer.style.display = "block";
+                if (customInput) customInput.focus();
+            } else {
+                if (customContainer) customContainer.style.display = "none";
+            }
+
+            // Pokud inzerát už má pro tento portál evidovanou URL, předvyplníme ji
+            if (pendingManualPublishAd && pendingManualPublishAd.portal_states && urlInput) {
+                const existingState = pendingManualPublishAd.portal_states[selectedManualPortal];
+                if (existingState && existingState.url) {
+                    urlInput.value = existingState.url;
+                } else if (selectedManualPortal === "bazos" && pendingManualPublishAd.url) {
+                    urlInput.value = pendingManualPublishAd.url;
+                } else {
+                    urlInput.value = "";
+                }
+            }
+        });
+    });
+
+    // 1-Click Copy pomocníci
+    const setupManualCopyHelper = (btnId, inputId) => {
+        const btn = document.getElementById(btnId);
+        const input = document.getElementById(inputId);
+        if (!btn || !input) return;
+
+        btn.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(input.value);
+                const origHtml = btn.innerHTML;
+                btn.innerHTML = `<i class="fa-solid fa-check"></i> Zkopírováno!`;
+                btn.classList.add("copied");
+                setTimeout(() => {
+                    btn.innerHTML = origHtml;
+                    btn.classList.remove("copied");
+                }, 1500);
+            } catch (err) {
+                showNotification("Nepodařilo se zkopírovat text do schránky.", "error");
+            }
+        });
+    };
+
+    setupManualCopyHelper("btn-copy-manual-title", "manual-copy-title-input");
+    setupManualCopyHelper("btn-copy-manual-price", "manual-copy-price-input");
+    setupManualCopyHelper("btn-copy-manual-desc", "manual-copy-desc-input");
+
+    // Stažení fotografií jako ZIP
+    const btnManualDownloadZip = document.getElementById("btn-manual-download-zip");
+    if (btnManualDownloadZip) {
+        btnManualDownloadZip.addEventListener("click", () => {
+            if (!pendingManualPublishAd) return;
+            showNotification("Stahuji ZIP archiv s fotografiemi...", "info");
+            const downloadLink = document.createElement("a");
+            downloadLink.href = `/api/photos/${pendingManualPublishAd.id}/zip`;
+            downloadLink.download = `fotky-${pendingManualPublishAd.id}.zip`;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        });
+    }
+
+    // Odeslání a uložení ručního zveřejnění
+    const btnConfirmManualPublish = document.getElementById("btn-confirm-manual-publish");
+    if (btnConfirmManualPublish) {
+        btnConfirmManualPublish.addEventListener("click", async () => {
+            const targetAd = pendingManualPublishAd || currentAd;
+            if (!targetAd) return;
+
+            let portalName = selectedManualPortal;
+            let portalLabel = selectedManualLabel;
+
+            if (portalName === "custom") {
+                const customInput = document.getElementById("manual-custom-portal-name");
+                const customVal = customInput ? customInput.value.trim() : "";
+                if (!customVal) {
+                    showNotification("Zadej prosím název vlastního portálu.", "error");
+                    if (customInput) customInput.focus();
+                    return;
+                }
+                portalLabel = customVal;
+            }
+
+            const urlInput = document.getElementById("manual-portal-url-input");
+            const notesInput = document.getElementById("manual-portal-notes-input");
+            const url = urlInput ? urlInput.value.trim() : "";
+            const notes = notesInput ? notesInput.value.trim() : "";
+
+            closeChildModal(manualPublishModal);
+
+            try {
+                showNotification(`Ukládám evidenci pro ${portalLabel}...`, "info");
+                const res = await fetch(`/api/listings/${targetAd.id}/publish-manual`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        portal_name: portalName,
+                        portal_label: portalLabel,
+                        url: url,
+                        notes: notes
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showNotification(`🎉 Inzerát byl úspěšně zaevidován na ${portalLabel}!`, "success");
+                    loadListings();
+                } else {
+                    showNotification(data.message || "Chyba při ukládání evidence.", "error");
+                }
+            } catch (err) {
+                showNotification("Chyba při komunikaci se serverem: " + err.message, "error");
+            }
+        });
+    }
+
+    // Zavření manual-publish modalu
+    document.querySelectorAll(".btn-close-manual-publish-modal").forEach(btn => {
+        btn.addEventListener("click", () => closeChildModal(manualPublishModal));
+    });
+
     // Zavření child modalů při kliknutí do pozadí (backdrop)
-    [repostConfirmModal, deleteListingModal, markSoldModal].forEach(modal => {
+    [repostConfirmModal, deleteListingModal, markSoldModal, manualPublishModal].forEach(modal => {
         if (modal) {
             modal.addEventListener("click", (e) => {
                 if (e.target === modal) {

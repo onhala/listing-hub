@@ -1908,6 +1908,54 @@ input:focus, textarea:focus, select:focus {
     box-shadow: 0 8px 30px rgba(16, 185, 129, 0.1);
 }
 
+/* Manual Publishing & Multi-portal Evidence Styles */
+.btn-manual-publish-action {
+    background: rgba(56, 189, 248, 0.08);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+}
 
+.btn-manual-publish-action:hover {
+    background: rgba(56, 189, 248, 0.2);
+    color: #fff;
+    border-color: rgba(56, 189, 248, 0.5);
+}
 
+.btn-portal-chip {
+    transition: all 0.2s ease;
+    user-select: none;
+}
 
+.btn-portal-chip:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #fff !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.btn-portal-chip.active {
+    background: rgba(2, 132, 199, 0.25) !important;
+    border-color: #38bdf8 !important;
+    color: #fff !important;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+.btn-copy-helper {
+    transition: all 0.15s ease;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.btn-copy-helper:hover {
+    background: rgba(56, 189, 248, 0.15);
+    color: #fff !important;
+}
+
+.btn-copy-helper.copied {
+    color: #10b981 !important;
+}
+
+.badge-add-url:hover {
+    opacity: 1 !important;
+    color: #38bdf8 !important;
+    text-decoration: underline;
+}

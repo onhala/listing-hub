@@ -842,6 +842,9 @@
                             <button class="btn btn-primary btn-block" id="action-post">
                                 <i class="fa-solid fa-arrows-rotate"></i> Znovu vystavit (Topovat zdarma)
                             </button>
+                            <button class="btn btn-secondary btn-block" id="action-manual-publish" style="background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
+                                <i class="fa-solid fa-share-nodes"></i> Zveřejnit ručně / na jiném portálu...
+                            </button>
                             <button class="btn btn-secondary btn-block" id="action-edit-price">
                                 <i class="fa-solid fa-tag"></i> Synchronizovat cenu online
                             </button>
@@ -851,12 +854,15 @@
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; gap: 0.6rem; align-items: center;">
+                <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
                     <button type="button" class="btn btn-danger" id="btn-delete-listing-modal" style="display: flex; align-items: center; gap: 0.5rem;">
                         <i class="fa-solid fa-trash-can"></i> Smazat inzerát...
                     </button>
                     <button type="button" class="btn btn-secondary" id="btn-mark-sold-modal" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
                         <i class="fa-solid fa-handshake"></i> Označit jako prodané
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btn-manual-publish-open" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
+                        <i class="fa-solid fa-share-nodes"></i> Zveřejnit jinde...
                     </button>
                 </div>
                 <div style="display: flex; gap: 0.75rem;">
@@ -1533,6 +1539,21 @@
                 </div>
 
                 <div class="form-group" style="margin-top: 1rem;">
+                    <label for="mark-sold-channel-select" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
+                        Přes jaký kanál / portál byla věc prodána?
+                    </label>
+                    <select id="mark-sold-channel-select" style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.92rem; outline: none;">
+                        <option value="bazos">Bazoš.cz</option>
+                        <option value="facebook">Facebook Marketplace / Skupina</option>
+                        <option value="sbazar">Sbazar.cz</option>
+                        <option value="vinted">Vinted</option>
+                        <option value="aukro">Aukro</option>
+                        <option value="osobne">Osobní kontakt / Mimo portály</option>
+                        <option value="jine">Jiný portál</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-top: 1rem;">
                     <label for="mark-sold-date" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
                         Datum prodeje:
                     </label>
@@ -1565,8 +1586,124 @@
         </div>
     </div>
 
+    <!-- MANUAL / EXTERNAL PUBLISH MODAL -->
+    <div class="modal-overlay" id="manual-publish-modal" style="display: none; z-index: 1060;">
+        <div class="modal modal-lg" style="max-width: 680px; width: 95%;">
+            <div class="modal-header">
+                <h3 style="display: flex; align-items: center; gap: 0.6rem; color: #38bdf8;">
+                    <i class="fa-solid fa-share-nodes"></i> Zveřejnit ručně / na jiném portálu
+                </h3>
+                <button type="button" class="btn-close-manual-publish-modal" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem;">
+                <p style="margin-top: 0; font-size: 0.88rem; color: #cbd5e1; line-height: 1.5;">
+                    Využij připravený název, inženýrský popis a vyčištěné fotky pro bleskové vložení na libovolný portál. Položka zůstane plně v evidenci s vlastním barevným odznakem.
+                </p>
+
+                <!-- Výběr cílové platformy -->
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.5rem; display: block;">
+                        1. Zvol cílový portál / platformu:
+                    </label>
+                    <div id="manual-portal-chips" style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                        <button type="button" class="btn-portal-chip active" data-portal="facebook" data-label="FB Marketplace" style="background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #60a5fa; padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                            <i class="fa-brands fa-facebook"></i> FB Marketplace
+                        </button>
+                        <button type="button" class="btn-portal-chip" data-portal="sbazar" data-label="Sbazar.cz" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171; padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                            <i class="fa-solid fa-store"></i> Sbazar.cz
+                        </button>
+                        <button type="button" class="btn-portal-chip" data-portal="vinted" data-label="Vinted" style="background: rgba(6, 182, 212, 0.12); border: 1px solid rgba(6, 182, 212, 0.35); color: #22d3ee; padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                            <i class="fa-solid fa-shirt"></i> Vinted
+                        </button>
+                        <button type="button" class="btn-portal-chip" data-portal="aukro" data-label="Aukro" style="background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.35); color: #facc15; padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                            <i class="fa-solid fa-gavel"></i> Aukro
+                        </button>
+                        <button type="button" class="btn-portal-chip" data-portal="bazos" data-label="Bazoš (ručně)" style="background: rgba(139, 92, 246, 0.12); border: 1px solid rgba(139, 92, 246, 0.35); color: #a78bfa; padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                            <i class="fa-solid fa-cube"></i> Bazoš (ručně)
+                        </button>
+                        <button type="button" class="btn-portal-chip" data-portal="custom" data-label="Jiný portál" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.15); color: #cbd5e1; padding: 0.45rem 0.85rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                            <i class="fa-solid fa-globe"></i> Jiný portál...
+                        </button>
+                    </div>
+                    <div id="manual-custom-portal-input-container" style="display: none; margin-top: 0.5rem;">
+                        <input type="text" id="manual-custom-portal-name" placeholder="Zadej název platformy (např. Bike-forum, iFauna, Sbazar auto...)" style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.55rem 0.85rem; border-radius: 8px; font-size: 0.9rem; outline: none;">
+                    </div>
+                </div>
+
+                <!-- Asistent pro vložení (1-click copy + ZIP) -->
+                <div style="margin-top: 1.25rem; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 1rem;">
+                    <div style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.75rem; display: flex; align-items: center; justify-content: space-between;">
+                        <span><i class="fa-solid fa-paste" style="color: #38bdf8;"></i> 2. Rychlé zkopírování do inzerátu:</span>
+                        <button type="button" id="btn-manual-download-zip" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 10px; display: flex; align-items: center; gap: 0.4rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
+                            <i class="fa-solid fa-file-zipper"></i> <span id="manual-zip-btn-label">Stáhnout fotky (ZIP)</span>
+                        </button>
+                    </div>
+
+                    <!-- Nadpis -->
+                    <div style="margin-bottom: 0.65rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">NADPIS INZERÁTU:</span>
+                            <button type="button" id="btn-copy-manual-title" class="btn-copy-helper" style="background: none; border: none; color: #38bdf8; font-size: 0.78rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+                                <i class="fa-regular fa-copy"></i> Kopírovat
+                            </button>
+                        </div>
+                        <input type="text" id="manual-copy-title-input" readonly style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.45rem 0.7rem; border-radius: 6px; font-size: 0.88rem; font-weight: 600;">
+                    </div>
+
+                    <!-- Cena -->
+                    <div style="margin-bottom: 0.65rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">CENA:</span>
+                            <button type="button" id="btn-copy-manual-price" class="btn-copy-helper" style="background: none; border: none; color: #38bdf8; font-size: 0.78rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+                                <i class="fa-regular fa-copy"></i> Kopírovat
+                            </button>
+                        </div>
+                        <input type="text" id="manual-copy-price-input" readonly style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #10b981; padding: 0.45rem 0.7rem; border-radius: 6px; font-size: 0.88rem; font-weight: 700;">
+                    </div>
+
+                    <!-- Popis -->
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">TEXT POPISU:</span>
+                            <button type="button" id="btn-copy-manual-desc" class="btn-copy-helper" style="background: none; border: none; color: #38bdf8; font-size: 0.78rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;">
+                                <i class="fa-regular fa-copy"></i> Kopírovat celý popis
+                            </button>
+                        </div>
+                        <textarea id="manual-copy-desc-input" readonly rows="4" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1; padding: 0.45rem 0.7rem; border-radius: 6px; font-size: 0.82rem; line-height: 1.4; resize: vertical;"></textarea>
+                    </div>
+                </div>
+
+                <!-- URL a poznámka -->
+                <div class="form-group" style="margin-top: 1.25rem;">
+                    <label for="manual-portal-url-input" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
+                        3. Odkaz na živý inzerát (volitelné):
+                    </label>
+                    <input type="url" id="manual-portal-url-input" placeholder="https://www.facebook.com/marketplace/item/... nebo https://www.sbazar.cz/..." style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.9rem; outline: none;">
+                    <span style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-top: 4px;">
+                        URL můžeš vložit hned po vystavení, nebo kdykoliv později kliknutím na odznak portálu.
+                    </span>
+                </div>
+
+                <div class="form-group" style="margin-top: 0.85rem;">
+                    <label for="manual-portal-notes-input" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.35rem; display: block;">
+                        Poznámka k evidenci (volitelné):
+                    </label>
+                    <input type="text" id="manual-portal-notes-input" placeholder="Např. sdíleno i do skupiny Bazar ČB..." style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.55rem 0.85rem; border-radius: 8px; font-size: 0.88rem; outline: none;">
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 0.85rem 1.25rem;">
+                <button type="button" class="btn btn-secondary btn-close-manual-publish-modal">Zrušit</button>
+                <button type="button" class="btn btn-primary" id="btn-confirm-manual-publish" style="background: #0284c7; border-color: #0284c7; display: flex; align-items: center; gap: 0.5rem; font-weight: 600;">
+                    <i class="fa-solid fa-check"></i> Označit jako zveřejněné
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Client application logic -->
-    <script src="/static/app.js?v=3.8.8"></script>
+    <script src="/static/app.js?v=3.9.0"></script>
 </body>
 </html>
 

@@ -4,7 +4,9 @@ import json
 import re
 import base64
 import requests
-from flask import Flask, render_template, jsonify, request, Response
+import io
+import zipfile
+from flask import Flask, render_template, jsonify, request, Response, send_file
 from pathlib import Path
 
 # Přidáme aktuální adresář do sys.path, abychom mohli importovat post_to_bazos
@@ -360,7 +362,7 @@ def submit_sms_code():
         except Exception as e:
             return jsonify({"status": "error", "message": f"Nelze inicializovat prohlížeč: {e}"}), 500
         
-    def _fill_sms(page, *args):
+    def _fill_sms_internal(page, sms_code):
         if not page or page.is_closed():
             return {"submitted": False, "message": "Prohlížeč není otevřen."}
 
@@ -441,7 +443,8 @@ def submit_sms_code():
             code_input.click()
         except Exception:
             pass
-        code_input.fill(code)
+        code_input.fill(sms_code)
+        import time
         time.sleep(0.3)
         
         submit_btn = page.locator(
@@ -471,6 +474,9 @@ def submit_sms_code():
             "url": page.url,
             "message": f"SMS kód byl úspěšně vepsán do pole '{field_name}' a odeslán ({btn_clicked})."
         }
+
+    def _fill_sms(page, *args):
+        return _fill_sms_internal(page, code)
         
     try:
         result = session_manager.run_on_worker(_fill_sms)
@@ -481,6 +487,131 @@ def submit_sms_code():
         return jsonify({"status": "ok" if success else "error", "submitted": success})
     except Exception as e:
         return jsonify({"status": "error", "submitted": False, "message": str(e)}), 500
+
+@app.route("/api/sms/relay", methods=["GET", "POST"])
+def relay_sms_code():
+    """Příjem SMS kódu z automatizace (iOS Shortcuts / Mac Messages / Android Tasker) a automatické vyplnění do Playwrightu."""
+    try:
+        data = {}
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+        elif request.form:
+            data = request.form.to_dict()
+
+        msg_text = (
+            data.get("message")
+            or data.get("text")
+            or data.get("body")
+            or request.args.get("text")
+            or request.args.get("message")
+            or ""
+        )
+        direct_code = data.get("code") or request.args.get("code") or ""
+        token = data.get("token") or request.args.get("token") or request.headers.get("X-SMS-Token") or ""
+
+        # Volitelná kontrola bezpečnostního tokenu
+        _, user_config = load_data()
+        expected_token = user_config.get("sms_relay_token")
+        if expected_token and token != expected_token:
+            return jsonify({"status": "error", "message": "Neplatný autentizační token."}), 403
+
+        extracted_code = ""
+        if direct_code:
+            digits = "".join(ch for ch in str(direct_code) if ch.isdigit())
+            if len(digits) >= 4:
+                extracted_code = digits
+        if not extracted_code and msg_text:
+            match = re.search(r'\b(\d{4,8})\b', str(msg_text))
+            if match:
+                extracted_code = match.group(1)
+
+        if not extracted_code or len(extracted_code) < 4:
+            return jsonify({
+                "status": "error",
+                "message": "V požadavku nebyl nalezen žádný platný číselný SMS kód.",
+                "raw_input": str(msg_text)[:100]
+            }), 400
+
+        if not session_manager.running or not session_manager.page or session_manager.page.is_closed():
+            return jsonify({
+                "status": "warning",
+                "message": f"SMS kód {extracted_code} byl zachycen, ale prohlížeč Playwright momentálně neběží.",
+                "code": extracted_code
+            }), 200
+
+        def _relay_fill(page, *args):
+            # Použijeme stejnou logiku jako submit_sms_code
+            # Selektory
+            selectors = [
+                "input[name='klic']",
+                "input[id='klic']",
+                "input[name='kodd']",
+                "input[id='kodd']",
+                "input[name='cr']",
+                "input[name='kod']",
+                "input[name='overkod']",
+                "input[placeholder*='klíč']",
+                "input[placeholder*='klic']",
+                "input[placeholder*='kód']",
+                "input[placeholder*='kod']",
+                "input[placeholder*='SMS']",
+                "input[placeholder*='sms']",
+                "input[name*='kod']",
+                "input[name*='sms']",
+                "input[maxlength='6']"
+            ]
+            code_input = None
+            matched_sel = None
+            for sel in selectors:
+                loc = page.locator(sel)
+                if loc.count() > 0 and loc.first.is_visible():
+                    code_input = loc.first
+                    matched_sel = sel
+                    break
+            if not code_input:
+                return {"submitted": False, "message": "Pole pro SMS kód nebylo na stránce nalezeno."}
+
+            try:
+                code_input.click()
+            except Exception:
+                pass
+            code_input.fill(extracted_code)
+            import time
+            time.sleep(0.3)
+            submit_btn = page.locator(
+                "form:has(input[name='klic']) input[type='submit'], "
+                "form:has(input[name='kodd']) input[type='submit'], "
+                "input[type='submit'][value*='Vypsat inzeráty'], "
+                "input[type='submit'][value*='Vypsat'], "
+                "input[type='submit'][value*='Odeslat'], "
+                "input[type='submit'][value*='Ověřit'], "
+                "input[type='submit'][value*='Potvrdit'], "
+                "button[type='submit']"
+            )
+            btn_clicked = "Enter keypress"
+            if submit_btn.count() > 0 and submit_btn.first.is_visible():
+                btn_clicked = submit_btn.first.get_attribute("value") or "Odeslat"
+                submit_btn.first.click()
+            else:
+                code_input.press("Enter")
+            time.sleep(1.0)
+            session_manager.save_state()
+            return {
+                "submitted": True,
+                "target_field": matched_sel,
+                "button_clicked": btn_clicked,
+                "url": page.url,
+                "message": f"SMS kód {extracted_code} byl automaticky vepsán a odeslán přes SMS Relay."
+            }
+
+        result = session_manager.run_on_worker(_relay_fill)
+        if isinstance(result, dict):
+            status = "ok" if result.get("submitted") else "error"
+            return jsonify({"status": status, "relay": True, "code": extracted_code, **result})
+        success = bool(result)
+        return jsonify({"status": "ok" if success else "error", "relay": True, "code": extracted_code, "submitted": success})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/browser/focus-input", methods=["POST"])
 def browser_focus_input():
@@ -794,15 +925,20 @@ def get_listings():
         aukro_state = portal_states.get("aukro", {})
         
         # Format for front-end compatibility
-        # If it has a status in portal_states, we can use it, or default to listings.condition or 'Aktivní'
-        # Let's check status. If bazos status is 'Prodané', we put it in sold_listings, else active_listings.
-        # Wait, the status is mapped to "Aktivní" or "Prodané" in JSON.
-        
         status = "Aktivní"
-        if bazos_state:
+        if ad.get("sold_at") or ad.get("sale_price") is not None:
+            status = "Prodané"
+        elif bazos_state:
             status = bazos_state.get("status", "Aktivní")
         elif aukro_state:
             status = aukro_state.get("status", "Aktivní")
+        elif portal_states:
+            active_p = [ps for ps in portal_states.values() if ps.get("status") in ("Aktivní", "active")]
+            if active_p:
+                status = "Aktivní"
+            else:
+                first_ps = next(iter(portal_states.values()))
+                status = first_ps.get("status", "Aktivní")
             
         photos_dir = ad.get("local_photos_dir")
         p_count = 0
@@ -814,6 +950,13 @@ def get_listings():
                     p_count = len(all_imgs)
             except Exception:
                 pass
+
+        first_url = bazos_state.get("url", "")
+        if not first_url and portal_states:
+            for ps in portal_states.values():
+                if ps.get("url"):
+                    first_url = ps.get("url")
+                    break
 
         ad_dict = {
             "id": ad.get("id"),
@@ -835,8 +978,9 @@ def get_listings():
             "sale_price": ad.get("sale_price"),
             "sold_at": ad.get("sold_at"),
             "sold_notes": ad.get("sold_notes"),
-            # We map bazos state for backwards compatibility if needed:
-            "url": bazos_state.get("url", ""),
+            "sold_channel": ad.get("sold_channel"),
+            # We map bazos state or fallback for backwards compatibility:
+            "url": first_url,
             "views": bazos_state.get("views", 0),
             "status": status,
             "date_created": ad.get("created_at") or "",
@@ -888,6 +1032,70 @@ def get_photos():
     except Exception as e:
         return jsonify({"error": str(e), "photos": []}), 500
 
+def strip_exif_and_normalize(image_path: str) -> bool:
+    """Odstraní citlivá EXIF metadata (GPS souřadnice, sériová čísla) a zajistí správnou orientaci."""
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(image_path) as img:
+            transposed = ImageOps.exif_transpose(img)
+            fmt = img.format or "JPEG"
+            if fmt.upper() in ("JPEG", "JPG"):
+                if transposed.mode in ("RGBA", "P"):
+                    transposed = transposed.convert("RGB")
+                transposed.save(image_path, "JPEG", quality=92, optimize=True)
+            elif fmt.upper() == "PNG":
+                transposed.save(image_path, "PNG", optimize=True)
+            elif fmt.upper() == "WEBP":
+                transposed.save(image_path, "WEBP", quality=92)
+        return True
+    except Exception:
+        return False
+
+@app.route("/api/photos/<listing_id>/zip", methods=["GET"])
+def download_photos_zip(listing_id):
+    """Zabalí a stáhne všechny fotografie inzerátu v jednom ZIP archivu pro snadné ruční vložení na externí portály."""
+    try:
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            for cand in db.get_all_listings():
+                if cand.get("id") == listing_id or cand.get("local_photos_dir") == listing_id:
+                    listing = cand
+                    break
+
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+
+        raw_dir = listing.get("local_photos_dir", "")
+        photos_dir = resolve_photos_dir(raw_dir)
+        if not photos_dir or not os.path.isdir(photos_dir):
+            return jsonify({"status": "error", "message": "Složka s fotografiemi neexistuje."}), 404
+
+        files = sorted([
+            f for f in os.listdir(photos_dir)
+            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
+        ])
+        if not files:
+            return jsonify({"status": "error", "message": "Inzerát nemá žádné fotografie ke stažení."}), 404
+
+        safe_title = re.sub(r'[^\w\-_\. ]', '_', listing.get("title", "inzerat")[:30]).strip() or "inzerat"
+
+        memory_zip = io.BytesIO()
+        with zipfile.ZipFile(memory_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+            for idx, fname in enumerate(files, 1):
+                fpath = os.path.join(photos_dir, fname)
+                arcname = f"{idx:02d}_{fname}"
+                zf.write(fpath, arcname=arcname)
+
+        memory_zip.seek(0)
+        return send_file(
+            memory_zip,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"{safe_title}_fotky.zip"
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/photos/upload", methods=["POST"])
 def upload_photos():
     try:
@@ -919,6 +1127,8 @@ def upload_photos():
                 counter += 1
                 save_path = os.path.join(photos_dir, filename)
                 file.save(save_path)
+                # Ochrana soukromí: odstranit EXIF GPS data a srovnat orientaci
+                strip_exif_and_normalize(save_path)
                 saved.append(filename)
 
         return jsonify({"status": "success", "message": f"Úspěšně nahráno {len(saved)} fotek.", "saved_files": saved})
@@ -1405,6 +1615,70 @@ def delete_listing_endpoint():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/listings/<listing_id>/publish-manual", methods=["POST"])
+def publish_listing_manual(listing_id):
+    """Zaznamená ruční publikaci inzerátu na externím portálu (FB, Sbazar, Vinted, Aukro, atd.)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        portal_name = (data.get("portal_name") or "custom").strip().lower()
+        portal_label = (data.get("portal_label") or "").strip()
+        url = (data.get("url") or "").strip()
+        notes = (data.get("notes") or "").strip()
+
+        known_labels = {
+            "facebook": "FB Marketplace",
+            "sbazar": "Sbazar.cz",
+            "vinted": "Vinted",
+            "aukro": "Aukro",
+            "bazos": "Bazoš (ručně)",
+            "custom": portal_label or "Jiný portál"
+        }
+        if not portal_label:
+            portal_label = known_labels.get(portal_name, portal_name.capitalize())
+
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            for cand in db.get_all_listings():
+                if cand.get("id") == listing_id or cand.get("local_photos_dir") == listing_id:
+                    listing = cand
+                    listing_id = cand.get("id")
+                    break
+
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen"}), 404
+
+        success = db.record_manual_publication(
+            listing_id=listing_id,
+            portal_name=portal_name,
+            portal_label=portal_label,
+            url=url,
+            notes=notes
+        )
+
+        updated_listing = db.get_listing_by_id(listing_id)
+        return jsonify({
+            "status": "success",
+            "message": f"Inzerát byl úspěšně zaevidován na portálu {portal_label}.",
+            "listing": updated_listing
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/<listing_id>/portal-url", methods=["POST"])
+def update_portal_url(listing_id):
+    """Aktualizuje externí URL pro zvolený portál inzerátu."""
+    try:
+        data = request.get_json(silent=True) or {}
+        portal_name = (data.get("portal_name") or "bazos").strip().lower()
+        url = (data.get("url") or "").strip()
+
+        success = db.update_listing_portal_url(listing_id, portal_name, url)
+        if success:
+            return jsonify({"status": "success", "message": "URL byla úspěšně aktualizována."})
+        return jsonify({"status": "error", "message": "Portál inzerátu nebyl nalezen."}), 404
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/listings/<listing_id>/mark_sold", methods=["POST"])
 def mark_listing_sold(listing_id):
     """Označí inzerát jako prodaný, nastaví prodejní cenu a volitelně smaže z Bazoše."""
@@ -1413,6 +1687,7 @@ def mark_listing_sold(listing_id):
         sale_price = data.get("sale_price")
         sold_at = data.get("sold_at") or datetime.now().strftime("%Y-%m-%d")
         notes = data.get("notes") or ""
+        sold_channel = data.get("sold_channel") or None
         delete_on_bazos = data.get("delete_on_bazos", True)
 
         listing = db.get_listing_by_id(listing_id)
@@ -1436,7 +1711,10 @@ def mark_listing_sold(listing_id):
                 sale_price = listing.get("price", 0)
 
         # 1. Zapsat prodej do DB
-        db.mark_listing_as_sold(listing_id, sale_price, sold_at, notes)
+        if sold_channel is not None:
+            db.mark_listing_as_sold(listing_id, sale_price, sold_at, notes, sold_channel=sold_channel)
+        else:
+            db.mark_listing_as_sold(listing_id, sale_price, sold_at, notes)
 
         # 2. Úklid na Bazoši pokud požadováno a existuje URL
         portal_state = listing.get("portal_states", {}).get("bazos", {})
