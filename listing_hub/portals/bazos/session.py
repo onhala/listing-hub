@@ -3,8 +3,6 @@ import time
 import atexit
 import queue
 import threading
-from datetime import datetime
-from pathlib import Path
 from listing_hub.core.config import SESSION_STATE_PATH
 
 class Colors:

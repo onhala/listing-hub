@@ -19,7 +19,7 @@ from typing import Optional, Dict, Any
 from flask import Blueprint, request, jsonify
 
 import listing_hub.core.db as db
-from listing_hub.core.config import PHOTOS_DIR, PROJECT_ROOT, CONFIG_PATH, load_user_config
+from listing_hub.core.config import PHOTOS_DIR, PROJECT_ROOT, CONFIG_PATH
 from listing_hub.core.version import APP_VERSION
 from listing_hub.ai.advisor import analyze_market_prices as unified_market_price_radar
 
@@ -494,7 +494,6 @@ def agent_action_post():
         _, user_config = load_data()
 
         # Launch background worker
-        from app import ActionStateManager
         worker_thread = threading.Thread(
             target=process_target,
             args=(ad_dict, user_config, "post", None),

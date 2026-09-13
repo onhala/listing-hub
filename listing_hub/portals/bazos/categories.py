@@ -1,6 +1,8 @@
 import re
+import unicodedata
+from typing import List, Dict, Tuple, Optional, Any
 
-def extract_ad_id(url: str) -> str:
+def extract_ad_id(url: Optional[str]) -> Optional[str]:
     """Extrahuje ID inzerátu z URL."""
     if not url:
         return None
@@ -9,7 +11,7 @@ def extract_ad_id(url: str) -> str:
         return match.group(1)
     return None
 
-def extract_subdomain(url: str) -> str:
+def extract_subdomain(url: Optional[str]) -> str:
     """Extrahuje subdoménu (např. dum.bazos.cz nebo nabytek.bazos.cz) z URL."""
     if not url:
         return "dum.bazos.cz"
@@ -134,7 +136,7 @@ DOMAIN_KEYWORDS = {
     ]
 }
 
-def rank_target_domains(title: str, description: str = "", category: str = "", original_url: str = "") -> list:
+def rank_target_domains(title: str, description: str = "", category: str = "", original_url: str = "") -> List[Dict[str, Any]]:
     """
     Ohodnotí a seřadí všech 20 subdomén Bazoše podle relevance k inzerátu.
     Vrací seznam dictů seřazených sestupně podle score:
@@ -143,7 +145,6 @@ def rank_target_domains(title: str, description: str = "", category: str = "", o
     t_norm = normalize_cz(title)
     d_norm = normalize_cz(description)
     c_norm = normalize_cz(category)
-    url_lower = (original_url or "").lower()
 
     # Zjistíme doménu z existující URL
     existing_sub = extract_subdomain(original_url) if original_url else ""
@@ -205,11 +206,8 @@ def get_target_domain(title: str, original_url: str = "", category: str = "", de
         return ranked[0]["domain"]
     return "dum.bazos.cz"
 
-
-
-def normalize_cz(text: str) -> str:
+def normalize_cz(text: Optional[str]) -> str:
     """Normalizuje český text (odstraní diakritiku, převede na malá písmena a odstraní speciální znaky)."""
-    import unicodedata
     if not text:
         return ""
     nfkd = unicodedata.normalize('NFKD', str(text).lower())
@@ -267,7 +265,12 @@ CATEGORY_SYNONYMS = {
 }
 
 
-def match_best_category_option(options: list, title: str, description: str = "", category: str = "") -> tuple:
+def match_best_category_option(
+    options: List[Tuple[str, str]],
+    title: str,
+    description: str = "",
+    category: str = ""
+) -> Tuple[Optional[str], str, int]:
     """
     Vybere nejvhodnější položku z nabídky <option> prvků na základě názvu, popisu a kategorie inzerátu.
     options: seznam dvojic (value, label)

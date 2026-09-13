@@ -1,26 +1,26 @@
-from typing import List, Dict, Any
-from datetime import datetime
-import uuid
+import os
+import sys
 import re
 import time
+import uuid
+import unicodedata
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any, Set
+from bs4 import BeautifulSoup
+
 from listing_hub.portals.base import AbstractPortal
 from listing_hub.portals.bazos.session import session_manager
-from listing_hub.portals.bazos.categories import extract_ad_id, extract_subdomain, get_target_domain
-from listing_hub.portals.bazos.date_parser import parse_bazos_date
-from listing_hub.core.db import save_listing, get_all_listings, get_db_connection
-from listing_hub.core.config import PHOTOS_DIR
+from listing_hub.portals.bazos.categories import extract_ad_id, get_target_domain
 from listing_hub.portals.bazos.scraper import scrape_listings_from_html
+from listing_hub.core.db import save_listing, get_all_listings, get_publication_by_url_or_item_id
+from listing_hub.core.config import PHOTOS_DIR, PROJECT_ROOT, SESSION_STATE_PATH
 
-import sys
-import os
-import urllib.request
-from pathlib import Path
-from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 import post_to_bazos
-from listing_hub.core.config import PROJECT_ROOT
 
-def download_bazos_photos_if_missing(ad_url: str, local_photos_dir_str: str):
+def download_bazos_photos_if_missing(ad_url: str, local_photos_dir_str: str) -> None:
     """
     Stáhne fotky z Bazoše v plném rozlišení, pokud lokální složka neobsahuje žádné fotky.
     Pokud v lokální složce už fotky existují (uživatel je vytvořil/nahrál lokálně), 
@@ -168,6 +168,21 @@ def fetch_bazos_ad_details(ad_url: str) -> dict:
 
     return result
 
+def _extract_keywords(txt: str) -> Set[str]:
+    """Extrahuje významová klíčová slova bez diakritiky a stop-slov pro fuzzy párování inzerátů."""
+    norm = unicodedata.normalize('NFKD', txt).encode('ascii', 'ignore').decode('utf-8').lower()
+    words = re.findall(r'[a-z0-9]{3,}', norm)
+    stop = {'pro', 'pod', 'nad', 'bez', 'nebo', 'prodam', 'nabizim', 'top', 'stav', 'nova', 'novy', 'osob'}
+    return set(w for w in words if w not in stop)
+
+def _simple_slugify(text: str) -> str:
+    """Převede název na bezpečný název složky pro fotografie."""
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\s_]', '', text)
+    text = re.sub(r'[\s_]+', '_', text).strip('_')
+    return text
+
 class BazosPortal(AbstractPortal):
     """
     Implementace inzertního portálu Bazoš.cz.
@@ -282,7 +297,6 @@ class BazosPortal(AbstractPortal):
 
             # Uložíme platné session cookies pro příští rychlé přihlášení
             try:
-                from listing_hub.core.config import SESSION_STATE_PATH
                 page.context.storage_state(path=str(SESSION_STATE_PATH))
             except Exception:
                 pass
@@ -349,21 +363,14 @@ class BazosPortal(AbstractPortal):
 
             # Priority 4: Match podle klíčových slov v nadpisu (pro znovuvystavené inzeráty s mírně pozměněným názvem)
             if not best_scraped_match and local_ad.get("title"):
-                import unicodedata
-                def extract_kw(txt):
-                    norm = unicodedata.normalize('NFKD', txt).encode('ascii', 'ignore').decode('utf-8').lower()
-                    words = re.findall(r'[a-z0-9]{3,}', norm)
-                    stop = {'pro', 'pod', 'nad', 'bez', 'nebo', 'prodam', 'nabizim', 'top', 'stav', 'nova', 'novy', 'osob'}
-                    return set(w for w in words if w not in stop)
-
-                l_kw = extract_kw(local_ad["title"])
+                l_kw = _extract_keywords(local_ad["title"])
                 if len(l_kw) >= 2:
                     best_kw_ratio = 0.0
                     candidate_idx = -1
                     for s_idx, scraped_ad in enumerate(scraped_listings):
                         if s_idx in matched_scraped_indices:
                             continue
-                        s_kw = extract_kw(scraped_ad["title"])
+                        s_kw = _extract_keywords(scraped_ad["title"])
                         if not s_kw:
                             continue
                         common = l_kw & s_kw
@@ -440,7 +447,6 @@ class BazosPortal(AbstractPortal):
             # Zombie Resurrection Defense: Ověříme, zda inzerát neodpovídá publikaci v historii (např. superseded / smazaný)
             scraped_url = (scraped_ad.get("url") or "").strip()
             scraped_id = extract_ad_id(scraped_url)
-            from listing_hub.core.db import get_publication_by_url_or_item_id
             archived_pub = get_publication_by_url_or_item_id("bazos", url=scraped_url, portal_item_id=scraped_id)
             if archived_pub:
                 print(f"  [Zombie Defense] Nalezen starý inzerát z historie (ID: {scraped_id}, listing: {archived_pub.get('listing_id')}). Přeskakuji import duplicity.")
@@ -449,15 +455,7 @@ class BazosPortal(AbstractPortal):
             default_pwd_b64 = user_config.get("default_ad_password_b64", "aGVzbG8xMjM=")
             
             # Vytvoření složky pro fotografie
-            import unicodedata
-            def simple_slugify(text):
-                text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
-                text = text.lower()
-                text = re.sub(r'[^a-z0-9\s_]', '', text)
-                text = re.sub(r'[\s_]+', '_', text).strip('_')
-                return text
-                
-            folder_name = simple_slugify(scraped_ad["title"])
+            folder_name = _simple_slugify(scraped_ad["title"])
             local_ad_photos_dir = PHOTOS_DIR / folder_name
             local_ad_photos_dir.mkdir(parents=True, exist_ok=True)
             

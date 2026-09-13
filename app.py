@@ -10,17 +10,18 @@ from pathlib import Path
 # Přidáme aktuální adresář do sys.path, abychom mohli importovat post_to_bazos
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-import multiprocessing
 import threading
 import asyncio
-
-from post_to_bazos import load_data, save_listings, run_playwright_action, cli_update_listings_from_bazos, LISTINGS_PATH, session_manager
-from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH, PHOTOS_DIR, PROJECT_ROOT, LOGS_DIR, LOG_FILE_PATH
 import uuid
+import shutil
+from datetime import datetime, timezone
+
+from post_to_bazos import load_data, run_playwright_action, session_manager
+from listing_hub.core.config import CONFIG_PATH, PHOTOS_DIR, PROJECT_ROOT, LOGS_DIR, LOG_FILE_PATH
 import listing_hub.core.db as db
 from listing_hub.ai.gemini import improve_text_with_gemini, get_available_gemini_models
 from listing_hub.ai.vision import analyze_photos_with_vision
-from listing_hub.core.version import get_version_status, is_docker, APP_VERSION
+from listing_hub.core.version import get_version_status, is_docker
 from listing_hub.core.calendar import generate_ical_feed
 from listing_hub.ai.photo_editor import process_photo_pipeline
 
@@ -50,9 +51,6 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 playwright_process = None
-
-from datetime import datetime
-import shutil
 
 class ActionStateManager:
     IDLE = "idle"
@@ -220,20 +218,17 @@ def process_target(ad, user_config, action_type, extra_val, meta=None):
                 log_debug("5. Done BazosPortal().sync_listings")
                 
                 # Zaznamenáme čas úspěšné aktualizace
-                from post_to_bazos import CONFIG_PATH
                 if CONFIG_PATH.exists():
                     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                         full_config = json.load(f)
                     full_config.setdefault("user", {})
                     full_config["user"]["auto_refresh_status"] = "ok"
-                    from datetime import timezone
                     full_config["user"]["last_refresh_time"] = datetime.now(timezone.utc).isoformat()
                     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                         json.dump(full_config, f, ensure_ascii=False, indent=2)
             except Exception as inner_e:
                 log_debug(f"Inner Exception during sync: {inner_e}")
                 if "SMS_REQUIRED" in str(inner_e):
-                    from post_to_bazos import CONFIG_PATH
                     if CONFIG_PATH.exists():
                         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                             full_config = json.load(f)
@@ -981,10 +976,12 @@ def api_photo_edit_preview():
 
             if not raw_photos_dir and listing_id:
                 conn = db.get_db_connection()
-                row = conn.cursor().execute("SELECT local_photos_dir FROM listings WHERE id = ?", (listing_id,)).fetchone()
-                conn.close()
-                if row:
-                    raw_photos_dir = row["local_photos_dir"]
+                try:
+                    row = conn.cursor().execute("SELECT local_photos_dir FROM listings WHERE id = ?", (listing_id,)).fetchone()
+                    if row:
+                        raw_photos_dir = row["local_photos_dir"]
+                finally:
+                    conn.close()
 
             if raw_photos_dir and filename:
                 photos_dir = resolve_photos_dir(raw_photos_dir)
@@ -1018,10 +1015,12 @@ def api_photo_edit_save():
 
         if not raw_photos_dir and listing_id:
             conn = db.get_db_connection()
-            row = conn.cursor().execute("SELECT local_photos_dir FROM listings WHERE id = ?", (listing_id,)).fetchone()
-            conn.close()
-            if row:
-                raw_photos_dir = row["local_photos_dir"]
+            try:
+                row = conn.cursor().execute("SELECT local_photos_dir FROM listings WHERE id = ?", (listing_id,)).fetchone()
+                if row:
+                    raw_photos_dir = row["local_photos_dir"]
+            finally:
+                conn.close()
 
         photos_dir = resolve_photos_dir(raw_photos_dir)
         if not filename or not photos_dir:
@@ -2167,10 +2166,12 @@ def api_analyze_existing_listing(listing_id):
             return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
 
         conn = db.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT local_photos_dir, title, notes FROM listings WHERE id = ?", (listing_id,))
-        row = cursor.fetchone()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT local_photos_dir, title, notes FROM listings WHERE id = ?", (listing_id,))
+            row = cursor.fetchone()
+        finally:
+            conn.close()
 
         if not row:
             return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404

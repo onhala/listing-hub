@@ -1,7 +1,7 @@
 import re
 import secrets
 from datetime import datetime, date, timedelta, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 def escape_ical_text(text: str) -> str:
     """Escapes special characters according to RFC 5545 (commas, semicolons, backslashes, newlines)."""

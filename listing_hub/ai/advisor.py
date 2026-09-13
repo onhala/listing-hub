@@ -466,20 +466,21 @@ def get_price_recommendation(listing_id: str, api_key: str = "", gemini_model: s
     Vyřazuje ze srovnání vlastní inzerát.
     """
     conn = db.get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title, price FROM listings WHERE id = ?", (listing_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return {"error": "Inzerát nebyl nalezen v databázi."}
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title, price FROM listings WHERE id = ?", (listing_id,))
+        row = cursor.fetchone()
+        if not row:
+            return {"error": "Inzerát nebyl nalezen v databázi."}
+            
+        title = row["title"]
+        current_price = row["price"]
         
-    title = row["title"]
-    current_price = row["price"]
-    
-    cursor.execute("SELECT url FROM portal_states WHERE listing_id = ? AND portal_name = 'bazos'", (listing_id,))
-    p_row = cursor.fetchone()
-    bazos_url = p_row["url"] if p_row else None
-    conn.close()
+        cursor.execute("SELECT url FROM portal_states WHERE listing_id = ? AND portal_name = 'bazos'", (listing_id,))
+        p_row = cursor.fetchone()
+        bazos_url = p_row["url"] if p_row else None
+    finally:
+        conn.close()
     
     # 1. Pokud je v unit testech patchnutý analyze_bazos_prices (nebo analyze_market_prices)
     from unittest.mock import Mock

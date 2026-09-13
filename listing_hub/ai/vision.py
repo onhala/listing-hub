@@ -1,10 +1,9 @@
 import io
-import os
 import re
 import json
 import base64
 import requests
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple
 from PIL import Image, ImageOps
 
 from listing_hub.ai.gemini import strip_markdown_codeblocks, clean_bazos_text

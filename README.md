@@ -25,86 +25,142 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
    - **Fáze 2 (Kontrola a potvrzení)**: Uživatel v živém prohlížeči inzerát zkontroluje, klikne na Bazoši na *Odeslat* a v Listing Hubu stiskne tlačítko **Potvrdit odeslání** (`POST /api/action/confirm`). Systém ověří publikování, získá trvalou URL inzerátu a atomicky jej v DB přepne mezi aktivní.
    - **Optimalizovaný timeout**: Výchozí timeout Playwright operací je sjednocen na 30 sekund s průběžným odbavováním událostí na dedikovaném worker vlákně.
 
-3. **Předvýběr rubriky & prevence reloadu (Bazoš Subdomains)**:
-   - **Rubrika Confirmation Modal**: Před vystavením nebo znovuvystavením inzerátu systém nabídne potvrzení cílové subdomény (`dum.bazos.cz`, `pc.bazos.cz`, `nabytek.bazos.cz`, `elektro.bazos.cz`, `stroje.bazos.cz` apod.).
-   - **Inteligentní heuristika**: Algoritmus automaticky předvybere subdoménu podle klíčových slov a synonym v titulku a kategorii (s ochranou proti falešným shodám, např. motorky vs. elektromotor).
-   - **Ochrana před smazáním formuláře**: Změna rubriky na Bazoši vyvolává reload celé stránky, který maže předvyplněná pole. Směrováním bota přímo na cílovou subdoménu je toto riziko 100% eliminováno.
+3. **Kompletní podpora všech 20 rubrik Bazoše & AI doporučování (Bazoš Subdomains)**:
+   - **Plné pokrytí všech 20 rubrik**: Kompletní integrace všech specializovaných subdomén portálu Bazoš.cz:
+     - `deti.bazos.cz` (Děti a hračky), `dum.bazos.cz` (Dům a zahrada), `nabytek.bazos.cz` (Nábytek), `elektro.bazos.cz` (Elektro a spotřebiče), `sport.bazos.cz` (Sport a outdoor), `auto.bazos.cz` (Auto), `motorky.bazos.cz` (Motorky a čtyřkolky), `stroje.bazos.cz` (Stroje a dílna), `pc.bazos.cz` (PC a počítače), `mobil.bazos.cz` (Mobily a chytré hodinky), `foto.bazos.cz` (Foto a kamery), `hudba.bazos.cz` (Hudba a nástroje), `obleceni.bazos.cz` (Oblečení a obuv), `knihy.bazos.cz` (Knihy a časopisy), `zvirata.bazos.cz` (Zvířata a chovatelství), `vstupenky.bazos.cz` (Vstupenky a lístky), `reality.bazos.cz` (Reality a nemovitosti), `prace.bazos.cz` (Práce a brigády), `sluzby.bazos.cz` (Služby a řemesla), `ostatni.bazos.cz` (Ostatní).
+   - **Inteligentní AI & heuristický ranking (`POST /api/ai/suggest-rubrika`)**: Algoritmus analyzuje titulek, popis, kategorii a případnou stávající URL inzerátu. Využívá vážené bodování klíčových slov (titulek váha 90, popis váha 20, shoda v kategorii váha 80, původní URL váha 1000) a speciální regex disambiguaci (např. motorky vs. elektromotory), seřazuje všech 20 rubrik podle relevance a doporučuje top 3 volby s vysvětlením důvodu.
+   - **Dvoufázový protokol proti smazání formuláře**: Změna rubriky na Bazoši vyvolává tvrdý reload celé stránky, který maže všechna předvyplněná pole a nahrané fotky. Směrováním bota přímo na cílovou subdoménu (`https://{target_domain}/pridat-inzerat.php`) je reload i riziko ztráty dat 100% eliminováno.
+   - **REST API pro rubriky**: Endpoint `GET /api/bazos/rubriky` vrací kompletní katalog rubrik včetně ikon a českých názvů.
 
-4. **Bezpečné mazání inzerátů s Choice Cards & úklidem fotografií**:
+4. **Dávkové / hromadné znovuvystavení inzerátů (Batch Reposting)**:
+   - **Hromadný výběr položek**: Tlačítko pro aktivaci dávkového režimu v záložkách *Aktivní inzeráty* i *Věci k prodeji*, výběr jednotlivých inzerátů pomocí checkboxů na kartách a tlačítko *Vybrat vše* s plovoucí akční lištou a počítadlem vybraných kusů.
+   - **Přehledný dávkový dialog (`batch-repost-modal`)**: Interaktivní správa před spuštěním dávky. U každého vybraného inzerátu lze v přehledné tabulce:
+     - Individuálně upravit novou nabídkovou cenu (včetně přecenění / slevy ležáků).
+     - Individuálně změnit cílovou rubriku z rozbalovacího seznamu všech 20 rubrik Bazoše.
+     - Kdykoliv konkrétní inzerát z dávky odebrat jedním kliknutím.
+   - **Postupné bezpečné odbavení fronty (Sequential Queue Execution)**:
+     - Běh na pozadí s přehledným plovoucím indikátorem fronty (`batch-queue-indicator`) zobrazujícím aktuální položku `X/N` a její název.
+     - Možnost problematický inzerát v průběhu přeskočit tlačítkem *Přeskočit položku* (`btn-batch-skip`) a pokračovat na další.
+     - Možnost celou dávku kdykoliv bezpečně zastavit tlačítkem *Zrušit dávku* (`btn-batch-cancel`).
+     - Robot Playwright postupně provede bezpečné topování: asynchronní smazání starého inzerátu online přes heslo a vystavení nového s aktualizovanou cenou a rubrikou.
+
+5. **Správa prodaných inzerátů (Sold Archive & Analytics)**:
+   - **Jednoduché označení prodeje**: Tlačítko *Prodáno* přímo na kartě inzerátu, v modalu smazání (Choice Cards) i v patičce detailního editoru (`POST /api/listings/<listing_id>/mark_sold`).
+   - **Finanční evidence a real-time kalkulace**: Dialog umožňuje zadat reálnou prodejní cenu (`sale_price`), datum obchodu (`sold_at`) a interní poznámku k nákupu (`sold_notes`, např. jméno kupujícího, poskytnutá sleva). Rozhraní v reálném čase vizuálně indikuje odchylku od původní ceny (zelený odznak pro plnou cenu, červený pro slevu, modrý pro přirážku).
+   - **Automatické online stažení z Bazoše**: Volitelný checkbox *„Smazat inzerát na Bazoši (pokud je vystaven)“* automaticky spustí Playwright workera na pozadí, který inzerát na Bazoši přes uložené heslo vymaže, aby po realizovaném prodeji nechodily další zprávy a hovory.
+   - **Manažerský dashboard / Executive statistiky (`GET /api/listings/sold_stats`)**: V záložce *Prodané věci* je integrován živý finanční a výkonnostní přehled:
+     - 🤝 **Celkem prodáno**: Celkový počet úspěšně zobchodovaných položek (ks).
+     - 💰 **Realizovaný zisk a tržby**: Souhrnná částka z reálně uskutečněných prodejů v Kč.
+     - 📊 **Průměrná realizovaná cena**: Průměrná výše tržby na jeden prodaný inzerát.
+     - 🏷️ **Průměrná sleva & úspěšnost**: Vizuální indikace slevy a marže u jednotlivých transakcí.
+   - **Strukturovaná karta prodané položky**: Zelený odznak `PRODÁNO`, realizovaná částka, odchylka v %, datum obchodu a kurzívou zvýrazněná interní poznámka.
+   - **100% Reverzibilita („Vrátit k prodeji“ - `POST /api/listings/<listing_id>/restore_sold`)**: Při odstoupení kupujícího nebo chybě stačí kliknout na *Vrátit k prodeji* – položka se vrátí mezi *Věci k prodeji*, prodejní pole se vynulují a inzerát je ve stavu `Expirováno` připraven k okamžitému znovuvystavení.
+
+6. **Dynamické načítání Google AI (Gemini) modelů z uživatelského účtu**:
+   - **Dynamické zjištění modelů (`GET /api/ai/models`)**: Aplikace se dotazuje přímo na Google Generative Language API (`/v1beta/models`) a načítá modely aktivní na uživatelském účtu s podporou parametru `force=true` pro okamžité obnovení.
+   - **Automatické nahrazení ukončených modelů**: Modely vyřazené Googlem (např. `gemini-2.5-pro`) jsou automaticky detekovány a v rozhraní nahrazeny doporučeným modelem `gemini-2.5-flash` nebo preview verzí pro hlubokou analýzu `gemini-3.1-pro-preview`.
+   - **Inteligentní sanitace katalogu**: Zobrazeny jsou pouze modely podporující metodu `generateContent`. Nepoužitelné embedding, imagen či interní eval modely jsou automaticky odfiltrovány.
+   - **Robustní offline fallback**: Pokud není zadán API klíč, nastane výpadek sítě nebo Google API vrátí chybu, systém bezpečně přepne na vestavěný seznam `DEFAULT_FALLBACK_MODELS`.
+   - **In-memory cache**: Seznam modelů je ukládán do mezipaměti na 15 minut pro minimalizaci latence a šetření limitů Google API.
+
+7. **Řazení a filtrace inzerátů (Sorting & Real-time Search)**:
+   - **Kompletní sada kritérií řazení**: Dostupné v záložkách *Aktivní inzeráty*, *Věci k prodeji* i *Prodané věci*:
+     - **Podle data vystavení / data prodeje**: Od nejnovějšího po nejstarší (`sold_at_desc`) i vzestupně (`sold_at_asc`).
+     - **Podle stáří ve dnech**: Od nejstarších ležáků k přecenění (`days_old_desc`) po čerstvě vystavené (`days_old_asc`).
+     - **Podle ceny**: Od nejdražšího (`price_desc`) po nejlevnější (`price_asc`).
+     - **Podle zhlédnutí**: Podle zájmu kupujících (`views_desc`).
+     - **Abecedně**: Podle názvu položky (`title_asc`).
+   - **Okamžité vyhledávání (Instant Search)**: Dynamické vyhledávací pole v nástrojové liště okamžitě filtruje zobrazené karty podle shody v titulku, popisu, ceně či kategorii bez nutnosti obnovovat stránku.
+
+8. **Bezpečné mazání inzerátů s Choice Cards & úklidem fotografií**:
    - **Volba rozsahu smazání**: U publikovaných inzerátů si uživatel v modalu vybere mezi *Smazat pouze z databáze*, *Smazat z Bazoše i databáze* (s automatickým vyplněním hesla pro výmaz na Bazoši) nebo přímým *Označit jako prodané*.
    - **Úklid disku**: Volitelný checkbox *Smazat také lokální složku s fotkami* (`delete_photos: true`) spolehlivě uvolní místo na disku.
    - **Bezpečnostní pojistka**: Mazání složek probíhá přes `safe_delete_photos_dir()` s kontrolou relativních cest a striktní ochranou proti Path Traversal.
 
-5. **Workflow prodeje, Executive dashboard a 100% Reverzibilita („Označení inzerátu jako prodaný“)**:
-   - **Jednoduché označení prodeje**: Tlačítko *Prodáno* je dostupné přímo na kartě inzerátu, v modalu pro smazání (Choice Cards) i v patičce detailního editoru.
-   - **Finanční evidence a real-time odchylka**: Dialog umožňuje zadat skutečnou prodejní cenu s okamžitou vizuální indikací rozdílu oproti původní nabídkové ceně (zelený odznak pro plnou cenu, červený pro slevu, modrý pro přirážku).
-   - **Datum a interní poznámka**: Evidence přesného data obchodu (`sold_at`) a volitelných detailů (`sold_notes`, např. *Kupující si přijel osobně, sleva 200 Kč na benzín*).
-   - **Volitelné online stažení z Bazoše**: Checkbox *„Smazat inzerát na Bazoši (pokud je vystaven)“* automaticky spustí Playwright workera na pozadí, který inzerát na Bazoši přes heslo vymaže, aby po realizovaném prodeji nechodily další zprávy a hovory.
-   - **Manažerský dashboard / Executive statistiky**: V záložce *Prodané věci* je integrován živý finanční a výkonnostní přehled:
-     - 🤝 **Celkem prodáno**: Celkový počet úspěšně prodaných položek v kusech.
-     - 💰 **Realizovaný zisk / tržby**: Souhrnná částka z reálně uskutečněných prodejů v Kč.
-     - 📊 **Průměrná realizovaná cena**: Průměrná částka utržená za prodanou věc.
-   - **Strukturovaná karta prodané položky**: Každá prodaná položka nese zelený odznak `PRODÁNO`, informační box s realizovanou cenou, slevou/přirážkou v %, datem a kurzívou zvýrazněnou poznámkou k obchodu.
-   - **100% Reverzibilita („Vrátit k prodeji“)**: Při odstoupení kupujícího nebo překlepu stačí kliknout na *Vrátit k prodeji* – položka se vrátí mezi *Věci k prodeji*, prodejní pole se vynulují a inzerát je ve stavu `Expirováno` připraven k okamžitému znovuvystavení.
-   - **Nová REST API rozhraní**:
-     - `POST /api/listings/<listing_id>/mark_sold` – označení za prodané (parametry: `sale_price`, `sold_at`, `notes`, `delete_on_bazos`).
-     - `POST /api/listings/<listing_id>/restore_sold` – vrácení položky zpět k prodeji.
-     - `GET /api/listings/sold_stats` – agregovaná data pro manažerský dashboard (`total_sold`, `total_profit`, `avg_price`).
-   - **Schéma databáze SQLite (`listings`)**: Nové sloupce `sale_price` (`INTEGER`), `sold_at` (`TEXT`) a `sold_notes` (`TEXT`) s automatickou bezvýpadkovou migrací při startu aplikace v `init_db()`.
-
-6. **Multi-Source Tržní Cenový Radar (Bazoš + Sbazar + Web + Gemini)**:
+9. **Multi-Source Tržní Cenový Radar (Bazoš + Sbazar + Web + Gemini)**:
    - **Komplexní přehled trhu**: Automatické prohledávání Bazoš.cz, veřejného API Sbazar.cz a webu pro zjištění reálných tržních cen z druhé ruky.
    - **Vyloučení vlastního inzerátu**: Cenový poradce chytře vyřazuje ze srovnání tvůj vlastní inzerát.
    - **Tři cenové úrovně**: Výpočet hladin *Rychlý prodej (-10 %)*, *Férová mediánová cena* a *Prémiový stav (+10 %)*.
    - **Inteligentní AI odhad**: Pokud na inzertních serverech chybí nabídky, Gemini AI doplní tržní ocenění nového i použitého kusu.
    - **Tlačítko „Přepočítat trh“**: V průvodci novým inzerátem lze kdykoliv po úpravě titulku jedním kliknutím bleskově ověřit aktuální ceny konkurence.
 
-7. **Čisté inženýrské popisy pro Bazoš (Clean Plaintext Standard)**:
-   - **Striktní eliminace hvězdiček**: Popisy generované AI neobsahují žádné nepodporované markdown hvězdičky (`*`, `**`).
-   - **Přehledná struktura**: Odrážky s pomlčkou (`- `) a sekce oddělené velkými písmeny (`PARAMETRY:`, `STAV:`, `PŘÍSLUŠENSTVÍ:`).
-   - **Plně nastavitelný kontext prodejce & dopravy**: V Nastavení lze kdykoliv upravit styl prodejce (inženýrský, férový, bez slopu) i šablonu osobního předání a odeslání přes Zásilkovnu/Balíkovnu (výchozí: Český Krumlov / České Budějovice).
+10. **Čisté inženýrské popisy pro Bazoš (Clean Plaintext Standard)**:
+    - **Striktní eliminace hvězdiček**: Popisy generované AI neobsahují žádné nepodporované markdown hvězdičky (`*`, `**`).
+    - **Přehledná struktura**: Odrážky s pomlčkou (`- `) a sekce oddělené velkými písmeny (`PARAMETRY:`, `STAV:`, `PŘÍSLUŠENSTVÍ:`).
+    - **Plně nastavitelný kontext prodejce & dopravy**: V Nastavení lze kdykoliv upravit styl prodejce (inženýrský, férový, bez slopu) i šablonu osobního předání a odeslání přes Zásilkovnu/Balíkovnu (výchozí: Český Krumlov / České Budějovice).
 
-8. **AI Bokeh & SPZ Editor fotografií (`rembg` + Pillow)**:
-   - **Profesionální Bokeh efekt**: Automatická detekce popředí předmětu a plynulé rozostření pozadí s přirozeným gradientem podlahy (Jemné / Střední / Silné).
-   - **Zamazání citlivých údajů**: Interaktivní nástroj pro tažení myší přes SPZ automobilů, sériová čísla či obličeje.
-   - **Porovnání s originálem & Přímý zápis**: Tlačítko pro okamžité srovnání s původním snímkem a uložení přímo do složky inzerátu nebo průvodce.
+11. **AI Bokeh & SPZ Editor fotografií (`rembg` + Pillow)**:
+    - **Profesionální Bokeh efekt**: Automatická detekce popředí předmětu a plynulé rozostření pozadí s přirozeným gradientem podlahy (Jemné / Střední / Silné).
+    - **Zamazání citlivých údajů**: Interaktivní nástroj pro tažení myší přes SPZ automobilů, sériová čísla či obličeje.
+    - **Porovnání s originálem & Přímý zápis**: Tlačítko pro okamžité srovnání s původním snímkem a uložení přímo do složky inzerátu nebo průvodce.
 
-9. **AI Vision-First tvorba inzerátu ("Drop & Sell")**:
-   - **Blesková analýza z fotek**: Přetáhněte fotky (drag & drop), vyberte ze souborů nebo vložte přímo ze schránky (`Cmd+V`).
-   - Multimodální model **Gemini 2.5 Flash** z fotek rozpozná značku, přesný model, vizuální stav, příslušenství a klíčové parametry.
-   - **Varianty nadpisů s vysokým CTR**: AI navrhne 3–5 úderných variant nadpisů s garantovanou délkou do 50 znaků. Výběr jedním kliknutím.
-   - **Výběr hlavní fotky**: AI doporučí nejlepší fotku na úvod inzerátu (označení hvězdičkou), kterou Playwright nahraje jako první.
+12. **AI Vision-First tvorba inzerátu ("Drop & Sell")**:
+    - **Blesková analýza z fotek**: Přetáhněte fotky (drag & drop), vyberte ze souborů nebo vložte přímo ze schránky (`Cmd+V`).
+    - Multimodální model **Gemini 2.5 Flash** z fotek rozpozná značku, přesný model, vizuální stav, příslušenství a klíčové parametry.
+    - **Varianty nadpisů s vysokým CTR**: AI navrhne 3–5 úderných variant nadpisů s garantovanou délkou do 50 znaků. Výběr jedním kliknutím.
+    - **Výběr hlavní fotky**: AI doporučí nejlepší fotku na úvod inzerátu (označení hvězdičkou), kterou Playwright nahraje jako první.
 
-10. **Google Kalendář & iCal Synchronizace (RFC 5545 Webcal)**:
+13. **Google Kalendář & iCal Synchronizace (RFC 5545 Webcal)**:
     - **Automatický odběr termínů vypršení**: Přímý Webcal/iCal feed zabezpečený privátním tokenem (`/api/calendar/feed.ics?token=...`).
     - **60denní cyklus Bazoše**: Celodenní událost v den expirace s notifikacemi 3 dny předem a v den expirace.
     - **Přímé prolinkování**: Každá událost obsahuje přímý odkaz na Bazoš i lokální Listing Hub pro okamžité obnovení či editaci.
     - **Archiv prodejů**: Prodané věci zůstávají v kalendáři jako vizuální archiv (`✅ PRODÁNO: ...`).
 
-11. **Automatický refresh na pozadí (Background Worker & SMS Guard)**:
+14. **Automatický refresh na pozadí (Background Worker & SMS Guard)**:
     - Daemon vlákno periodicky aktualizuje stavy, platnost a zhlédnutí inzerátů z Bazoše.
     - **SMS Guard**: Pokud Bazoš při refreshu vyžaduje SMS, proces se čistě zastaví, stav se přepne na `"needs_sms"` a v UI vyskočí červený varovný banner. Další SMS na pozadí se neodesílají, dokud uživatel neprovede ruční přihlášení.
     - **Timing**: Interval auto-refreshu je plně nastavitelný přímo v Nastavení (od 15 minut do 24 hodin).
     - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
 
-12. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
+15. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
     - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.8 • [hash]`).
     - Nenásilný plovoucí toast s možností odložení do `localStorage` (žádné rušivé celoobrazovkové bannery).
     - Dialog srovnání nainstalované verze a hashe proti GitHubu s přímým odkazem na diff změn a 1-click upgradem na TrueNAS.
 
-13. **Správa a vyloučení fotografií**:
+16. **Správa a vyloučení fotografií**:
     - V detailu inzerátu se zobrazují Base64 náhledy všech fotek z lokální složky.
     - Kliknutím na fotku ji lze označit jako vyloučenou – Playwright ji při vystavování přeskočí.
     - Karta inzerátu zobrazuje stav např. `📷 4/5 fotek`.
 
-14. **Čítače a ochrana nadpisů (Limit 50 znaků)**:
+17. **Čítače a ochrana nadpisů (Limit 50 znaků)**:
     - Real-time čítače s varovným barevným tónem (žlutá/červená) u políček nadpisů.
     - Automatická backend sanitace zkracuje nadpisy na max 50 znaků k zamezení ořezání na straně Bazoše.
 
-15. **AI Agent Interface (Antigravity Skill, FastMCP & CLI)**:
+18. **AI Agent Interface (Antigravity Skill, FastMCP & CLI)**:
     - **Nativní podpora pro agenty**: Dedikované REST API (`/api/agent/v1/*`), FastMCP stdio server (`scripts/listing_hub_mcp.py`) a CLI klient (`scripts/listing_hub_cli.py`).
     - **Dvoufázový Human-in-the-Loop protokol**: Robot předvyplní formulář na Bazoši (Fáze 1) a předá živý screencast uživateli. Teprve po odeslání potvrdí a aktivuje inzerát (Fáze 2).
     - **Architektura & Use Casy**: Kanonický slovník v [CONTEXT.md](CONTEXT.md), architektonická rozhodnutí v [docs/adr/](docs/adr/) a podrobné scénáře v [docs/agent_use_cases.md](docs/agent_use_cases.md).
+
+
+---
+
+## 🌐 Přehled klíčových REST API endpointů
+
+Kompletní specifikace a parametry jsou detailně popsány ve [Vývojářské příručce (DEVELOPMENT.md)](DEVELOPMENT.md).
+
+### Rubriky Bazoše & Doporučování
+- `GET /api/bazos/rubriky` – Vrátí katalog všech 20 rubrik Bazoše s identifikátory, českými názvy a ikonami.
+- `POST /api/ai/suggest-rubrika` – Doporučí nejvhodnější rubriku pro inzerát na základě analýzy titulku, popisu, kategorie a existující URL (`listing_id`, `title`, `description`, `category`, `url`).
+
+### AI Modely & Textový Asistent
+- `GET /api/ai/models` – Dynamický seznam dostupných modelů Gemini z uživatelského Google AI účtu (`api_key`, `force`), s automatickou náhradou ukončených verzí (`gemini-2.5-pro` -> `gemini-2.5-flash` / `gemini-3.1-pro-preview`) a offline fallbackem.
+- `POST /api/ai/analyze-photos` – Multimodální analýza fotografií přes Gemini Flash + tržní cenový radar.
+- `POST /api/ai/improve` – Jazyková korektura a úprava textu bez markdownových hvězdiček.
+
+### Správa inzerátů & Životní cyklus
+- `GET /api/listings` – Přehled inzerátů rozdělených podle stavů (`active`, `unsold`, `sold`).
+- `POST /api/listings/save` – Uložení změn inzerátu s automatickým zkrácením titulku do 50 znaků.
+- `POST /api/listings/<listing_id>/mark_sold` – Označení inzerátu jako prodaného (`sale_price`, `sold_at`, `notes`, `delete_on_bazos`).
+- `POST /api/listings/<listing_id>/restore_sold` – Vrácení prodaného inzerátu zpět mezi neprodané koncepty.
+- `GET /api/listings/sold_stats` – Souhrnné statistiky realizovaných prodejů (`total_sold`, `total_profit`, `avg_price`).
+- `POST /api/listings/delete` – Bezpečné smazání inzerátu s volitelným úklidem fotek na disku.
+
+### Automatizace & Dávkové akce (Playwright)
+- `POST /api/action/<action_type>` – Spuštění úlohy na pozadí (`post`, `edit_price`, `delete`, `repost`).
+- `GET /api/action/status` – Aktuální stav workeru (`IDLE`, `RUNNING`, `READY_FOR_REVIEW`, `COMPLETED`).
+- `POST /api/action/confirm` – Potvrzení odeslání inzerátu (Fáze 2 HITL protokolu).
+- `POST /api/action/cancel` – Zrušení běžící akce a uvolnění prohlížeče.
+- `POST /api/action/repost_with_new_price` – Přenastavení ceny a bezpečné znovuvystavení inzerátu (topování).
 
 
 ---

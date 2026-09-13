@@ -249,7 +249,7 @@ def improve_text_with_gemini(
         if instruction_type == "title_suggestions":
             user_prompt = f"Navrhni 5 různých atraktivních a chytlavých nadpisů pro inzerát na základě tohoto původního nadpisu: '{text}'. Nadpisy musí mít maximálně 50 znaků. VRAŤ POUZE TĚCHTO 5 NADPISŮ, KAŽDÝ NA NOVÉM ŘÁDKU, BEZ ODPOVĚDI OKOLO, BEZ MARKDOWN FORMÁTOVÁNÍ A KÓDOVÝCH BLOKŮ:"
         else:
-            user_prompt = f"Vylepši tento nadpis inzerátu na Bazoš (max 50 znaků). VRAŤ POUZE VÝSLEDNÝ NADPIS BEZ UVOZOWEK, VYSVĚTLENÍ A BEZ MARKDOWN FORMÁTOVÁNÍ/KÓDOVÝCH BLOKŮ:\n\n{text}"
+            user_prompt = f"Vylepši tento nadpis inzerátu na Bazoš (max 50 znaků). VRAŤ POUZE VÝSLEDNÝ NADPIS BEZ UVOZOVEK, VYSVĚTLENÍ A BEZ MARKDOWN FORMÁTOVÁNÍ/KÓDOVÝCH BLOKŮ:\n\n{text}"
     else:
         if instruction_type == "improve":
             user_prompt = f"Vylepši tón a formátování tohoto popisu inzerátu. Zachovej všechny věcné parametry, doplňky a detaily z původního textu. Délka musí odpovídat původnímu rozsahu. VRAŤ POUZE VYLEPŠENÝ POPIS BEZ KOMENTÁŘŮ A BEZ MARKDOWN FORMÁTOVÁNÍ/KÓDOVÝCH BLOKŮ:\n\n{text}"
@@ -259,6 +259,8 @@ def improve_text_with_gemini(
             user_prompt = f"Zkrať tento popis inzerátu, udělej ho stručný a výstižný, ale zachovej klíčové parametry. VRAŤ POUZE STRUČNÝ POPIS BEZ MARKDOWN FORMÁTOVÁNÍ/KÓDOVÝCH BLOKŮ:\n\n{text}"
         elif instruction_type == "lengthen":
             user_prompt = f"Rozšiř tento popis inzerátu o více detailů a detailní rozbor parametrů. VRAŤ POUZE ROZŠÍŘENÝ POPIS BEZ KOMENTÁŘŮ A BEZ MARKDOWN FORMÁTOVÁNÍ/KÓDOVÝCH BLOKŮ:\n\n{text}"
+        else:
+            user_prompt = f"Vylepši tento popis inzerátu. Zachovej všechny věcné parametry a délku. VRAŤ POUZE VYLEPŠENÝ POPIS BEZ KOMENTÁŘŮ A BEZ MARKDOWN FORMÁTOVÁNÍ/KÓDOVÝCH BLOKŮ:\n\n{text}"
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}

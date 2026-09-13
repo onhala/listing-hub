@@ -51,14 +51,18 @@ Uživateli stačí vzít telefon, nafotit prodávanou věc ze všech úhlů (vč
 
 ---
 
-### 2. Ochrana proti promazání formuláře (Upfront Rubrika Confirmation)
-Na Bazoš.cz způsobuje změna rubriky (či domény jako `dum.bazos.cz` -> `stroje.bazos.cz`) kompletní znovunačtení stránky, což u běžných nástrojů vede k nevratnému smazání všech vyplněných textů a nahraných fotek.
+### 2. Architektura rubrik Bazoše & Prevence reloadu formuláře (All 20 Subdomains & AI Ranking)
+Na portálu Bazoš.cz je každá z hlavních tematických sekcí provozována na samostatné subdoméně (`dum.bazos.cz`, `elektro.bazos.cz`, `auto.bazos.cz` atd.). 
 
-- **Jak to řeší Listing Hub:**
-  - Před spuštěním robota aplikace otevře **potvrzovací modál rubriky**.
-  - Systém podle klíčových slov a kategorie inzerátu automaticky předvybere správnou rubriku (např. *zahradní technika* -> `dum.bazos.cz`, *počítače* -> `pc.bazos.cz`, *nářadí* -> `stroje.bazos.cz`).
-  - Uživatel cílovou sekci potvrdí nebo upraví jedním kliknutím.
-  - Robot poté otevírá Bazoš přímo na správné adrese – **žádná data se neztratí a formulář se nikdy nepromaže**.
+- **Technická podstata problému (Reload Traversal Trap):**
+  Pokud uživatel otevře formulář pro přidání inzerátu na jedné subdoméně a následně v rozbalovacím seznamu zvolí jinou rubriku, JavaScript Bazoše provede okamžitý tvrdý reload celé stránky (`window.location`) na novou subdoménu. U standardních automatizačních nástrojů to vede k fatálnímu selhání: veškeré dosud předvyplněné texty, parametry a nahrané fotografie jsou nenávratně ztraceny a formulář se načte prázdný.
+
+- **Dvoufázové řešení v Listing Hubu:**
+  1. **Kompletní pokrytí všech 20 rubrik Bazoše**: Aplikace plně podporuje celý ekosystém Bazoše:
+     - `deti.bazos.cz` (Děti a hračky), `dum.bazos.cz` (Dům a zahrada), `nabytek.bazos.cz` (Nábytek), `elektro.bazos.cz` (Elektro a spotřebiče), `sport.bazos.cz` (Sport a outdoor), `auto.bazos.cz` (Auto), `motorky.bazos.cz` (Motorky a čtyřkolky), `stroje.bazos.cz` (Stroje a dílna), `pc.bazos.cz` (PC a počítače), `mobil.bazos.cz` (Mobily a chytré hodinky), `foto.bazos.cz` (Foto a kamery), `hudba.bazos.cz` (Hudba a nástroje), `obleceni.bazos.cz` (Oblečení a obuv), `knihy.bazos.cz` (Knihy a časopisy), `zvirata.bazos.cz` (Zvířata a chovatelství), `vstupenky.bazos.cz` (Vstupenky a lístky), `reality.bazos.cz` (Reality a nemovitosti), `prace.bazos.cz` (Práce a brigády), `sluzby.bazos.cz` (Služby a řemesla), `ostatni.bazos.cz` (Ostatní).
+  2. **AI & Heuristický Ranking (`rank_target_domains`)**: Systém ještě před startem automatizace analyzuje titulek, popis, kategorii a stávající URL inzerátu. Vážené skórování klíčových slov (titulek váha 90, popis váha 20, shoda kategorie váha 80, stávající URL váha 1000) doplněné o kontextové regex filtry (např. odlišení motocyklů od elektromotorů) vyhodnotí relevanci všech 20 rubrik a nabídne uživateli top 3 doporučení s jasným odůvodněním.
+  3. **Upfront potvrzovací dialog**: Cílová rubrika je potvrzena uživatelem ještě před otevřením relace prohlížeče.
+  4. **Přímé směrování bez reloadu**: Playwright robot je naveden přímo na `https://{target_domain}/pridat-inzerat.php`. K žádné změně rubriky za běhu formuláře nedochází, reload je stoprocentně eliminován a data zůstávají v naprostém bezpečí.
 
 ---
 
@@ -78,9 +82,29 @@ Listing Hub kombinuje rychlost robotické automatizace s jistotou lidského dohl
 
 ---
 
-### 4. Správa inzerátů a kompletní životní cyklus
+### 4. Dávkové znovuvystavení inzerátů (Batch Reposting) & Inteligentní správa fronty
+Při pravidelném obnovování a topování inzerce na Bazoši eliminuje Listing Hub nutnost klikat každý inzerát jednotlivě:
 
-Aplikace organizuje inzeráty do logických kategorií odpovídajících reálnému životnímu cyklu:
+- **Hromadný výběr inzerátů**:
+  - Tlačítko pro aktivaci dávkového režimu přímo v záložkách *Aktivní inzeráty* i *Věci k prodeji*.
+  - Výběr jednotlivých položek pomocí checkboxů na kartách inzerátů, nebo hromadné označení všech zobrazených položek tlačítkem *Vybrat vše*.
+  - Plovoucí spodní lišta s počítadlem vybraných položek a tlačítkem pro otevření dávkového dialogu.
+- **Interaktivní dávkový dialog (`batch-repost-modal`)**:
+  - Přehledná tabulka všech vybraných položek s miniaturami fotografií.
+  - **Individuální úprava ceny**: Možnost přímo v řádku tabulky přenastavit prodejní cenu (např. aplikovat slevu u dlouhodobých ležáků).
+  - **Individuální volba rubriky**: Každé položce lze samostatně změnit cílovou rubriku ze všech 20 dostupných subdomén Bazoše.
+  - **Snadné vyřazení**: Tlačítko pro odebrání položky z dávky před spuštěním.
+- **Sekvenční bezpečné odbavení fronty (Safe Queue Runner)**:
+  - Odbavení probíhá sekvenčně (jedna položka po druhé) na dedikovaném workeru, což chrání účet inzerenta před podezřením ze spamu.
+  - Plovoucí stavový indikátor fronty (`batch-queue-indicator`) v záhlaví živého prohlížeče informuje o aktuálním postupu (`1/N`) a názvu zpracovávané položky.
+  - Tlačítko **„Přeskočit položku“** (`btn-batch-skip`): Umožňuje přeskočit položku vyžadující dodatečné úpravy a plynule přejít na další.
+  - Tlačítko **„Zrušit dávku“** (`btn-batch-cancel`): Kdykoliv čistě zastaví frontu bez rozpracovaných zbytků.
+  - Robot u každé položky automaticky provede asynchronní smazání starého inzerátu na Bazoši a vystaví nový s upravenou cenou a rubrikou.
+
+---
+
+### 5. Správa prodaných inzerátů, Sold Archive & Executive Dashboard
+Aplikace organizuje inzeráty do uceleného životního cyklu reflektujícího skutečný obchodní proces:
 
 | Stav inzerátu | Kde se nachází | Popis stavu |
 | :--- | :--- | :--- |
@@ -89,23 +113,58 @@ Aplikace organizuje inzeráty do logických kategorií odpovídajících reáln�
 | **Ke kontrole** | *Živý prohlížeč* | Formulář na Bazoši je vyplněn, čeká na schválení uživatelem a potvrzení bannerem. |
 | **Aktivní** | *Aktivní inzeráty* | Živý inzerát na Bazoši s počtem zhlédnutí, dny do expirace a přímým odkazem. |
 | **Vyžaduje SMS** | *Varovný banner v UI* | Bazoš vyžaduje ověření telefonního čísla. Worker se zastavil a čeká na intervenci. |
-| **Prodané** | *Prodané věci* | Realizovaný prodej s evidencí prodejní ceny, data a poznámek. Zahrnuje Manažerský dashboard. |
+| **Prodané (Sold)** | *Prodané věci* | Realizovaný prodej s evidencí prodejní ceny, data a poznámek. Zahrnuje Manažerský dashboard. |
+| **Expirováno** | *Věci k prodeji* | Položka po vypršení 60denní platnosti nebo vrácená z prodeje, připravená k novému vystavení. |
 | **Smazáno** | *Odstraněno* | Vymazáno z databáze a portálů podle zvolené úrovně mazání. |
 
 - **Manažerský dashboard (Executive statistiky):** V záhlaví záložky *Prodané věci* je integrován přehledový panel s klíčovými metrikami prodeje v reálném čase:
-  - 📦 **Celkem prodáno** (počet úspěšně zobchodovaných položek)
-  - 💰 **Realizované tržby** (součet skutečných prodejních cen v Kč)
-  - 📊 **Průměrná cena** (průměrná výše tržby na jeden prodaný inzerát)
-- **Workflow „Označit jako prodané“ & Reverzibilita:**
-  - Každý aktivní inzerát i koncept lze dialogovým oknem převést do stavu *Prodané* se zadáním realizované ceny, data a volitelné poznámky o kupujícím nebo záruce.
-  - Volitelné zaškrtnutí *„Stáhnout také inzerát z Bazoše“* automaticky a asynchronně smaže nabídku online přes robota.
-  - Plná reverzibilita: kliknutím na tlačítko *„Vrátit k prodeji“* lze prodej kdykoliv stornovat a položku vrátit do konceptů k opětovné inzerci.
-- **Vyloučení fotografií:** Možnost kliknutím na náhled vyřadit konkrétní fotku (např. méně zdařilý detail), aniž by bylo nutné mazat soubor z disku.
+  - 📦 **Celkem prodáno**: Celkový počet úspěšně zobchodovaných položek v kusech.
+  - 💰 **Realizované tržby**: Souhrnná částka z reálně uskutečněných prodejů v Kč.
+  - 📊 **Průměrná cena**: Průměrná výše tržby na jeden prodaný inzerát.
+  - 🏷️ **Sleva / Přirážka**: Vizuální indikace cenové odchylky u každé transakce.
+- **Workflow „Označit jako prodané“ (`POST /api/listings/<listing_id>/mark_sold`)**:
+  - Dostupné na jeden klik z karty inzerátu, modalu mazání i detailního editoru.
+  - Dialog umožňuje zadat skutečnou prodejní cenu (`sale_price`), datum obchodu (`sold_at`) a interní poznámku (`sold_notes`, např. osobní předání, sleva na dopravu).
+  - Volitelné zaškrtnutí *„Smazat inzerát na Bazoši (pokud je vystaven)“* automaticky spustí asynchronního Playwright workera, který inzerát online smaže, aby prodejce po prodeji nebyl rušen dalšími telefonáty.
+- **100% Reverzibilita („Vrátit k prodeji“ - `POST /api/listings/<listing_id>/restore_sold`)**:
+  - Při odstoupení kupujícího stačí kliknout na *Vrátit k prodeji*.
+  - Položka se vrátí do záložky *Věci k prodeji*, prodejní pole se vynulují a inzerát je připraven k okamžitému znovuvystavení.
+- **Vyloučení fotografií**: Možnost kliknutím na náhled vyřadit konkrétní fotku z vystavení bez nutnosti jejího mazání z disku.
 
 ---
 
-### 5. Víceúrovňové mazání inzerátů a hygiena úložiště
+### 6. Dynamické načítání Google AI (Gemini) modelů & Odolnost vůči výpadkům
+Aplikace přistupuje k AI modelům pružně a dynamicky namísto pevně zakódovaných názvů:
 
+- **Dynamické zjištění modelů z účtu (`GET /api/ai/models`)**:
+  - Systém volá Google Generative Language API (`/v1beta/models`) přímo s uživatelským API klíčem a zjišťuje přesný seznam modelů, které má daný účet k dispozici.
+  - Podpora parametru `force=true` pro okamžité obnovení seznamu při změně klíče.
+- **Automatická náhrada ukončených modelů**:
+  - Google pravidelně ukončuje starší a preview modely (např. `gemini-2.5-pro`). Pokud uživatel dříve používal model, který již v jeho účtu není k dispozici, Listing Hub jej automaticky a bez pádu nahradí doporučeným modelem `gemini-2.5-flash` nebo analytickým preview modelem `gemini-3.1-pro-preview`.
+- **Inteligentní sanitace katalogu**:
+  - Filtrovány jsou výhradně modely podporující metodu `generateContent`. Nepoužitelné embedding modely, imagemodely nebo interní experimenty jsou z nabídky automaticky odstraněny.
+- **Robustní offline fallback**:
+  - Pokud není zadán API klíč, dojde k výpadku sítě nebo Google API vrátí chybu, aplikace okamžitě aktivuje ověřený lokální katalog `DEFAULT_FALLBACK_MODELS`. Rozhraní zůstává plně stabilní a informuje uživatele přehledným odznakem.
+- **15minutová in-memory cache**:
+  - Minimalizuje počet dotazů na Google API a šetří limity dotazů.
+
+---
+
+### 7. Pokročilé řazení a okamžitá filtrace inzerátů (Sorting & Real-time Search)
+Pro pohodlnou správu desítek až stovek položek obsahuje rozhraní komplexní sadu nástrojů pro uspořádání:
+
+- **Dynamická kritéria řazení**:
+  - **Stáří ve dnech**: Řazení od nejstarších ležáků (`days_old_desc`) umožňuje okamžitě identifikovat položky vhodné k přecenění či slevě. Možnost řadit i od nejnovějších (`days_old_asc`).
+  - **Datum prodeje / vytvoření**: Uspořádání prodaných věcí podle data obchodu (`sold_at_desc`, `sold_at_asc`).
+  - **Cena**: Od nejdražších položek (`price_desc`) po nejlevnější (`price_asc`).
+  - **Zhlédnutí**: Podle reálného zájmu kupujících na portálu (`views_desc`).
+  - **Název**: Abecední řazení v českém jazyce (`title_asc`).
+- **Okamžité fulltextové vyhledávání**:
+  - Vyhledávací pole v nástrojové liště okamžitě v reálném čase filtruje zobrazené karty podle shody v titulku, popisu, ceně i kategorii.
+
+---
+
+### 8. Víceúrovňové mazání inzerátů a hygiena úložiště
 Při mazání inzerátu nabízí Listing Hub inteligentní kontextové možnosti podle toho, zda je inzerát publikován, a umožňuje bezpečnou očistu disku:
 
 1. **Mazání konceptů (Draft Cleanup):**
@@ -120,33 +179,33 @@ Při mazání inzerátu nabízí Listing Hub inteligentní kontextové možnosti
 
 ---
 
-### 6. Automatický refresh na pozadí, SMS Guard & iCal kalendář
+### 9. Automatický refresh na pozadí, SMS Guard & iCal kalendář
 - **Periodický refresh:** Worker na pozadí v nastavených intervalech (výchozí 12 hodin) aktualizuje počty zhlédnutí a kontroluje platnost inzerátů.
 - **SMS Guard:** Pokud Bazoš při obnovení platnosti vyžaduje SMS ověření, proces se okamžitě bezpečně zastaví a v aplikaci zobrazí červený varovný banner. Tím zamezí blokaci telefonního čísla nebo vyčerpání SMS limitu.
 - **iCal / Google Kalendář synchronizace:** Přímý Webcal feed generuje celodenní události v den 60denní expirace inzerátů na Bazoši s předstihem 3 dnů a přímými prolinky do aplikace.
 
 ---
 
-### 7. Živý prohlížeč (noVNC & Screencast integrace)
+### 10. Živý prohlížeč (noVNC & Screencast integrace)
 - Přímo v záložce *Živý prohlížeč* má uživatel k dispozici noVNC / Screencast okno streamující virtuální obrazovku prohlížeče Playwright.
 - Uživatel může kdykoliv převzít řízení (klikání, psaní, skrolování kolečkem i postranní lištou) pro zadání SMS kódu, řešení CAPTCHA či finální odeslání inzerátu.
 
 ---
 
-### 8. AI Bokeh & SPZ Editor fotografií
+### 11. AI Bokeh & SPZ Editor fotografií
 - **Automatický Bokeh efekt:** Oddělení popředí prodávaného předmětu od rušivého pozadí (garáž, dílna) s přirozeným gradientem.
 - **Anonymizace citlivých údajů:** Interaktivní rozostření SPZ vozidel, výrobních sériových čísel či obličejů před vystavením.
 
 ---
 
-### 9. Nenásilné aktualizace a integrace s TrueNAS SCALE
+### 12. Nenásilné aktualizace a integrace s TrueNAS SCALE
 - **Nenásilné notifikace:** Decentní odložitelný toast a widget v patičce sidebaru namísto rušivých dialogů.
 - **Transparentní kontrola:** Srovnání nainstalovaného a dostupného git commit hashe s přímým odkazem na GitHub Compare Diff.
 - **1-Click TrueNAS Upgrade:** Uživatelé provozující aplikaci na TrueNAS SCALE mohou provést okamžitý restart a stažení nového kontejneru jedním kliknutím.
 
 ---
 
-### 10. Rozhraní pro AI agenty (Antigravity Skill & FastMCP)
+### 13. Rozhraní pro AI agenty (Antigravity Skill & FastMCP)
 - **Klientské rozhraní pro LLM:** Nativní REST API (`/api/agent/v1/*`), FastMCP stdio server a CLI klient (`listing-hub`) umožňují pokročilým agentům prozkoumávat inventář, spouštět tržní radar a připravovat inzeráty.
 - **Asistované dvoufázové vystavování (HITL):** Agent bezpečně předvyplní formulář (Fáze 1) a předá řízení uživateli k vizuální kontrole na živém screencastu. Finální odeslání zůstává plně v rukou uživatele (Fáze 2).
 - **Prevence chyb a detekce expirací:** Automatické upozorňování na blížící se 60denní expiraci inzerátů a doporučení cenových úprav u ležáků.

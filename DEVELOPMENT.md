@@ -40,15 +40,36 @@ Listing Hub je postaven na modulární vrstvené architektuře v Pythonu (Flask)
 
 2. **`listing_hub.ai`**:
    - **`vision.py`**: Multimodální analýza fotografií pomocí modelu `gemini-2.5-flash`. Provádí automatické EXIF otočení a kompresi obrázků na max 1280 px (odezva do 2 s). Extrahuje parametry, navrhuje 3–5 úderných variant nadpisů do 50 znaků a vybírá nejlepší titulní fotografii. Propojeno s cenovým radarem z Bazoše.
-   - **`gemini.py`**: Jazykový model pro dodatečné úpravy a přepisy textů popisu či nadpisu existujících inzerátů (čistý text bez markdown formátování).
+   - **`gemini.py`**: 
+     - **Dynamická správa modelů (`get_available_gemini_models`)**: Dotazuje se na Google Generative Language API (`https://generativelanguage.googleapis.com/v1beta/models?key=...`), filtruje metody `generateContent` a vyřazuje nepotřebné embedding, imagen a eval modely.
+     - **Automatická náhrada ukončených modelů**: Modely vyřazené Googlem (např. `gemini-2.5-pro`) jsou na aplikační úrovni automaticky detekovány a nahrazeny doporučeným modelem `gemini-2.5-flash` nebo preview modelem `gemini-3.1-pro-preview`.
+     - **Odolnost a mezipaměť**: Výsledky jsou cachovány v paměti po dobu 15 minut (`_MODELS_CACHE`). Při výpadku sítě, timeoutu či absenci API klíče se automaticky použije robustní statický fallback `DEFAULT_FALLBACK_MODELS`.
+     - **Jazykový asistent & Čistý text (`improve_text_with_gemini`, `clean_bazos_text`)**: Jazykové úpravy inzerátů s přísnou sanitací textu: striktní zákaz nepodporovaných markdownových hvězdiček (`*`, `**`), kódových bloků (```) a převod odrážek na čisté pomlčky (`- `).
    - **`advisor.py`**: Cenový poradce a scraper tržních cen z Bazoše a Sbazaru. Počítá tržní medián, rychlý prodej (-10 %) a prémiovou hladinu (+10 %).
 
 3. **`listing_hub.portals`**:
-   - **`bazos/session.py`**: Správce relace Playwright běžící na dedikovaném worker vlákně. Obsahuje CDP Screencast streamování obrazu, frontu uživatelských vstupů a sjednocený timeout 30 sekund (`context.set_default_timeout(30000)` a `run_on_worker(timeout=30.0)`).
-   - **`bazos/categories.py`**: Deterministická rezoluce cílové subdomény Bazoše (`get_target_domain`), extrakce subdomény a ID z existujících URL (`extract_subdomain`, `extract_ad_id`), normalizace češtiny s odstraněním diakritiky (`normalize_cz`) a synonymická mapa podkategorií.
-   - **Dvoufázové vystavování inzerátů (Two-Phase Posting Lifecycle)**:
-     - **Fáze 1 (Předvyplnění formuláře)**: Worker provede navigaci na `https://{target_domain}/pridat-inzerat.php`, vyplní nadpis, popis, cenu, osobní údaje, heslo (`heslobazar`), zvolí podkategorii a nahraje fotky. Při volání z webu (`is_web=True`) worker po nahrání fotek neblokuje proces čekáním, uloží `SESSION_STATE_PATH` a vrací řízení frontendu.
-     - **Fáze 2 (Uživatelská revize & Potvrzení)**: Uživatel v živém prohlížeči inzerát zkontroluje, klikne na *Odeslat* a následně v rozhraní Listing Hubu potvrdí akci přes `POST /api/action/confirm`. Backend ověří přesměrování / opuštění formuláře, extrahuje nové URL a zapíše inzerát jako aktivní do SQLite databáze.
+   - **`bazos/categories.py`**:
+     - **Katalog 20 rubrik (`BAZOS_ALL_SUBDOMAINS`)**: Kompletní seznam všech 20 specializovaných subdomén Bazoše (`deti.bazos.cz`, `dum.bazos.cz`, `nabytek.bazos.cz`, `elektro.bazos.cz`, `sport.bazos.cz`, `auto.bazos.cz`, `motorky.bazos.cz`, `stroje.bazos.cz`, `pc.bazos.cz`, `mobil.bazos.cz`, `foto.bazos.cz`, `hudba.bazos.cz`, `obleceni.bazos.cz`, `knihy.bazos.cz`, `zvirata.bazos.cz`, `vstupenky.bazos.cz`, `reality.bazos.cz`, `prace.bazos.cz`, `sluzby.bazos.cz`, `ostatni.bazos.cz`) s českými názvy a ikonami.
+     - **Vážený ranking rubrik (`rank_target_domains`)**: Ohodnocuje a řadí všech 20 subdomén podle relevance k inzerátu. Váhy bodování: shoda s existující URL (1000 b), klíčové slovo v titulku (90 b), klíčové slovo v popisu (20 b), shoda kategorie s názvem subdomény (80 b) a specifická regex pravidla (např. motorky vs. elektromotory, 120 b).
+     - **Deterministické určení (`get_target_domain`)**: Vybere nejvýše skórující subdoménu s bezpečným fallbackem na `dum.bazos.cz`.
+     - **Normalizace češtiny (`normalize_cz`)**: NFKD normalizace textu s odstraněním diakritiky, převodem na malá písmena a očištěním o speciální znaky.
+     - **Synonymická mapa (`CATEGORY_SYNONYMS`)**: Rozsáhlý slovník synonym a klíčových slov mapující stovky termínů do podkategorií Bazoše.
+   - **`bazos/session.py` a Dvoufázový protokol proti reloadu formuláře**:
+     - **Podstata problému reloadu (Form Reload Trap)**: Na portálu Bazoš.cz provozuje každá rubrika samostatnou subdoménu. Změna rubriky uvnitř otevřeného formuláře vyvolává tvrdý reload celé stránky, který okamžitě a nevratně vymaže veškerá vyplněná data a nahrané fotografie.
+     - **Architektonické řešení**: Upfront determinace cílové subdomény a otevření formuláře Playwrightem přímo na adrese `https://{target_domain}/pridat-inzerat.php`. Během vyplňování se již rubrika nemění, což 100% eliminuje riziko promazání formuláře.
+     - **Dvoufázový životní cyklus (Two-Phase Posting Lifecycle)**:
+       - **Fáze 1 (Autonomní předvyplnění)**: Worker provede navigaci na správnou subdoménu, vyplní veškeré údaje, heslo (`heslobazar`), zvolí podkategorii a nahraje fotky. Při volání z webu (`is_web=True`) worker uvolní vlákno a přejde do stavu `READY_FOR_REVIEW`.
+       - **Fáze 2 (Uživatelská revize & Potvrzení)**: Uživatel v živém prohlížeči (noVNC / screencast) zkontroluje údaje, případně vyřeší SMS kód, klikne na Bazoši na *Odeslat* a následně v Listing Hubu potvrdí akci přes `POST /api/action/confirm`. Backend ověří dokončení odeslání na Bazoši, extrahuje novou URL a zapíše inzerát jako aktivní do SQLite databáze.
+   - **Dávkové znovuvystavení (Batch Reposting Architecture)**:
+     - **Frontend fronta (`batchQueue`, `batchIndex`)**: Správa stavu výběru více položek v záložkách aktivních i neprodaných inzerátů.
+     - **Dávkový modal (`batch-repost-modal`)**: Umožňuje individuální úpravu prodejní ceny (`batch-row-price`) a cílové rubriky (`batch-row-rubrika`) pro každý vybraný inzerát v dávce před spuštěním.
+     - **Sekvenční bezpečné zpracování**: Průchod položkami jedna po druhé na dedikovaném workeru. Zahrnuje indikátor postupu (`batch-queue-indicator`), podporu přeskočení (`btn-batch-skip`) i okamžitého zrušení (`btn-batch-cancel`).
+     - **Automatické topování**: Pro každou položku se asynchronně provede smazání původního inzerátu na Bazoši přes heslo a vystavení nového s aktualizovanými parametry.
+   - **Správa prodaných inzerátů (Sold Lifecycle Architecture)**:
+     - **Perzistence v SQLite**: Sloupce `sale_price` (`INTEGER`), `sold_at` (`TEXT`) a `sold_notes` (`TEXT`) v tabulce `listings`.
+     - **Metody v `listing_hub.core.db`**: `mark_listing_as_sold()`, `restore_sold_listing()` a `get_sold_statistics()`.
+     - **Asynchronní online výmaz**: Při označení inzerátu za prodaný s volbou `delete_on_bazos=True` spustí backend asynchronní vlákno s Playwright workerem, který na Bazoši inzerát vyhledá, zadá heslo a provede online smazání pro ukončení poptávek.
+     - **Plná reverzibilita**: Endpoint `POST /api/listings/<id>/restore_sold` bezpečně vrátí položku zpět do stavu `unsold` (expirováno/k prodeji) s vynulováním prodejních metrik.
    - **`aukro/`**: Modulární rozhraní pro budoucí aukční vystavování.
 
 ---
@@ -129,24 +150,66 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
 
 ## 5. Kompletní specifikace REST API
 
-### Správa inzerátů:
+### Rubriky Bazoše & Doporučování:
+- `GET /api/bazos/rubriky`
+  - Vrací kompletní katalog všech 20 specializovaných rubrik Bazoše:
+    ```json
+    {
+      "status": "success",
+      "rubriky": [
+        {"domain": "deti.bazos.cz", "label": "Děti a hračky", "icon": "fa-child"},
+        {"domain": "dum.bazos.cz", "label": "Dům a zahrada", "icon": "fa-house-chimney-window"},
+        {"domain": "nabytek.bazos.cz", "label": "Nábytek", "icon": "fa-couch"},
+        ...
+      ]
+    }
+    ```
+- `POST /api/ai/suggest-rubrika` *(JSON payload: `{"listing_id": str|null, "title": str, "description": str, "category": str, "url": str}`)*
+  - Analyzuje zadané parametry inzerátu a pomocí algoritmu `rank_target_domains()` ohodnotí a seřadí všech 20 subdomén podle relevance.
+  - Vrací:
+    ```json
+    {
+      "status": "success",
+      "top_domain": "dum.bazos.cz",
+      "top_label": "Dům a zahrada",
+      "recommended": [
+        {"domain": "dum.bazos.cz", "label": "Dům a zahrada", "score": 190, "matched_keywords": ["sekacka", "zahrada"]},
+        ...
+      ],
+      "all": [...],
+      "reason": "Doporučeno na základě: sekacka, zahrada"
+    }
+    ```
+
+### Správa inzerátů & Životní cyklus:
 - `GET /api/listings`
   - Vrací seznam všech inzerátů rozdělených podle stavů (`active`, `unsold`, `sold`).
 - `POST /api/listings/save`
   - Uloží změny v inzerátu (automaticky zkracuje `title` na max 50 znaků).
 - `POST /api/listings/create-with-photos` *(Multipart form-data)*
   - Atomicky založí inzerát v DB, uloží nahrané fotky a nastaví označenou titulní fotku jako `foto_1.jpg`.
-- `POST /api/listings/<listing_id>/mark_sold` *(JSON payload: `{"sale_price": int|null, "sold_at": "YYYY-MM-DD"|null, "sold_notes": str|null, "remove_from_bazos": bool}`)*
-  - Označí inzerát jako prodaný (`status = 'sold'`), uloží realizovanou cenu, datum a poznámku k prodeji. Pokud je `remove_from_bazos: true` a inzerát má aktivní URL na Bazoši, asynchronně zařadí do fronty Playwright workeru automatické stažení/smazání inzerátu z Bazoše.
+- `POST /api/listings/<listing_id>/mark_sold` *(JSON payload: `{"sale_price": int|null, "sold_at": "YYYY-MM-DD"|null, "notes": str|null, "delete_on_bazos": bool}`)*
+  - Označí inzerát jako prodaný (`status = 'sold'`), zapíše realizovanou prodejní cenu, datum obchodu a interní poznámku do SQLite databáze.
+  - Pokud je `delete_on_bazos: true` a inzerát má aktivní URL na Bazoši, spustí asynchronní worker vlákno, které provede online smazání inzerátu na Bazoši pomocí uloženého hesla.
+  - Vrací: `{"status": "success", "message": str, "deleted_online": bool}`.
 - `POST /api/listings/<listing_id>/restore_sold`
-  - Vrátí dříve prodaný inzerát zpět k prodeji (`status = 'unsold'`), vyresetuje `sale_price`, `sold_at` a `sold_notes`. Inzerát se přesune zpět do záložky "Věci k prodeji" (Koncepty) připraven k případnému znovuvystavení.
+  - Vrátí prodaný inzerát zpět k prodeji (`status = 'unsold'`), vyresetuje `sale_price`, `sold_at` a `sold_notes`. Inzerát se přesune zpět do záložky "Věci k prodeji" (Koncepty/Expirováno) připraven k případnému znovuvystavení.
 - `GET /api/listings/sold_stats`
-  - Vrací souhrnné manažerské statistiky pro záložku "Prodané věci": `{"total_sold": int, "total_revenue": int, "avg_price": int}`.
+  - Vrací souhrnné manažerské metriky pro dashboard v záložce "Prodané věci":
+    ```json
+    {
+      "status": "success",
+      "stats": {"total_sold": 12, "total_profit": 28400, "avg_price": 2366},
+      "total_sold": 12,
+      "total_profit": 28400,
+      "avg_price": 2366
+    }
+    ```
 - `POST /api/listings/delete` *(podporuje také metodu `DELETE`, JSON payload: `{"id": "<listing_id>", "delete_photos": true|false}`)*
   - Odstraní inzerát z databáze SQLite. Pokud je `delete_photos: true`, bezpečně smaže odpovídající lokální složku fotografií s validací proti Path Traversal přes `safe_delete_photos_dir()`.
 
-### Automatizace & Browser akce (Playwright):
-- `POST /api/action/<action_type>` *(kde `<action_type>` je `post`, `edit_price` nebo `delete`, JSON payload: `{"id": "<listing_id>", "target_domain": "dum.bazos.cz", "extra_val": ...}`)*
+### Automatizace, Dávky & Browser akce (Playwright):
+- `POST /api/action/<action_type>` *(kde `<action_type>` je `post`, `edit_price`, `delete` nebo `repost`, JSON payload: `{"id": "<listing_id>", "target_domain": "dum.bazos.cz", "extra_val": ...}`)*
   - Spustí neblokující úlohu na pozadí na dedikovaném worker vlákně.
   - Parametr `target_domain` explicitně určuje cílovou subdoménu Bazoše a předchází nechtěnému reloadu stránky.
 - `GET /api/action/status`
@@ -158,16 +221,20 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
 - `POST /api/action/cancel`
   - Okamžitě přeruší běžící worker vlákno, resetuje stav akce a zavře relaci prohlížeče.
 - `POST /api/action/repost_with_new_price` *(JSON payload: `{"listing_id": "...", "new_price": 1500, "target_domain": "..."}`)*
-  - Přenastaví cenu v DB a automaticky spustí znovuvystavení inzerátu (topování) na pozadí.
+  - Přenastaví cenu a rubriku v DB a automaticky spustí bezpečné znovuvystavení inzerátu (topování) na pozadí s vymazáním původního inzerátu.
 
-### AI Analýza, Gemini & Tržní Radar:
+### AI Modely, Analýza & Tržní Radar:
+- `GET /api/ai/models` *(query parametry `api_key` volitelně, `force=true|false`)*
+  - Dynamicky zjišťuje dostupné modely Gemini z uživatelského účtu přes Google Generative Language API.
+  - Filtruje modely podporující `generateContent`, provádí vyřazení ukončených modelů (`gemini-2.5-pro` -> automatický fallback na `gemini-2.5-flash` nebo `gemini-3.1-pro-preview`) a při nedostupnosti API vrací `DEFAULT_FALLBACK_MODELS`.
+  - Vrací: `{"status": "success", "models": [...], "is_fallback": bool, "current_model": str, "message": str}`.
 - `POST /api/ai/analyze-photos` *(Multipart form-data)*
   - Multimodální analýza až 10 fotek přes Gemini 2.5 Flash + multi-source cenový radar.
   - Vrací: `recommended_title`, `titles` (3-5 variant), `description` (vyčištěný bez hvězdiček), `condition`, `market_analysis`, `estimated_price_czk`.
 - `POST /api/ai/analyze-existing/<listing_id>`
   - Spustí AI Vision analýzu na existujících fotografiích již uloženého inzerátu.
 - `POST /api/ai/improve`
-  - Jazyková korektura a optimalizace stávajícího textu inzerátu (čistý text bez markdownu).
+  - Jazyková korektura a optimalizace stávajícího textu inzerátu (čistý text bez markdownu a hvězdiček).
 - `POST /api/advisor/market-search` *(JSON payload: `{query, brand, model, condition, fallback_price}`)*
   - Spustí multi-source tržní analýzu (Bazoš.cz + Sbazar.cz API + Web + Gemini fallback).
 - `GET /api/advisor/price/<listing_id>`
@@ -180,6 +247,8 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
   - Odešle požadavek na TrueNAS REST API (`/api/v2.0/app/upgrade`) nebo Watchtower webhook pro okamžitý restart a stažení nejnovějšího image.
 - `GET /api/refresh/status`
   - Vrací stav background workeru (využíváno také pro Docker `HEALTHCHECK`).
+- `GET /api/calendar/feed.ics?token=<token>`
+  - Webcal / iCal feed s termíny vypršení 60denní platnosti inzerátů a archívem prodejů.
 
 ### AI Agent Interface (Antigravity & MCP):
 - `GET /api/agent/v1/summary`

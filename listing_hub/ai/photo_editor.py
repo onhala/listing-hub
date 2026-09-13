@@ -5,7 +5,7 @@ from PIL import Image, ImageFilter, ImageOps, ImageDraw
 
 _rembg_session = None
 
-def get_rembg_session(model_name: str = "u2netp"):
+def get_rembg_session(model_name: str = "u2netp") -> Optional[Any]:
     """
     Vrátí cached singleton rembg session pro daný model.
     Výchozí model je 'u2netp' (extrémně rychlý, lehký ~4MB ONNX model).
