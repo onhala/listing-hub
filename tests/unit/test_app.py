@@ -432,6 +432,41 @@ def test_action_confirm_success(client):
         mock_rec_pub.assert_called_once()
         mock_save.assert_called_once()
 
+def test_action_confirm_502_recovery_success(client):
+    with patch("app.session_manager.run_on_worker", return_value={"still_on_form": False, "is_gateway_error": True, "new_url": ""}), \
+         patch("app.action_state_mgr.get_status", return_value={"listing_id": "test-123", "meta": {"staged_price": 400}}), \
+         patch("app.db.get_listing_by_id", return_value={"id": "test-123", "title": "Elektrická strunová sekačka AL-KO", "price": 400, "category": "dum.bazos.cz"}), \
+         patch("app.load_data", return_value=({}, {"phone": "605207116"})), \
+         patch("app._lookup_bazos_ad_by_title_or_phone", return_value={"url": "https://dum.bazos.cz/inzerat/223744456/elektricka-strunova-sekacka.php"}), \
+         patch("app.db.close_active_publication"), \
+         patch("app.db.record_publication"), \
+         patch("app.db.save_listing"):
+        res = client.post("/api/action/confirm")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        assert data["recovered_from_502"] is True
+        assert "223744456" in data["url"]
+
+def test_action_confirm_chained_deletion_reporting(client):
+    worker_calls = [
+        {"still_on_form": False, "new_url": "https://dum.bazos.cz/inzerat/222/new.php"}, # _check_page_submitted
+        {"success": True, "status": "deleted", "reason": "Původní inzerát byl vymazán z Bazoše"} # _delete_old_worker
+    ]
+    with patch("app.session_manager.run_on_worker", side_effect=worker_calls), \
+         patch("app.action_state_mgr.get_status", return_value={"listing_id": "test-123", "meta": {"auto_delete_old": True, "old_portal_url": "https://dum.bazos.cz/inzerat/111/old.php"}}), \
+         patch("app.db.get_listing_by_id", return_value={"id": "test-123", "title": "Předmět", "price": 500}), \
+         patch("app.load_data", return_value=({}, {"bazos_password": "heslo"})), \
+         patch("app.db.close_active_publication"), \
+         patch("app.db.record_publication"), \
+         patch("app.db.save_listing"):
+        res = client.post("/api/action/confirm")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        assert data["old_deleted"]["status"] == "deleted"
+        assert "automaticky smazán" in data["message"]
+
 def test_api_repost_with_new_price_success(client):
     mock_row = {
         "id": "item-123",
@@ -478,4 +513,140 @@ def test_api_get_listing_history(client):
         assert data["status"] == "success"
         assert len(data["publications"]) == 2
         assert data["cumulative_stats"]["is_reposted"] is True
+
+def test_api_mark_listing_sold(client):
+    mock_listing = {
+        "id": "item-sold-1",
+        "title": "Strunová sekačka",
+        "price": 1800,
+        "url": "https://dum.bazos.cz/inzerat/999"
+    }
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=mock_listing), \
+         patch("listing_hub.core.db.mark_listing_as_sold", return_value=True) as mock_mark, \
+         patch("threading.Thread.start") as mock_thread_start:
+        res = client.post("/api/listings/item-sold-1/mark_sold", json={
+            "sale_price": 1500,
+            "sold_at": "2026-09-13",
+            "notes": "Osobní převzetí, sleva 300 Kč",
+            "delete_on_bazos": True
+        })
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        mock_mark.assert_called_once_with(
+            "item-sold-1",
+            1500,
+            "2026-09-13",
+            "Osobní převzetí, sleva 300 Kč"
+        )
+        mock_thread_start.assert_called_once()
+
+def test_api_restore_sold_listing(client):
+    mock_listing = {
+        "id": "item-sold-1",
+        "title": "Strunová sekačka",
+        "sale_price": 1500
+    }
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=mock_listing), \
+         patch("listing_hub.core.db.restore_sold_listing", return_value=True) as mock_restore:
+        res = client.post("/api/listings/item-sold-1/restore_sold")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        mock_restore.assert_called_once_with("item-sold-1")
+
+def test_api_sold_stats(client):
+    with patch("listing_hub.core.db.get_sold_statistics", return_value={
+        "total_sold": 5,
+        "total_profit": 12500,
+        "avg_price": 2500
+    }):
+        res = client.get("/api/listings/sold_stats")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["total_sold"] == 5
+        assert data["total_profit"] == 12500
+        assert data["avg_price"] == 2500
+
+def test_api_mark_sold_not_found(client):
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=None), \
+         patch("listing_hub.core.db.get_all_listings", return_value=[]):
+        res = client.post("/api/listings/non-existent-id/mark_sold", json={"sale_price": 1000})
+        assert res.status_code == 404
+        data = json.loads(res.data)
+        assert data["status"] == "error"
+        assert "nebyl nalezen" in data["message"]
+
+def test_api_restore_sold_not_found(client):
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=None), \
+         patch("listing_hub.core.db.get_all_listings", return_value=[]):
+        res = client.post("/api/listings/non-existent-id/restore_sold")
+        assert res.status_code == 404
+        data = json.loads(res.data)
+        assert data["status"] == "error"
+        assert "nebyl nalezen" in data["message"]
+
+def test_api_mark_sold_fallback_local_photos_dir(client):
+    mock_listing = {
+        "id": "actual-db-id",
+        "local_photos_dir": "folder-123",
+        "title": "Křeslo",
+        "price": 1200
+    }
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=None), \
+         patch("listing_hub.core.db.get_all_listings", return_value=[mock_listing]), \
+         patch("listing_hub.core.db.mark_listing_as_sold", return_value=True) as mock_mark:
+        res = client.post("/api/listings/folder-123/mark_sold", json={"delete_on_bazos": False})
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        mock_mark.assert_called_once()
+        assert mock_mark.call_args[0][0] == "actual-db-id"
+        assert mock_mark.call_args[0][1] == 1200  # fallback to original price
+
+def test_api_restore_sold_fallback_local_photos_dir(client):
+    mock_listing = {
+        "id": "actual-db-id",
+        "local_photos_dir": "folder-123",
+        "title": "Křeslo"
+    }
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=None), \
+         patch("listing_hub.core.db.get_all_listings", return_value=[mock_listing]), \
+         patch("listing_hub.core.db.restore_sold_listing", return_value=True) as mock_restore:
+        res = client.post("/api/listings/folder-123/restore_sold")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        mock_restore.assert_called_once_with("actual-db-id")
+
+def test_api_mark_sold_invalid_price_and_empty_payload(client):
+    mock_listing = {
+        "id": "item-edge-1",
+        "title": "Stolek",
+        "price": 800
+    }
+    with patch("listing_hub.core.db.get_listing_by_id", return_value=mock_listing), \
+         patch("listing_hub.core.db.mark_listing_as_sold", return_value=True) as mock_mark:
+        # 1. Invalid price string fallback to listing price
+        res = client.post("/api/listings/item-edge-1/mark_sold", json={
+            "sale_price": "not-a-number",
+            "delete_on_bazos": False
+        })
+        assert res.status_code == 200
+        mock_mark.assert_called_with("item-edge-1", 800, mock_mark.call_args[0][2], "")
+
+        # 2. Empty payload / empty body
+        res_empty = client.post("/api/listings/item-edge-1/mark_sold", data="", content_type="application/json")
+        assert res_empty.status_code == 200
+        mock_mark.assert_called_with("item-edge-1", 800, mock_mark.call_args[0][2], "")
+
+def test_api_sold_stats_error_handling(client):
+    with patch("listing_hub.core.db.get_sold_statistics", side_effect=RuntimeError("DB query failed")):
+        res = client.get("/api/listings/sold_stats")
+        assert res.status_code == 500
+        data = json.loads(res.data)
+        assert data["status"] == "error"
+        assert "DB query failed" in data["message"]
+
+
 

@@ -11,7 +11,7 @@
     <!-- FontAwesome for Premium Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom Glassmorphic Styles -->
-    <link rel="stylesheet" href="/static/style.css?v=3.8.7">
+    <link rel="stylesheet" href="/static/style.css?v=3.8.8">
 </head>
 <body>
     <!-- Background glowing shapes -->
@@ -164,6 +164,33 @@
 
             <!-- Tabs content -->
             <div class="tab-content active" id="tab-active-listings">
+                <!-- Nástrojová lišta pro řazení, vyhledávání a hromadný výběr -->
+                <div class="listings-toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-input-wrapper">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="active-search-input" placeholder="Hledat v aktivních inzerátech..." class="toolbar-input">
+                        </div>
+                        <div class="sort-select-wrapper">
+                            <span class="toolbar-label"><i class="fa-solid fa-arrow-down-wide-short"></i> Řadit:</span>
+                            <select id="active-sort-select" class="toolbar-select">
+                                <option value="days_old_desc">Nejstarší (doporučeno k topování)</option>
+                                <option value="days_old_asc">Nejnovější</option>
+                                <option value="views_asc">Nejméně zhlédnutí (stagnující)</option>
+                                <option value="views_desc">Nejvíce zhlédnutí</option>
+                                <option value="price_desc">Cena (od nejvyšší)</option>
+                                <option value="price_asc">Cena (od nejnižší)</option>
+                                <option value="title_asc">Podle názvu (A–Z)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="toolbar-right">
+                        <button type="button" class="btn btn-secondary" id="btn-toggle-batch-active" title="Aktivuje zaškrtávací políčka pro hromadné akce">
+                            <i class="fa-solid fa-check-double"></i> Hromadný výběr
+                        </button>
+                    </div>
+                </div>
+
                 <div class="listings-grid" id="active-listings-list">
                     <!-- Cards will be dynamically rendered here -->
                     <div class="loading-state">
@@ -173,6 +200,31 @@
             </div>
 
             <div class="tab-content" id="tab-unsold-listings">
+                <!-- Nástrojová lišta pro věci k prodeji -->
+                <div class="listings-toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-input-wrapper">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="unsold-search-input" placeholder="Hledat ve věcech k prodeji..." class="toolbar-input">
+                        </div>
+                        <div class="sort-select-wrapper">
+                            <span class="toolbar-label"><i class="fa-solid fa-arrow-down-wide-short"></i> Řadit:</span>
+                            <select id="unsold-sort-select" class="toolbar-select">
+                                <option value="days_old_desc">Nejstarší</option>
+                                <option value="days_old_asc">Nejnovější</option>
+                                <option value="price_desc">Cena (od nejvyšší)</option>
+                                <option value="price_asc">Cena (od nejnižší)</option>
+                                <option value="title_asc">Podle názvu (A–Z)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="toolbar-right">
+                        <button type="button" class="btn btn-secondary" id="btn-toggle-batch-unsold">
+                            <i class="fa-solid fa-check-double"></i> Hromadný výběr
+                        </button>
+                    </div>
+                </div>
+
                 <div class="listings-grid" id="unsold-listings-list">
                     <!-- Cards will be dynamically rendered here -->
                     <div class="loading-state">
@@ -182,6 +234,57 @@
             </div>
 
             <div class="tab-content" id="tab-sold-listings">
+                <!-- Executive Summary Dashboard for Sold Items -->
+                <div class="sold-summary-grid" id="sold-summary-container">
+                    <div class="sold-stat-card">
+                        <div class="sold-stat-icon green">
+                            <i class="fa-solid fa-handshake"></i>
+                        </div>
+                        <div class="sold-stat-info">
+                            <span class="sold-stat-label">Celkem prodáno</span>
+                            <h3 class="sold-stat-value" id="sold-stat-total-count">0 ks</h3>
+                        </div>
+                    </div>
+                    <div class="sold-stat-card">
+                        <div class="sold-stat-icon purple">
+                            <i class="fa-solid fa-sack-dollar"></i>
+                        </div>
+                        <div class="sold-stat-info">
+                            <span class="sold-stat-label">Realizovaný zisk / tržby</span>
+                            <h3 class="sold-stat-value" id="sold-stat-total-profit">0 Kč</h3>
+                        </div>
+                    </div>
+                    <div class="sold-stat-card">
+                        <div class="sold-stat-icon blue">
+                            <i class="fa-solid fa-chart-pie"></i>
+                        </div>
+                        <div class="sold-stat-info">
+                            <span class="sold-stat-label">Průměrná realizovaná cena</span>
+                            <h3 class="sold-stat-value" id="sold-stat-avg-price">0 Kč</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nástrojová lišta pro prodané inzeráty -->
+                <div class="listings-toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-input-wrapper">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="sold-search-input" placeholder="Hledat v prodaných věcech..." class="toolbar-input">
+                        </div>
+                        <div class="sort-select-wrapper">
+                            <span class="toolbar-label"><i class="fa-solid fa-arrow-down-wide-short"></i> Řadit:</span>
+                            <select id="sold-sort-select" class="toolbar-select">
+                                <option value="sold_at_desc">Datum prodeje (nejnovější)</option>
+                                <option value="sold_at_asc">Datum prodeje (nejstarší)</option>
+                                <option value="price_desc">Cena (od nejvyšší)</option>
+                                <option value="price_asc">Cena (od nejnižší)</option>
+                                <option value="title_asc">Podle názvu (A–Z)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="listings-grid" id="sold-listings-list">
                     <!-- Cards will be dynamically rendered here -->
                     <div class="loading-state">
@@ -208,6 +311,25 @@
                             </button>
                         </div>
                     </div>
+                    <!-- Indikátor průběhu dávkové fronty -->
+                    <div id="batch-queue-indicator" style="display: none; justify-content: space-between; align-items: center; padding: 0.75rem 1.25rem; background: rgba(131, 92, 223, 0.18); border: 1px solid rgba(131, 92, 223, 0.45); border-radius: 12px; margin-bottom: 0.25rem;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem; color: #fff;">
+                            <i class="fa-solid fa-layer-group" style="color: #c4b5fd; font-size: 1.2rem;"></i>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.9rem;">Dávkové znovuvystavení: <span id="batch-queue-current">1</span> z <span id="batch-queue-total">1</span></div>
+                                <div id="batch-queue-name" style="font-size: 0.8rem; color: #cbd5e1;">Položka: ...</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <button type="button" class="btn btn-secondary" id="btn-batch-skip" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                                <i class="fa-solid fa-forward-step"></i> Přeskočit
+                            </button>
+                            <button type="button" class="btn btn-secondary" id="btn-batch-cancel" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">
+                                <i class="fa-solid fa-stop"></i> Zastavit dávku
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Banner pro finální kontrolu a potvrzení odeslání inzerátu -->
                     <div id="browser-review-banner" style="display: none; justify-content: space-between; align-items: center; padding: 0.9rem 1.25rem; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 12px; animation: pulse 2s infinite;">
                         <div style="display: flex; align-items: center; gap: 0.75rem; color: #fff;">
@@ -231,6 +353,15 @@
                         <canvas id="screencast-canvas" tabindex="0" style="display: block; cursor: crosshair; border-radius: 8px; outline: none; shadow: 0 4px 12px rgba(0,0,0,0.5);"></canvas>
                         <textarea id="screencast-hidden-input" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; resize: none; border: none; outline: none; padding: 0; margin: 0; z-index: 10;" tabindex="0" autocomplete="off" capitalize="off" spellcheck="false"></textarea>
                         
+                        <!-- Plovoucí panel měřítka a zoomu -->
+                        <div id="screencast-zoom-controls" style="position: absolute; right: 38px; top: 15px; display: flex; align-items: center; gap: 4px; background: rgba(15, 10, 30, 0.88); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.12); padding: 3px 6px; border-radius: 20px; z-index: 25; box-shadow: 0 4px 16px rgba(0,0,0,0.5);">
+                            <button type="button" id="btn-zoom-fit" class="zoom-pill active" title="Přizpůsobit oknu">Fit</button>
+                            <button type="button" id="btn-zoom-100" class="zoom-pill" title="Nativní velikost 100 % (1:1) - snadné klikání">1:1</button>
+                            <button type="button" id="btn-zoom-out" class="zoom-pill icon-only" title="Zmenšit"><i class="fa-solid fa-minus"></i></button>
+                            <span id="zoom-level-badge" style="font-size: 0.72rem; color: #cbd5e1; min-width: 34px; text-align: center; font-weight: 600;">Fit</span>
+                            <button type="button" id="btn-zoom-in" class="zoom-pill icon-only" title="Zvětšit"><i class="fa-solid fa-plus"></i></button>
+                        </div>
+
                         <!-- Postranní posuvník a ovládací tlačítka skrolování -->
                         <div id="screencast-scrollbar" style="position: absolute; right: 10px; top: 15px; bottom: 15px; width: 16px; background: rgba(255, 255, 255, 0.08); border-radius: 8px; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.12); backdrop-filter: blur(8px);">
                             <button id="btn-scroll-up" title="Posunout nahoru" style="width: 22px; height: 22px; border-radius: 50%; background: var(--primary-color); border: none; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; box-shadow: 0 2px 6px rgba(0,0,0,0.4); margin-top: -8px;">
@@ -711,9 +842,14 @@
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-                <button type="button" class="btn btn-danger" id="btn-delete-listing-modal" style="display: flex; align-items: center; gap: 0.5rem;">
-                    <i class="fa-solid fa-trash-can"></i> Smazat inzerát...
-                </button>
+                <div style="display: flex; gap: 0.6rem; align-items: center;">
+                    <button type="button" class="btn btn-danger" id="btn-delete-listing-modal" style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fa-solid fa-trash-can"></i> Smazat inzerát...
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btn-mark-sold-modal" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
+                        <i class="fa-solid fa-handshake"></i> Označit jako prodané
+                    </button>
+                </div>
                 <div style="display: flex; gap: 0.75rem;">
                     <button type="button" class="btn btn-secondary btn-close-modal">Zavřít</button>
                     <button type="button" class="btn btn-primary" id="btn-save-listing-changes">
@@ -808,7 +944,7 @@
                         <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
                             <i class="fa-solid fa-hard-drive"></i> Nainstalováno
                         </div>
-                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-local-version">v3.8.7</div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-local-version">v3.8.8</div>
                         <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.45rem;">
                             Commit: <code id="modal-local-hash" style="background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 4px; color: #a5d6ff; font-family: monospace;">...</code>
                         </div>
@@ -823,7 +959,7 @@
                             <span><i class="fa-brands fa-github"></i> Nejnovější na GitHubu</span>
                             <span id="modal-update-badge" style="background: #10b981; color: #000; font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 8px;">Aktuální</span>
                         </div>
-                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-latest-version">v3.8.7</div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.3rem;" id="modal-latest-version">v3.8.8</div>
                         <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.45rem;">
                             Commit: <code id="modal-latest-hash" style="background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 4px; color: #a5d6ff; font-family: monospace;">...</code>
                         </div>
@@ -1210,6 +1346,14 @@
                             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Inzerát na Bazoši zůstane beze změny. Odstraní se pouze záznam z této databáze.</div>
                         </div>
                     </label>
+
+                    <label class="delete-choice-card" style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.85rem 1rem; border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; background: rgba(16, 185, 129, 0.07); cursor: pointer;">
+                        <input type="radio" name="delete_scope" value="mark_sold" style="margin-top: 3px; accent-color: #10b981;">
+                        <div>
+                            <div style="font-weight: 600; color: #10b981; font-size: 0.92rem;"><i class="fa-solid fa-handshake"></i> Položka byla prodána (přesunout do prodaných)</div>
+                            <div style="font-size: 0.8rem; color: #cbd5e1; margin-top: 2px;">Otevře dialog pro zadání skutečné prodejní ceny a poznámky, smaže inzerát na Bazoši a uchová statistiku zisku.</div>
+                        </div>
+                    </label>
                 </div>
 
                 <!-- Unadvertised / Draft Note -->
@@ -1235,8 +1379,164 @@
         </div>
     </div>
 
+    <!-- Plovoucí lišta pro hromadné akce -->
+    <div id="batch-action-bar" class="batch-bar" style="display: none;">
+        <div class="batch-bar-left">
+            <span class="batch-count-badge" id="batch-selected-count">0</span>
+            <span class="batch-label">vybráno</span>
+        </div>
+        <div class="batch-bar-actions">
+            <button type="button" class="btn btn-primary" id="btn-batch-repost-open">
+                <i class="fa-solid fa-arrows-rotate"></i> Hromadně znovuvystavit
+            </button>
+            <button type="button" class="btn btn-secondary" id="btn-batch-select-all">
+                Vybrat vše
+            </button>
+            <button type="button" class="btn btn-secondary" id="btn-batch-cancel-selection">
+                Zrušit
+            </button>
+        </div>
+    </div>
+
+    <!-- BATCH REPOST MODAL -->
+    <div class="modal-overlay" id="batch-repost-modal" style="display: none; z-index: 1050;">
+        <div class="modal modal-lg" style="max-width: 760px; width: 95%;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-layer-group" style="color: var(--primary-color);"></i> Hromadné znovuvystavení inzerátů (Dávka)</h3>
+                <button type="button" class="btn-close-batch-modal" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem;">
+                <p style="font-size: 0.9rem; color: #cbd5e1; margin-top: 0;">
+                    Vybral jsi následující inzeráty k přetopování / znovuvystavení. Můžeš upravit ceny pro nová vystavení. Robot poté postupně předvyplní formuláře a ty je ve screencastu jednoduše po jednom potvrdíš.
+                </p>
+                <div id="batch-items-container" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 45vh; overflow-y: auto; margin: 1rem 0; padding-right: 4px;">
+                    <!-- Dynamicky generované položky dávky -->
+                </div>
+                <div style="font-size: 0.82rem; color: var(--text-muted); background: rgba(255, 255, 255, 0.04); border-left: 3px solid var(--primary-color); padding: 0.65rem 0.85rem; border-radius: 4px;">
+                    <i class="fa-solid fa-circle-info" style="color: var(--primary-color); margin-right: 4px;"></i>
+                    Po spuštění robot automaticky předvyplní 1. inzerát. V prohlížeči zkontroluješ, klikneš na <strong>Odeslat</strong> a potvrdíš. Systém automaticky uklidí původní inzerát a sám přejde na další položku z fronty.
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 0.85rem 1.25rem;">
+                <button type="button" class="btn btn-secondary btn-close-batch-modal">Zrušit</button>
+                <button type="button" class="btn btn-primary" id="btn-start-batch-queue" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600;">
+                    <i class="fa-solid fa-play"></i> Spustit dávku (<span id="batch-modal-total-btn">0</span>)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONFIRM & CLEANUP PROGRESS MODAL -->
+    <div class="modal-overlay" id="confirm-progress-modal" style="display: none; z-index: 1060;">
+        <div class="modal" style="max-width: 480px; width: 95%; text-align: center;">
+            <div class="modal-header" style="justify-content: center; position: relative;">
+                <h3 id="confirm-stepper-title" style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fa-solid fa-cloud-arrow-up" style="color: var(--primary-color);"></i>
+                    Zpracování vystavení
+                </h3>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem 1.25rem; text-align: left;">
+                <div class="confirm-steps-list" style="display: flex; flex-direction: column; gap: 1.15rem;">
+                    <div class="confirm-step-row" id="step-row-verify">
+                        <div class="step-icon-col">
+                            <i class="fa-solid fa-circle-notch fa-spin" style="color: var(--primary-color); font-size: 1.1rem;"></i>
+                        </div>
+                        <div class="step-info-col">
+                            <div class="step-name" style="font-weight: 600; color: #fff; font-size: 0.92rem;">Ověření inzerátu na Bazoši</div>
+                            <div class="step-detail" style="font-size: 0.8rem; color: #94a3b8;">Zjišťuji novou URL a stav formuláře...</div>
+                        </div>
+                    </div>
+                    <div class="confirm-step-row" id="step-row-delete" style="opacity: 0.5;">
+                        <div class="step-icon-col">
+                            <i class="fa-regular fa-circle" style="color: var(--text-muted); font-size: 1.1rem;"></i>
+                        </div>
+                        <div class="step-info-col">
+                            <div class="step-name" style="font-weight: 600; color: #fff; font-size: 0.92rem;">Úklid původního inzerátu</div>
+                            <div class="step-detail" style="font-size: 0.8rem; color: #94a3b8;">Čeká na ověření nového inzerátu...</div>
+                        </div>
+                    </div>
+                    <div class="confirm-step-row" id="step-row-save" style="opacity: 0.5;">
+                        <div class="step-icon-col">
+                            <i class="fa-regular fa-circle" style="color: var(--text-muted); font-size: 1.1rem;"></i>
+                        </div>
+                        <div class="step-info-col">
+                            <div class="step-name" style="font-weight: 600; color: #fff; font-size: 0.92rem;">Uložení a archivace v databázi</div>
+                            <div class="step-detail" style="font-size: 0.8rem; color: #94a3b8;">Zápis historie a uzavření cyklu...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="confirm-status-alert" style="display: none; margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;">
+                </div>
+            </div>
+            <div class="modal-footer" id="confirm-modal-footer" style="display: none; justify-content: center; padding: 1rem 1.25rem;">
+                <button type="button" class="btn btn-primary" id="btn-confirm-progress-done" style="width: 100%;">
+                    Zpět na přehled inzerátů
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MARK AS SOLD MODAL -->
+    <div class="modal-overlay" id="mark-sold-modal" style="display: none; z-index: 1060;">
+        <div class="modal" style="max-width: 520px; width: 95%;">
+            <div class="modal-header">
+                <h3 style="color: #10b981; display: flex; align-items: center; gap: 0.6rem;">
+                    <i class="fa-solid fa-handshake"></i> Označit jako prodané
+                </h3>
+                <button type="button" class="btn-close-mark-sold-modal" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem;">
+                <p style="margin-top: 0; font-size: 0.9rem; color: #cbd5e1;">
+                    Zaznamenej prodej položky <strong id="mark-sold-title" style="color: #fff;">-</strong>. Položka bude přesunuta do archivu prodaných věcí.
+                </p>
+
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="mark-sold-price" style="display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem;">
+                        <span>Skutečná prodejní cena (Kč):</span>
+                        <span id="mark-sold-diff-pill" class="price-diff-pill" style="display: none;">0%</span>
+                    </label>
+                    <input type="number" id="mark-sold-price" min="0" required placeholder="Např. 1500" style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 1.05rem; font-weight: 600; outline: none;">
+                    <span id="mark-sold-original-price-hint" style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-top: 4px;">Původně inzerováno: - Kč</span>
+                </div>
+
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="mark-sold-date" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
+                        Datum prodeje:
+                    </label>
+                    <input type="date" id="mark-sold-date" style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.92rem; outline: none;">
+                </div>
+
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="mark-sold-notes" style="font-size: 0.88rem; font-weight: 600; color: #fff; margin-bottom: 0.4rem; display: block;">
+                        Poznámka k prodeji (volitelné):
+                    </label>
+                    <textarea id="mark-sold-notes" rows="2" placeholder="Např. Kupující si přijel osobně, sleva 200 Kč na benzín..." style="width: 100%; background: rgba(11, 8, 22, 0.9); border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: #fff; padding: 0.6rem 0.85rem; border-radius: 8px; font-size: 0.88rem; outline: none; resize: vertical;"></textarea>
+                </div>
+
+                <div class="form-group" id="mark-sold-bazos-delete-wrapper" style="margin-top: 1rem; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); padding: 0.75rem 0.9rem; border-radius: 8px;">
+                    <label style="display: flex; align-items: flex-start; gap: 0.65rem; cursor: pointer; margin-bottom: 0;">
+                        <input type="checkbox" id="mark-sold-delete-bazos" checked style="margin-top: 3px; accent-color: #ef4444;">
+                        <div>
+                            <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">Smazat inzerát na Bazoši (pokud je vystaven)</div>
+                            <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 2px;">Robot smaže inzerát na Bazoši přes heslo, aby už nechodily další zprávy a hovory.</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem; padding: 0.85rem 1.25rem;">
+                <button type="button" class="btn btn-secondary btn-close-mark-sold-modal">Zrušit</button>
+                <button type="button" class="btn btn-primary" id="btn-submit-mark-sold" style="background: #10b981; border-color: #10b981; display: flex; align-items: center; gap: 0.5rem; font-weight: 600;">
+                    <i class="fa-solid fa-check"></i> Uložit a označit jako prodané
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Client application logic -->
-    <script src="/static/app.js?v=3.8.7"></script>
+    <script src="/static/app.js?v=3.8.8"></script>
 </body>
 </html>
 

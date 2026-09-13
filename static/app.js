@@ -51,6 +51,24 @@ document.addEventListener("DOMContentLoaded", () => {
     let lastAiField = "";
     let lastAiInstruction = "improve";
 
+    // Sorting & Filtering state
+    let activeSort = "days_old_desc";
+    let activeFilterQuery = "";
+    let unsoldSort = "days_old_desc";
+    let unsoldFilterQuery = "";
+    let soldSort = "sold_at_desc";
+    let soldFilterQuery = "";
+
+    // Batch operations state
+    let isBatchModeActive = false;
+    let selectedBatchAdIds = new Set();
+    let batchQueue = [];
+    let batchIndex = 0;
+
+    // Screencast zoom & Stepper state
+    let currentScreencastZoom = "fit"; // "fit", 1.0, 1.25, 1.5, 0.75
+    let confirmAutoAdvanceTimer = null;
+
     // UI elements
     const navItems = document.querySelectorAll(".nav-item");
     const tabContents = document.querySelectorAll(".tab-content");
@@ -169,6 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const aiProposalModal = document.getElementById("ai-proposal-modal");
     const repostConfirmModal = document.getElementById("repost-confirm-modal");
     const deleteListingModal = document.getElementById("delete-listing-modal");
+    const markSoldModal = document.getElementById("mark-sold-modal");
     const browserReviewBanner = document.getElementById("browser-review-banner");
     
     // Parent/child modal state helper to preserve currentAd
@@ -330,7 +349,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const populateVersionModal = (data) => {
         if (!data) return;
-        const appVer = data.app_version || "3.8.7";
+        const appVer = data.app_version || "3.8.8";
         const localHash = (data.local && data.local.hash) || data.local_hash || "unknown";
         const latestHash = (data.latest && data.latest.hash) || data.latest_hash || "unknown";
         const envName = (data.local && data.local.environment) || (data.is_docker ? "Docker kontejner" : "Lokální vývoj");
@@ -413,7 +432,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
                 currentVersionData = data;
                 
-                const appVer = data.app_version || "3.8.7";
+                const appVer = data.app_version || "3.8.8";
                 const localHash = (data.local && data.local.hash !== "unknown") 
                     ? data.local.hash 
                     : (data.local_hash && data.local_hash !== "unknown" ? data.local_hash : "git");
@@ -686,16 +705,133 @@ document.addEventListener("DOMContentLoaded", () => {
         
         const totalViews = liveListings.reduce((sum, ad) => sum + parseInt(ad.views || 0), 0);
         statTotalViews.textContent = totalViews;
+
+        loadSoldStats();
+    };
+
+    const loadSoldStats = async () => {
+        try {
+            const res = await fetch("/api/listings/sold_stats");
+            if (res.ok) {
+                const data = await res.json();
+                const stats = data.stats || data;
+                const totalCountEl = document.getElementById("sold-stat-total-count");
+                const totalProfitEl = document.getElementById("sold-stat-total-profit");
+                const avgPriceEl = document.getElementById("sold-stat-avg-price");
+
+                const totalSold = stats.total_sold !== undefined ? stats.total_sold : (data.total_sold || 0);
+                const totalProfit = stats.total_profit !== undefined ? stats.total_profit : (data.total_profit || 0);
+                const avgPrice = stats.avg_price !== undefined ? stats.avg_price : (data.avg_price || 0);
+
+                if (totalCountEl) totalCountEl.textContent = `${totalSold} ks`;
+                if (totalProfitEl) totalProfitEl.textContent = `${totalProfit.toLocaleString("cs-CZ")} Kč`;
+                if (avgPriceEl) avgPriceEl.textContent = `${avgPrice.toLocaleString("cs-CZ")} Kč`;
+            }
+        } catch (err) {
+            console.error("Chyba při načítání statistik prodeje:", err);
+        }
     };
 
     // ==========================================
     // 2. RENDEROVÁNÍ KARET INZERÁTŮ
     // ==========================================
 
+    const getDaysOld = (dateStr) => {
+        if (!dateStr) return null;
+        const parts = String(dateStr).split(" ")[0].split("-");
+        if (parts.length === 3) {
+            const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+            d.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((now - d) / (1000 * 60 * 60 * 24));
+            return Math.max(0, diffDays);
+        }
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return null;
+        const now = new Date();
+        return Math.max(0, Math.floor((now - d) / (1000 * 60 * 60 * 24)));
+    };
+
+    const sortListingsArray = (arr, sortType) => {
+        return [...arr].sort((a, b) => {
+            const daysA = getDaysOld(a.date_created);
+            const daysB = getDaysOld(b.date_created);
+            
+            if (sortType === "days_old_desc") {
+                const valA = daysA !== null ? daysA : -1;
+                const valB = daysB !== null ? daysB : -1;
+                return valB - valA;
+            } else if (sortType === "days_old_asc") {
+                const valA = daysA !== null ? daysA : 99999;
+                const valB = daysB !== null ? daysB : 99999;
+                return valA - valB;
+            } else if (sortType === "sold_at_desc") {
+                const dateA = a.sold_at || a.date_created || "";
+                const dateB = b.sold_at || b.date_created || "";
+                return dateB.localeCompare(dateA);
+            } else if (sortType === "sold_at_asc") {
+                const dateA = a.sold_at || a.date_created || "";
+                const dateB = b.sold_at || b.date_created || "";
+                return dateA.localeCompare(dateB);
+            } else if (sortType === "views_desc") {
+                return (parseInt(b.views || 0, 10)) - (parseInt(a.views || 0, 10));
+            } else if (sortType === "price_desc") {
+                const pA = a.sale_price !== undefined && a.sale_price !== null ? a.sale_price : (a.price || 0);
+                const pB = b.sale_price !== undefined && b.sale_price !== null ? b.sale_price : (b.price || 0);
+                return (parseInt(pB, 10)) - (parseInt(pA, 10));
+            } else if (sortType === "price_asc") {
+                const pA = a.sale_price !== undefined && a.sale_price !== null ? a.sale_price : (a.price || 0);
+                const pB = b.sale_price !== undefined && b.sale_price !== null ? b.sale_price : (b.price || 0);
+                return (parseInt(pA, 10)) - (parseInt(pB, 10));
+            } else if (sortType === "title_asc") {
+                return (a.title || "").localeCompare(b.title || "", "cs");
+            }
+            return 0;
+        });
+    };
+
+    const filterListingsArray = (arr, q) => {
+        if (!q || !q.trim()) return arr;
+        const needle = q.trim().toLowerCase();
+        return arr.filter(ad => {
+            return (ad.title && ad.title.toLowerCase().includes(needle)) ||
+                   (ad.description && ad.description.toLowerCase().includes(needle)) ||
+                   (ad.price && String(ad.price).includes(needle)) ||
+                   (ad.sale_price && String(ad.sale_price).includes(needle)) ||
+                   (ad.sold_notes && ad.sold_notes.toLowerCase().includes(needle)) ||
+                   (ad.notes && ad.notes.toLowerCase().includes(needle));
+        });
+    };
+
+    const updateBatchActionBar = () => {
+        const batchBar = document.getElementById("batch-action-bar");
+        const countBadge = document.getElementById("batch-selected-count");
+        if (!batchBar) return;
+        
+        if (selectedBatchAdIds.size > 0) {
+            batchBar.style.display = "flex";
+            if (countBadge) countBadge.textContent = selectedBatchAdIds.size;
+        } else {
+            batchBar.style.display = "none";
+        }
+    };
+
     const renderListings = () => {
         // Filtrování aktivních a neaktivních (expirovaných/draftů)
-        const liveListings = activeListings.filter(ad => ad.status === "Aktivní");
-        const unsoldListings = activeListings.filter(ad => ad.status !== "Aktivní");
+        let liveListings = activeListings.filter(ad => ad.status === "Aktivní");
+        let unsoldListings = activeListings.filter(ad => ad.status !== "Aktivní");
+        let displayedSoldListings = [...soldListings];
+
+        // Aplikace vyhledávání a řazení
+        liveListings = filterListingsArray(liveListings, activeFilterQuery);
+        liveListings = sortListingsArray(liveListings, activeSort);
+
+        unsoldListings = filterListingsArray(unsoldListings, unsoldFilterQuery);
+        unsoldListings = sortListingsArray(unsoldListings, unsoldSort);
+
+        displayedSoldListings = filterListingsArray(displayedSoldListings, soldFilterQuery);
+        displayedSoldListings = sortListingsArray(displayedSoldListings, soldSort);
 
         // Aktivní inzeráty
         activeListingsContainer.innerHTML = "";
@@ -721,17 +857,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Prodané inzeráty
         soldListingsContainer.innerHTML = "";
-        if (soldListings.length === 0) {
+        if (displayedSoldListings.length === 0) {
             soldListingsContainer.innerHTML = `<div class="loading-state"><i class="fa-solid fa-box"></i> Žádné prodané věci.</div>`;
         } else {
-            soldListings.forEach(ad => {
+            displayedSoldListings.forEach(ad => {
                 const card = createAdCard(ad, true);
                 soldListingsContainer.appendChild(card);
             });
         }
 
-        // Spustíme IntersectionObserver pro price chipy (zaregistrujeme nově přidané chipy)
-        // initPriceChipObserver je definovaný níže v sekci Price Advisor
+        // Aktualizujeme stav spodní lišty hromadných akcí
+        updateBatchActionBar();
+
+        // Spustíme IntersectionObserver pro price chipy
         if (typeof initPriceChipObserver === "function") {
             initPriceChipObserver();
         }
@@ -740,6 +878,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const createAdCard = (ad, isSold) => {
         const card = document.createElement("div");
         card.className = "listing-card";
+        if (isSold) {
+            card.classList.add("is-sold");
+        }
+        if (selectedBatchAdIds.has(ad.id)) {
+            card.classList.add("batch-selected");
+            card.classList.add("selected-batch-card");
+        }
         
         const titleText = ad.title || "Bez názvu";
         const descText = ad.description || "Žádný popis...";
@@ -748,7 +893,29 @@ document.addEventListener("DOMContentLoaded", () => {
         const dateStr = ad.date_created || "Dosud nevystaveno";
         const urlStr = ad.url || "";
         
+        // Výpočet stáří inzerátu pro indikaci potřeby přetopování
+        const daysOld = getDaysOld(ad.date_created);
+        let ageBadgeHtml = "";
+        if (daysOld !== null && ad.status === "Aktivní") {
+            let ageClass = "age-fresh";
+            let ageLabel = `před ${daysOld} dny`;
+            if (daysOld === 0) ageLabel = "dnes";
+            else if (daysOld === 1) ageLabel = "včera";
+            
+            if (daysOld >= 30) {
+                ageClass = "age-stale";
+                ageLabel = `${daysOld} dní (k obnově)`;
+            } else if (daysOld >= 14) {
+                ageClass = "age-warning";
+                ageLabel = `${daysOld} dní`;
+            }
+            ageBadgeHtml = `<span class="age-badge ${ageClass}" title="Stáří inzerátu od vystavení">${ageLabel}</span>`;
+        }
+
         card.innerHTML = `
+            ${!isSold ? `
+                <input type="checkbox" class="card-select-checkbox" data-ad-id="${ad.id}" ${selectedBatchAdIds.has(ad.id) ? 'checked' : ''} style="${isBatchModeActive ? 'display: block;' : 'display: none;'}" title="Vybrat do dávky">
+            ` : ''}
             <div>
                 <div class="listing-header">
                     <h4 class="listing-title" title="Klikni pro editaci">${escapeHtml(titleText)}</h4>
@@ -788,9 +955,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         <i class="fa-solid fa-eye"></i>
                         <span>${viewsCount} zhl.${ad.cumulative_views && ad.cumulative_views > viewsCount ? ` (celk. ${ad.cumulative_views})` : ''}</span>
                     </div>
-                    <div class="meta-item">
+                    <div class="meta-item" style="display: flex; align-items: center; gap: 0.4rem;">
                         <i class="fa-solid fa-calendar"></i>
                         <span>${dateStr}</span>
+                        ${ageBadgeHtml}
                     </div>
                     ${urlStr ? `
                         <div class="meta-item">
@@ -802,24 +970,114 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="listing-actions">
                     <button class="btn btn-secondary btn-edit"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
                     ${!isSold ? `
+                        <button class="btn btn-secondary btn-mark-sold" title="Zaznamenat prodej položky"><i class="fa-solid fa-handshake"></i> Prodáno</button>
                         <button class="btn btn-secondary btn-advisor" style="background: rgba(255,193,7,0.1); color: #ffc107; border: 1px solid rgba(255,193,7,0.3);"><i class="fa-solid fa-lightbulb"></i> Poradce</button>
                         <button class="btn btn-primary btn-post-action">
                             <i class="fa-solid ${urlStr ? 'fa-arrows-rotate' : 'fa-cloud-arrow-up'}"></i> ${urlStr ? 'Znovu vystavit' : 'Vystavit'}
                         </button>
-                    ` : ""}
+                    ` : `
+                        <button class="btn btn-secondary btn-restore-sold" title="Vrátit položku zpět do věcí k prodeji"><i class="fa-solid fa-rotate-left"></i> Vrátit k prodeji</button>
+                    `}
                 </div>
             </div>
         `;
+
+        // Pokud je prodáno, vložíme do těla karty box s realizovaným prodejem
+        if (isSold) {
+            const soldHeaderEl = card.querySelector(".listing-header");
+            if (soldHeaderEl) {
+                const soldPill = document.createElement("span");
+                soldPill.className = "sold-card-badge";
+                soldPill.innerHTML = `<i class="fa-solid fa-check"></i> PRODÁNO`;
+                soldHeaderEl.prepend(soldPill);
+            }
+
+            const realizedPrice = ad.sale_price !== undefined && ad.sale_price !== null ? ad.sale_price : (ad.price || 0);
+            const origPrice = ad.price || 0;
+            let diffBadgeHtml = "";
+            if (origPrice > 0 && realizedPrice > 0) {
+                const diff = realizedPrice - origPrice;
+                const pct = Math.round((diff / origPrice) * 100);
+                if (pct < 0) {
+                    diffBadgeHtml = `<span class="price-diff-pill discount" title="Sleva oproti nabídkové ceně">${pct}% (${diff} Kč)</span>`;
+                } else if (pct > 0) {
+                    diffBadgeHtml = `<span class="price-diff-pill surplus" title="Vyšší cena než nabídková">+${pct}% (+${diff} Kč)</span>`;
+                } else {
+                    diffBadgeHtml = `<span class="price-diff-pill exact" title="Prodáno přesně za inzerovanou cenu">100% ceny</span>`;
+                }
+            }
+
+            const soldDateFormatted = ad.sold_at ? ad.sold_at.split("T")[0] : (ad.date_created || "-");
+            const infoBox = document.createElement("div");
+            infoBox.className = "sold-info-box";
+            infoBox.innerHTML = `
+                <div class="sold-info-row">
+                    <span style="color: var(--text-muted);"><i class="fa-solid fa-receipt"></i> Realizovaná cena:</span>
+                    <strong style="color: #10b981; font-size: 1.05rem;">${realizedPrice.toLocaleString("cs-CZ")} Kč ${diffBadgeHtml}</strong>
+                </div>
+                <div class="sold-info-row">
+                    <span style="color: var(--text-muted);"><i class="fa-solid fa-calendar-check"></i> Datum prodeje:</span>
+                    <span style="color: #cbd5e1;">${soldDateFormatted}</span>
+                </div>
+                ${ad.sold_notes ? `
+                <div class="sold-info-row" style="margin-top: 4px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 4px;">
+                    <span style="color: var(--text-muted); font-size: 0.8rem;"><i class="fa-solid fa-comment-dots"></i> Poznámka:</span>
+                    <span style="color: #cbd5e1; font-size: 0.82rem; font-style: italic;">${escapeHtml(ad.sold_notes)}</span>
+                </div>
+                ` : ""}
+            `;
+            // Vložíme bezpečně před popis inzerátu v těle karty
+            const descEl = card.querySelector(".listing-desc");
+            if (descEl && descEl.parentNode) {
+                descEl.parentNode.insertBefore(infoBox, descEl);
+            } else {
+                card.appendChild(infoBox);
+            }
+        }
+
+        // Checkbox pro hromadný výběr
+        const selectCb = card.querySelector(".card-select-checkbox");
+        if (selectCb) {
+            selectCb.addEventListener("change", (e) => {
+                e.stopPropagation();
+                if (selectCb.checked) {
+                    selectedBatchAdIds.add(ad.id);
+                    card.classList.add("batch-selected");
+                    card.classList.add("selected-batch-card");
+                } else {
+                    selectedBatchAdIds.delete(ad.id);
+                    card.classList.remove("batch-selected");
+                    card.classList.remove("selected-batch-card");
+                }
+                updateBatchActionBar();
+            });
+        }
 
         // Event Listeners
         const editBtn = card.querySelector(".btn-edit");
         const titleEl = card.querySelector(".listing-title");
         const postBtn = card.querySelector(".btn-post-action");
         const cardDeleteBtn = card.querySelector(".btn-card-delete");
+        const markSoldBtn = card.querySelector(".btn-mark-sold");
+        const restoreSoldBtn = card.querySelector(".btn-restore-sold");
 
         const openEditor = () => openEditModal(ad);
         editBtn.addEventListener("click", openEditor);
         titleEl.addEventListener("click", openEditor);
+
+        if (markSoldBtn) {
+            markSoldBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openMarkSoldModal(ad);
+            });
+        }
+
+        if (restoreSoldBtn) {
+            restoreSoldBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                handleRestoreSoldListing(ad);
+            });
+        }
 
         if (cardDeleteBtn) {
             cardDeleteBtn.addEventListener("mouseenter", () => cardDeleteBtn.style.color = "#ef4444");
@@ -840,8 +1098,277 @@ document.addEventListener("DOMContentLoaded", () => {
         return card;
     };
 
+    // Toolbar Event Listeners (Vyhledávání, řazení, hromadný režim)
+    const activeSearchInput = document.getElementById("active-search-input");
+    if (activeSearchInput) {
+        activeSearchInput.addEventListener("input", (e) => {
+            activeFilterQuery = e.target.value;
+            renderListings();
+        });
+    }
+
+    const activeSortSelect = document.getElementById("active-sort-select");
+    if (activeSortSelect) {
+        activeSortSelect.addEventListener("change", (e) => {
+            activeSort = e.target.value;
+            renderListings();
+        });
+    }
+
+    const btnToggleBatchActive = document.getElementById("btn-toggle-batch-active");
+    if (btnToggleBatchActive) {
+        btnToggleBatchActive.addEventListener("click", () => {
+            isBatchModeActive = !isBatchModeActive;
+            btnToggleBatchActive.classList.toggle("active", isBatchModeActive);
+            const btnToggleUnsold = document.getElementById("btn-toggle-batch-unsold");
+            if (btnToggleUnsold) btnToggleUnsold.classList.toggle("active", isBatchModeActive);
+            renderListings();
+        });
+    }
+
+    const unsoldSearchInput = document.getElementById("unsold-search-input");
+    if (unsoldSearchInput) {
+        unsoldSearchInput.addEventListener("input", (e) => {
+            unsoldFilterQuery = e.target.value;
+            renderListings();
+        });
+    }
+
+    const unsoldSortSelect = document.getElementById("unsold-sort-select");
+    if (unsoldSortSelect) {
+        unsoldSortSelect.addEventListener("change", (e) => {
+            unsoldSort = e.target.value;
+            renderListings();
+        });
+    }
+
+    const soldSearchInput = document.getElementById("sold-search-input");
+    if (soldSearchInput) {
+        soldSearchInput.addEventListener("input", (e) => {
+            soldFilterQuery = e.target.value;
+            renderListings();
+        });
+    }
+
+    const soldSortSelect = document.getElementById("sold-sort-select");
+    if (soldSortSelect) {
+        soldSortSelect.addEventListener("change", (e) => {
+            soldSort = e.target.value;
+            renderListings();
+        });
+    }
+
+    const btnToggleBatchUnsold = document.getElementById("btn-toggle-batch-unsold");
+    if (btnToggleBatchUnsold) {
+        btnToggleBatchUnsold.addEventListener("click", () => {
+            isBatchModeActive = !isBatchModeActive;
+            btnToggleBatchUnsold.classList.toggle("active", isBatchModeActive);
+            if (btnToggleBatchActive) btnToggleBatchActive.classList.toggle("active", isBatchModeActive);
+            renderListings();
+        });
+    }
+
+    // Spodní plovoucí lišta pro hromadné akce
+    const btnBatchSelectAll = document.getElementById("btn-batch-select-all");
+    if (btnBatchSelectAll) {
+        btnBatchSelectAll.addEventListener("click", () => {
+            const activeTab = document.querySelector(".tab-content.active");
+            const isUnsoldTab = activeTab && (activeTab.id === "tab-unsold-listings" || activeTab.getAttribute("data-tab") === "unsold-listings");
+            const targetListings = isUnsoldTab ?
+                sortListingsArray(filterListingsArray(activeListings.filter(ad => ad.status !== "Aktivní"), unsoldFilterQuery), unsoldSort) :
+                sortListingsArray(filterListingsArray(activeListings.filter(ad => ad.status === "Aktivní"), activeFilterQuery), activeSort);
+            
+            targetListings.forEach(ad => {
+                if (ad && ad.id) selectedBatchAdIds.add(ad.id);
+            });
+            isBatchModeActive = true;
+            if (btnToggleBatchActive) btnToggleBatchActive.classList.add("active");
+            const btnToggleUnsold = document.getElementById("btn-toggle-batch-unsold");
+            if (btnToggleUnsold) btnToggleUnsold.classList.add("active");
+            renderListings();
+        });
+    }
+
+    const btnBatchCancelSelection = document.getElementById("btn-batch-cancel-selection");
+    if (btnBatchCancelSelection) {
+        btnBatchCancelSelection.addEventListener("click", () => {
+            selectedBatchAdIds.clear();
+            isBatchModeActive = false;
+            if (btnToggleBatchActive) btnToggleBatchActive.classList.remove("active");
+            const btnToggleUnsold = document.getElementById("btn-toggle-batch-unsold");
+            if (btnToggleUnsold) btnToggleUnsold.classList.remove("active");
+            renderListings();
+        });
+    }
+
+    // Modal dávkového znovuvystavení
+    const batchRepostModal = document.getElementById("batch-repost-modal");
+    const btnBatchRepostOpen = document.getElementById("btn-batch-repost-open");
+    const batchItemsContainer = document.getElementById("batch-items-container");
+    const batchModalTotalBtn = document.getElementById("batch-modal-total-btn");
+
+    const openBatchRepostModal = () => {
+        if (!batchRepostModal || !batchItemsContainer) return;
+        const selectedAds = activeListings.filter(ad => selectedBatchAdIds.has(ad.id));
+        if (selectedAds.length === 0) {
+            showNotification("Není vybrán žádný inzerát pro dávku.", "warning");
+            return;
+        }
+
+        batchItemsContainer.innerHTML = "";
+        selectedAds.forEach(ad => {
+            const row = document.createElement("div");
+            row.className = "batch-item-row";
+            row.setAttribute("data-ad-id", ad.id);
+            row.style.cssText = "display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;";
+            
+            const predictedDomain = typeof predictRubrikaDomain === "function" ? predictRubrikaDomain(ad) : "dum.bazos.cz";
+            const daysOld = getDaysOld(ad.date_created);
+
+            row.innerHTML = `
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 600; color: #fff; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(ad.title || '')}">${escapeHtml(ad.title || 'Bez názvu')}</div>
+                    <div style="font-size: 0.78rem; color: #94a3b8; display: flex; gap: 0.6rem; align-items: center; margin-top: 2px;">
+                        <span>Stávající cena: ${ad.price || 0} Kč</span>
+                        ${daysOld !== null ? `<span>• Stáří: ${daysOld} dní</span>` : ''}
+                        ${ad.url ? `<a href="${ad.url}" target="_blank" style="color: var(--secondary); text-decoration: none;"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <select class="batch-row-rubrika" style="background: rgba(11,8,22,0.9); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 0.35rem 0.55rem; border-radius: 6px; font-size: 0.82rem; outline: none;">
+                        <option value="dum.bazos.cz" ${predictedDomain === "dum.bazos.cz" ? "selected" : ""}>Dům a zahrada</option>
+                        <option value="stroje.bazos.cz" ${predictedDomain === "stroje.bazos.cz" ? "selected" : ""}>Stroje a nářadí</option>
+                        <option value="auto.bazos.cz" ${predictedDomain === "auto.bazos.cz" ? "selected" : ""}>Auto</option>
+                        <option value="motorky.bazos.cz" ${predictedDomain === "motorky.bazos.cz" ? "selected" : ""}>Motorky</option>
+                        <option value="pc.bazos.cz" ${predictedDomain === "pc.bazos.cz" ? "selected" : ""}>PC / počítače</option>
+                        <option value="elektro.bazos.cz" ${predictedDomain === "elektro.bazos.cz" ? "selected" : ""}>Elektro</option>
+                        <option value="sport.bazos.cz" ${predictedDomain === "sport.bazos.cz" ? "selected" : ""}>Sport</option>
+                        <option value="nabytek.bazos.cz" ${predictedDomain === "nabytek.bazos.cz" ? "selected" : ""}>Nábytek</option>
+                        <option value="obleceni.bazos.cz" ${predictedDomain === "obleceni.bazos.cz" ? "selected" : ""}>Oblečení</option>
+                        <option value="ostatni.bazos.cz" ${predictedDomain === "ostatni.bazos.cz" ? "selected" : ""}>Ostatní</option>
+                    </select>
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <input type="number" class="batch-row-price" value="${ad.price || 0}" style="width: 80px; background: rgba(11,8,22,0.9); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 0.35rem 0.55rem; border-radius: 6px; font-size: 0.82rem; text-align: right; outline: none;">
+                        <span style="font-size: 0.8rem; color: #94a3b8;">Kč</span>
+                    </div>
+                    <button type="button" class="btn-remove-batch-row" title="Odebrat z dávky" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px; font-size: 0.9rem;">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            `;
+
+            const btnRemove = row.querySelector(".btn-remove-batch-row");
+            if (btnRemove) {
+                btnRemove.addEventListener("click", () => {
+                    selectedBatchAdIds.delete(ad.id);
+                    row.remove();
+                    if (batchModalTotalBtn) batchModalTotalBtn.textContent = selectedBatchAdIds.size;
+                    updateBatchActionBar();
+                    renderListings();
+                    if (selectedBatchAdIds.size === 0 && batchRepostModal) {
+                        batchRepostModal.style.display = "none";
+                    }
+                });
+            }
+
+            batchItemsContainer.appendChild(row);
+        });
+
+        if (batchModalTotalBtn) batchModalTotalBtn.textContent = selectedAds.length;
+        batchRepostModal.style.display = "flex";
+    };
+
+    if (btnBatchRepostOpen) {
+        btnBatchRepostOpen.addEventListener("click", openBatchRepostModal);
+    }
+
+    document.querySelectorAll(".btn-close-batch-modal").forEach(btn => {
+        btn.addEventListener("click", () => {
+            if (batchRepostModal) batchRepostModal.style.display = "none";
+        });
+    });
+
+    const btnStartBatchQueue = document.getElementById("btn-start-batch-queue");
+    if (btnStartBatchQueue) {
+        btnStartBatchQueue.addEventListener("click", () => {
+            const rows = document.querySelectorAll(".batch-item-row");
+            batchQueue = [];
+            rows.forEach(row => {
+                const adId = row.getAttribute("data-ad-id");
+                const rubrikaSelect = row.querySelector(".batch-row-rubrika");
+                const priceInput = row.querySelector(".batch-row-price");
+                const ad = activeListings.find(a => a.id === adId);
+                if (ad) {
+                    batchQueue.push({
+                        ad,
+                        domain: rubrikaSelect ? rubrikaSelect.value : "dum.bazos.cz",
+                        price: priceInput && priceInput.value ? parseInt(priceInput.value, 10) : ad.price,
+                        autoDelete: true
+                    });
+                }
+            });
+
+            if (batchQueue.length === 0) {
+                showNotification("Žádné položky k vystavení v dávce.", "warning");
+                return;
+            }
+
+            if (batchRepostModal) batchRepostModal.style.display = "none";
+            batchIndex = 0;
+            const currentItem = batchQueue[0];
+
+            // Indikátor fronty v prohlížeči
+            const indicator = document.getElementById("batch-queue-indicator");
+            if (indicator) {
+                indicator.style.display = "flex";
+                const curEl = document.getElementById("batch-queue-current");
+                const totEl = document.getElementById("batch-queue-total");
+                const nameEl = document.getElementById("batch-queue-name");
+                if (curEl) curEl.textContent = 1;
+                if (totEl) totEl.textContent = batchQueue.length;
+                if (nameEl) nameEl.textContent = `Položka: ${currentItem.ad.title || "Bez názvu"}`;
+            }
+
+            showNotification(`Spouštím dávku (1/${batchQueue.length}): ${currentItem.ad.title}...`, "info");
+            triggerPlaywrightAction(currentItem.ad, "repost", currentItem.price, currentItem.domain, currentItem.autoDelete);
+        });
+    }
+
+    const btnBatchSkip = document.getElementById("btn-batch-skip");
+    if (btnBatchSkip) {
+        btnBatchSkip.addEventListener("click", () => {
+            if (batchQueue.length > 0 && batchIndex < batchQueue.length - 1) {
+                batchIndex++;
+                const currentItem = batchQueue[batchIndex];
+                const curEl = document.getElementById("batch-queue-current");
+                const nameEl = document.getElementById("batch-queue-name");
+                if (curEl) curEl.textContent = batchIndex + 1;
+                if (nameEl) nameEl.textContent = `Položka: ${currentItem.ad.title || "Bez názvu"}`;
+                showNotification(`Přeskočeno. Spouštím ${batchIndex + 1}/${batchQueue.length}...`, "info");
+                triggerPlaywrightAction(currentItem.ad, "repost", currentItem.price, currentItem.domain, currentItem.autoDelete);
+            } else {
+                showNotification("Dávka ukončena.", "info");
+                batchQueue = [];
+                const indicator = document.getElementById("batch-queue-indicator");
+                if (indicator) indicator.style.display = "none";
+                switchToTab("active-listings");
+                loadListings();
+            }
+        });
+    }
+
+    const btnBatchCancel = document.getElementById("btn-batch-cancel");
+    if (btnBatchCancel) {
+        btnBatchCancel.addEventListener("click", () => {
+            batchQueue = [];
+            const indicator = document.getElementById("batch-queue-indicator");
+            if (indicator) indicator.style.display = "none";
+            showNotification("Dávkové zpracování bylo zastaveno.", "warning");
+        });
+    }
+
     // ==========================================
-    // 3. EDITACE A DETAIl MODAL LOGIKA
+    // 3. EDITACE A DETAIL MODAL LOGIKA
     // ==========================================
 
     const openEditModal = (ad) => {
@@ -884,6 +1411,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Načíst historii publikací
         loadListingHistory(ad.id);
+
+        // Aktualizovat stav tlačítka pro označení/úpravu prodeje
+        const isAdSold = ad.status === "Prodané" || ad.status === "Sold" || Boolean(ad.sold_at) || (ad.sale_price !== null && ad.sale_price !== undefined);
+        const btnMarkSold = document.getElementById("btn-mark-sold-modal");
+        if (btnMarkSold) {
+            if (isAdSold) {
+                btnMarkSold.innerHTML = `<i class="fa-solid fa-handshake"></i> Upravit prodej`;
+                btnMarkSold.title = "Upravit realizovanou cenu, datum nebo poznámku k prodeji";
+            } else {
+                btnMarkSold.innerHTML = `<i class="fa-solid fa-handshake"></i> Označit jako prodané`;
+                btnMarkSold.title = "Zaznamenat prodej položky a přesunout do archivu";
+            }
+        }
 
         // Zobrazit modal
         editListingModal.classList.add("active");
@@ -2070,35 +2610,38 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // Pomocná predikce vhodné rubriky Bazoše z inzerátu
+    const predictRubrikaDomain = (ad) => {
+        let preselect = "dum.bazos.cz";
+        const url = ad.url || "";
+        if (url) {
+            const match = url.match(/https?:\/\/([^/]+\.bazos\.cz)/i);
+            if (match) return match[1].toLowerCase();
+        }
+        const titleLower = (ad.title || "").toLowerCase();
+        const catLower = (ad.category || "").toLowerCase();
+        if (/\b(auto|skoda|vw|bmw|audi|ford|peugeot|renault)\b/.test(titleLower) || /auto/.test(catLower)) {
+            return "auto.bazos.cz";
+        } else if (/\b(motocykl|motork|skutr|yamaha|honda|suzuki|kawasaki)\b/.test(titleLower) || /moto/.test(catLower)) {
+            return "motorky.bazos.cz";
+        } else if (/\b(dum|zahrada|seka|trakt|pila|stepkovac|zahrad)\b/.test(titleLower) || /zahrada/.test(catLower)) {
+            return "dum.bazos.cz";
+        } else if (/\b(stroj|soustruh|freza|vrtacka|kompresor|svarecka)\b/.test(titleLower)) {
+            return "stroje.bazos.cz";
+        } else if (/\b(pc|notebook|pocitac|monitor|grafick|ram|intel|amd|ryzen|geforce|rtx)\b/.test(titleLower)) {
+            return "pc.bazos.cz";
+        } else if (/\b(elektro|tv|televize|audio|repro|telefon|mobil|iphone|samsung)\b/.test(titleLower)) {
+            return "elektro.bazos.cz";
+        }
+        return preselect;
+    };
+
     // --- REPOST CONFIRM MODAL (Rubrika) LOGIKA ---
     const openRepostModal = (ad) => {
         pendingActionAd = ad;
         const rubrikaSelect = document.getElementById("repost-rubrika-select");
         if (rubrikaSelect) {
-            // Predikce z URL inzerátu nebo kategorie
-            let preselect = "dum.bazos.cz";
-            const url = ad.url || "";
-            if (url) {
-                const match = url.match(/https?:\/\/([^/]+\.bazos\.cz)/i);
-                if (match) preselect = match[1].toLowerCase();
-            } else {
-                const titleLower = (ad.title || "").toLowerCase();
-                const catLower = (ad.category || "").toLowerCase();
-                if (/\b(auto|skoda|vw|bmw|audi|ford|peugeot|renault)\b/.test(titleLower) || /auto/.test(catLower)) {
-                    preselect = "auto.bazos.cz";
-                } else if (/\b(motocykl|motork|skutr|yamaha|honda|suzuki|kawasaki)\b/.test(titleLower) || /moto/.test(catLower)) {
-                    preselect = "motorky.bazos.cz";
-                } else if (/\b(dum|zahrada|seka|trakt|pila|stepkovac|zahrad)\b/.test(titleLower) || /zahrada/.test(catLower)) {
-                    preselect = "dum.bazos.cz";
-                } else if (/\b(stroj|soustruh|freza|vrtacka|kompresor|svarecka)\b/.test(titleLower)) {
-                    preselect = "stroje.bazos.cz";
-                } else if (/\b(pc|notebook|pocitac|monitor|grafick|ram|intel|amd|ryzen|geforce|rtx)\b/.test(titleLower)) {
-                    preselect = "pc.bazos.cz";
-                } else if (/\b(elektro|tv|televize|audio|repro|telefon|mobil|iphone|samsung)\b/.test(titleLower)) {
-                    preselect = "elektro.bazos.cz";
-                }
-            }
-            rubrikaSelect.value = preselect;
+            rubrikaSelect.value = predictRubrikaDomain(ad);
         }
 
         const priceInput = document.getElementById("repost-price-input");
@@ -2182,6 +2725,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         closeChildModal(deleteListingModal);
 
+        if (selectedScope === "mark_sold") {
+            openMarkSoldModal(targetAd);
+            return;
+        }
+
         if (isPublished && selectedScope === "bazos_and_db") {
             // Smazání přes Bazoš robota a následné smazání z DB v backendu
             triggerPlaywrightAction(targetAd, "delete");
@@ -2213,27 +2761,416 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // --- BROWSER REVIEW BANNER LOGIKA (Potvrzení / Zrušení po předvyplnění) ---
+    // --- MARK AS SOLD LOGIKA ---
+    let pendingSoldAd = null;
+
+    const openMarkSoldModal = (ad) => {
+        pendingSoldAd = ad;
+        const titleEl = document.getElementById("mark-sold-title");
+        if (titleEl) titleEl.textContent = ad.title || "Položka";
+
+        const priceInput = document.getElementById("mark-sold-price");
+        const origPriceHint = document.getElementById("mark-sold-original-price-hint");
+        const diffPill = document.getElementById("mark-sold-diff-pill");
+        const dateInput = document.getElementById("mark-sold-date");
+        const notesInput = document.getElementById("mark-sold-notes");
+        const deleteBazosCheckbox = document.getElementById("mark-sold-delete-bazos");
+        const deleteBazosWrapper = document.getElementById("mark-sold-bazos-delete-wrapper");
+
+        const origPrice = ad.price ? parseInt(ad.price, 10) : 0;
+        const currentSalePrice = (ad.sale_price !== undefined && ad.sale_price !== null) ? ad.sale_price : origPrice;
+        if (priceInput) priceInput.value = currentSalePrice || "";
+        if (origPriceHint) origPriceHint.textContent = `Původně inzerováno: ${origPrice.toLocaleString("cs-CZ")} Kč`;
+
+        // Datum prodeje (existující datum nebo dnešní datum)
+        if (dateInput) {
+            const todayStr = new Date().toISOString().split("T")[0];
+            dateInput.value = ad.sold_at ? ad.sold_at.split("T")[0] : todayStr;
+        }
+
+        if (notesInput) notesInput.value = ad.sold_notes || "";
+
+        // Smazání na Bazoši zobrazit jen pokud má inzerát URL
+        const hasUrl = Boolean(ad.url && ad.url.trim());
+        if (deleteBazosWrapper) {
+            deleteBazosWrapper.style.display = hasUrl ? "block" : "none";
+        }
+        if (deleteBazosCheckbox) {
+            deleteBazosCheckbox.checked = hasUrl;
+        }
+
+        // Aktualizovat pill rozdílu cen
+        const updateDiffPill = () => {
+            if (!diffPill) return;
+            const currentVal = parseInt(priceInput.value, 10);
+            if (!isNaN(currentVal) && origPrice > 0) {
+                const diff = currentVal - origPrice;
+                const pct = Math.round((diff / origPrice) * 100);
+                diffPill.style.display = "inline-block";
+                if (pct < 0) {
+                    diffPill.className = "price-diff-pill discount";
+                    diffPill.textContent = `Sleva ${pct}% (${diff} Kč)`;
+                } else if (pct > 0) {
+                    diffPill.className = "price-diff-pill surplus";
+                    diffPill.textContent = `Příplatek +${pct}% (+${diff} Kč)`;
+                } else {
+                    diffPill.className = "price-diff-pill exact";
+                    diffPill.textContent = "100% ceny";
+                }
+            } else {
+                diffPill.style.display = "none";
+            }
+        };
+
+        if (priceInput) {
+            priceInput.oninput = updateDiffPill;
+            updateDiffPill();
+        }
+
+        openChildModal(markSoldModal);
+    };
+
+    // Zavření mark-sold modalu
+    document.querySelectorAll(".btn-close-mark-sold-modal").forEach(btn => {
+        btn.addEventListener("click", () => closeChildModal(markSoldModal));
+    });
+
+    // Otevření mark-sold z detailu inzerátu (v patičce edit modalu)
+    const btnMarkSoldModal = document.getElementById("btn-mark-sold-modal");
+    if (btnMarkSoldModal) {
+        btnMarkSoldModal.addEventListener("click", () => {
+            if (currentAd) {
+                openMarkSoldModal(currentAd);
+            }
+        });
+    }
+
+    // Odeslání prodeje
+    const btnSubmitMarkSold = document.getElementById("btn-submit-mark-sold");
+    if (btnSubmitMarkSold) {
+        btnSubmitMarkSold.addEventListener("click", async () => {
+            const targetAd = pendingSoldAd || currentAd;
+            if (!targetAd) return;
+
+            const priceInput = document.getElementById("mark-sold-price");
+            const dateInput = document.getElementById("mark-sold-date");
+            const notesInput = document.getElementById("mark-sold-notes");
+            const deleteBazosCheckbox = document.getElementById("mark-sold-delete-bazos");
+
+            const salePrice = priceInput && priceInput.value ? parseInt(priceInput.value, 10) : (targetAd.price || 0);
+            const soldAt = dateInput ? dateInput.value : "";
+            const notes = notesInput ? notesInput.value.trim() : "";
+            const deleteOnBazos = deleteBazosCheckbox ? deleteBazosCheckbox.checked : false;
+
+            closeChildModal(markSoldModal);
+
+            try {
+                showNotification("Ukládám prodej položky...", "info");
+                const res = await fetch(`/api/listings/${targetAd.id}/mark_sold`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        sale_price: salePrice,
+                        sold_at: soldAt,
+                        notes: notes,
+                        delete_on_bazos: deleteOnBazos
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showNotification("🎉 Položka byla úspěšně označena jako prodaná!", "success");
+                    if (editListingModal.classList.contains("active")) {
+                        editListingModal.classList.remove("active");
+                    }
+                    loadListings();
+                } else {
+                    showNotification(data.message || "Chyba při označování za prodané.", "error");
+                }
+            } catch (err) {
+                showNotification("Chyba při komunikaci se serverem: " + err.message, "error");
+            }
+        });
+    }
+
+    // Vrácení prodané položky zpět k prodeji
+    const handleRestoreSoldListing = async (ad) => {
+        if (!confirm(`Opravdu chceš vrátit položku "${ad.title || 'Inzerát'}" zpět mezi věci k prodeji?`)) {
+            return;
+        }
+
+        try {
+            showNotification("Vracím položku k prodeji...", "info");
+            const res = await fetch(`/api/listings/${ad.id}/restore_sold`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                showNotification("Položka byla vrácena do věcí k prodeji.", "success");
+                loadListings();
+            } else {
+                showNotification(data.message || "Chyba při vracení položky.", "error");
+            }
+        } catch (err) {
+            showNotification("Chyba při komunikaci se serverem: " + err.message, "error");
+        }
+    };
+
+    // Zavření child modalů při kliknutí do pozadí (backdrop)
+    [repostConfirmModal, deleteListingModal, markSoldModal].forEach(modal => {
+        if (modal) {
+            modal.addEventListener("click", (e) => {
+                if (e.target === modal) {
+                    closeChildModal(modal);
+                }
+            });
+        }
+    });
+
+    // Escape klávesa pro zavření aktivního child modalu
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && activeChildModal) {
+            closeChildModal(activeChildModal);
+        }
+    });
+
+    // --- BROWSER REVIEW BANNER & CONFIRM STEPPER LOGIKA ---
     const btnBrowserConfirmPost = document.getElementById("btn-browser-confirm-post");
+    const confirmProgressModal = document.getElementById("confirm-progress-modal");
+    const stepRowVerify = document.getElementById("step-row-verify");
+    const stepRowDelete = document.getElementById("step-row-delete");
+    const stepRowSave = document.getElementById("step-row-save");
+    const confirmStatusAlert = document.getElementById("confirm-status-alert");
+    const confirmModalFooter = document.getElementById("confirm-modal-footer");
+    const btnConfirmProgressDone = document.getElementById("btn-confirm-progress-done");
+
+    const resetConfirmModalUI = () => {
+        if (confirmAutoAdvanceTimer) {
+            clearTimeout(confirmAutoAdvanceTimer);
+            confirmAutoAdvanceTimer = null;
+        }
+
+        if (stepRowVerify) {
+            stepRowVerify.className = "confirm-step-row active";
+            stepRowVerify.style.opacity = "1";
+            const icon = stepRowVerify.querySelector(".step-icon-col i");
+            if (icon) icon.className = "fa-solid fa-circle-notch fa-spin";
+            if (icon) icon.style.color = "var(--primary-color)";
+            const detail = stepRowVerify.querySelector(".step-detail");
+            if (detail) detail.textContent = "Zjišťuji novou URL a kontroluji stav formuláře...";
+        }
+
+        if (stepRowDelete) {
+            stepRowDelete.className = "confirm-step-row";
+            stepRowDelete.style.opacity = "0.45";
+            const icon = stepRowDelete.querySelector(".step-icon-col i");
+            if (icon) icon.className = "fa-regular fa-circle";
+            if (icon) icon.style.color = "var(--text-muted)";
+            const detail = stepRowDelete.querySelector(".step-detail");
+            if (detail) detail.textContent = "Čeká na ověření nového inzerátu...";
+        }
+
+        if (stepRowSave) {
+            stepRowSave.className = "confirm-step-row";
+            stepRowSave.style.opacity = "0.45";
+            const icon = stepRowSave.querySelector(".step-icon-col i");
+            if (icon) icon.className = "fa-regular fa-circle";
+            if (icon) icon.style.color = "var(--text-muted)";
+            const detail = stepRowSave.querySelector(".step-detail");
+            if (detail) detail.textContent = "Čeká na dokončení úklidu...";
+        }
+
+        if (confirmStatusAlert) confirmStatusAlert.style.display = "none";
+        if (confirmModalFooter) confirmModalFooter.style.display = "none";
+    };
+
+    const handleConfirmProgressNext = () => {
+        if (confirmAutoAdvanceTimer) {
+            clearTimeout(confirmAutoAdvanceTimer);
+            confirmAutoAdvanceTimer = null;
+        }
+        if (confirmProgressModal) confirmProgressModal.style.display = "none";
+
+        // Pokud je v kroku chyba, zůstáváme v prohlížeči pro nápravu
+        const hasError = stepRowVerify && stepRowVerify.classList.contains("error");
+        if (hasError) return;
+
+        // Pokud běží dávková fronta a jsou další položky
+        if (batchQueue.length > 0 && batchIndex < batchQueue.length - 1) {
+            batchIndex++;
+            const currentItem = batchQueue[batchIndex];
+            const indicator = document.getElementById("batch-queue-indicator");
+            if (indicator) {
+                indicator.style.display = "flex";
+                const curEl = document.getElementById("batch-queue-current");
+                const totEl = document.getElementById("batch-queue-total");
+                const nameEl = document.getElementById("batch-queue-name");
+                if (curEl) curEl.textContent = batchIndex + 1;
+                if (totEl) totEl.textContent = batchQueue.length;
+                if (nameEl) nameEl.textContent = `Položka: ${currentItem.ad.title || "Bez názvu"}`;
+            }
+            showNotification(`Dávka: Spouštím ${batchIndex + 1}/${batchQueue.length} (${currentItem.ad.title})...`, "info");
+            setTimeout(() => {
+                triggerPlaywrightAction(currentItem.ad, "repost", currentItem.price, currentItem.domain, currentItem.autoDelete);
+            }, 800);
+        } else {
+            if (batchQueue.length > 0) {
+                showNotification("Celá dávka byla úspěšně zpracována!", "success");
+                batchQueue = [];
+                selectedBatchAdIds.clear();
+                updateBatchActionBar();
+                const indicator = document.getElementById("batch-queue-indicator");
+                if (indicator) indicator.style.display = "none";
+            }
+            switchToTab("active-listings");
+            loadListings();
+        }
+    };
+
+    if (btnConfirmProgressDone) {
+        btnConfirmProgressDone.addEventListener("click", () => {
+            handleConfirmProgressNext();
+        });
+    }
+
     if (btnBrowserConfirmPost) {
         btnBrowserConfirmPost.addEventListener("click", async () => {
             btnBrowserConfirmPost.disabled = true;
-            btnBrowserConfirmPost.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Ověřuji na Bazoši...`;
+            btnBrowserConfirmPost.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Zpracovávám...`;
+
+            resetConfirmModalUI();
+            if (confirmProgressModal) confirmProgressModal.style.display = "flex";
+
             try {
                 const res = await fetch("/api/action/confirm", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" }
                 });
                 const data = await res.json();
+
                 if (res.ok && data.status === "success") {
-                    showNotification(data.message || "Inzerát byl úspěšně potvrzen!", "success");
+                    // Krok 1: Ověření OK
+                    if (stepRowVerify) {
+                        stepRowVerify.className = "confirm-step-row completed";
+                        stepRowVerify.style.opacity = "1";
+                        const icon = stepRowVerify.querySelector(".step-icon-col i");
+                        if (icon) {
+                            icon.className = "fa-solid fa-circle-check";
+                            icon.style.color = "#10b981";
+                        }
+                        const detail = stepRowVerify.querySelector(".step-detail");
+                        if (detail) {
+                            detail.textContent = data.recovered_from_502 ?
+                                "Inzerát ověřen záložním dohledáním (Bazoš 502 vyřešen)!" :
+                                `Nový inzerát ověřen: ${data.url || "OK"}`;
+                        }
+                    }
+
+                    // Krok 2: Úklid starého inzerátu
+                    if (stepRowDelete) {
+                        stepRowDelete.className = "confirm-step-row completed";
+                        stepRowDelete.style.opacity = "1";
+                        const icon = stepRowDelete.querySelector(".step-icon-col i");
+                        const detail = stepRowDelete.querySelector(".step-detail");
+                        if (data.old_deleted) {
+                            if (data.old_deleted.status === "deleted") {
+                                if (icon) { icon.className = "fa-solid fa-circle-check"; icon.style.color = "#10b981"; }
+                                if (detail) detail.textContent = "Původní inzerát byl na Bazoši automaticky smazán.";
+                            } else if (data.old_deleted.status === "expired") {
+                                if (icon) { icon.className = "fa-solid fa-circle-check"; icon.style.color = "#10b981"; }
+                                if (detail) detail.textContent = "Původní inzerát na Bazoši již dříve expiroval.";
+                            } else {
+                                if (icon) { icon.className = "fa-solid fa-triangle-exclamation"; icon.style.color = "#eab308"; }
+                                if (detail) detail.textContent = `Úklid: ${data.old_deleted.reason || "Původní inzerát nebyl nalezen."}`;
+                            }
+                        } else {
+                            if (icon) { icon.className = "fa-solid fa-circle-check"; icon.style.color = "#10b981"; }
+                            if (detail) detail.textContent = "Nebylo vyžadováno smazání původního inzerátu.";
+                        }
+                    }
+
+                    // Krok 3: Databáze
+                    if (stepRowSave) {
+                        stepRowSave.className = "confirm-step-row completed";
+                        stepRowSave.style.opacity = "1";
+                        const icon = stepRowSave.querySelector(".step-icon-col i");
+                        if (icon) { icon.className = "fa-solid fa-circle-check"; icon.style.color = "#10b981"; }
+                        const detail = stepRowSave.querySelector(".step-detail");
+                        if (detail) detail.textContent = "Inzerát aktivován a zapsán do historie publikací.";
+                    }
+
+                    // Status alert
+                    if (confirmStatusAlert) {
+                        confirmStatusAlert.style.display = "block";
+                        confirmStatusAlert.style.background = "rgba(16, 185, 129, 0.15)";
+                        confirmStatusAlert.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+                        confirmStatusAlert.style.color = "#4ade80";
+                        confirmStatusAlert.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${escapeHtml(data.message || "Hotovo!")}`;
+                    }
+
                     if (browserReviewBanner) browserReviewBanner.style.display = "none";
-                    loadListings();
+
+                    // Footer button konfigurace
+                    if (confirmModalFooter && btnConfirmProgressDone) {
+                        confirmModalFooter.style.display = "flex";
+                        if (batchQueue.length > 0 && batchIndex < batchQueue.length - 1) {
+                            btnConfirmProgressDone.innerHTML = `<i class="fa-solid fa-forward-step"></i> Další inzerát z dávky (${batchIndex + 2}/${batchQueue.length})`;
+                        } else {
+                            btnConfirmProgressDone.innerHTML = `<i class="fa-solid fa-arrow-left"></i> Zpět na přehled inzerátů`;
+                        }
+                    }
+
+                    // Auto-advance po 2.6s
+                    confirmAutoAdvanceTimer = setTimeout(() => {
+                        handleConfirmProgressNext();
+                    }, 2600);
+
                 } else {
-                    showNotification(data.message || "Ověření selhalo. Zkontrolujte prohlížeč.", "warning");
+                    // Chyba při potvrzení
+                    if (stepRowVerify) {
+                        stepRowVerify.className = "confirm-step-row error";
+                        stepRowVerify.style.opacity = "1";
+                        const icon = stepRowVerify.querySelector(".step-icon-col i");
+                        if (icon) {
+                            icon.className = "fa-solid fa-circle-xmark";
+                            icon.style.color = "#ef4444";
+                        }
+                        const detail = stepRowVerify.querySelector(".step-detail");
+                        if (detail) detail.textContent = `Chyba: ${data.message || "Ověření selhalo."}`;
+                    }
+
+                    if (confirmStatusAlert) {
+                        confirmStatusAlert.style.display = "block";
+                        confirmStatusAlert.style.background = "rgba(239, 68, 68, 0.15)";
+                        confirmStatusAlert.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+                        confirmStatusAlert.style.color = "#f87171";
+                        confirmStatusAlert.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${escapeHtml(data.message || "Ověření inzerátu selhalo. Zkontrolujte prohlížeč.")}`;
+                    }
+
+                    if (confirmModalFooter && btnConfirmProgressDone) {
+                        confirmModalFooter.style.display = "flex";
+                        btnConfirmProgressDone.innerHTML = `<i class="fa-solid fa-xmark"></i> Zavřít a vrátit se do prohlížeče`;
+                    }
                 }
             } catch (err) {
-                showNotification("Chyba při potvrzování inzerátu.", "error");
+                if (stepRowVerify) {
+                    stepRowVerify.className = "confirm-step-row error";
+                    const icon = stepRowVerify.querySelector(".step-icon-col i");
+                    if (icon) { icon.className = "fa-solid fa-circle-xmark"; icon.style.color = "#ef4444"; }
+                    const detail = stepRowVerify.querySelector(".step-detail");
+                    if (detail) detail.textContent = `Chyba spojení: ${err.message}`;
+                }
+                if (confirmStatusAlert) {
+                    confirmStatusAlert.style.display = "block";
+                    confirmStatusAlert.style.background = "rgba(239, 68, 68, 0.15)";
+                    confirmStatusAlert.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+                    confirmStatusAlert.style.color = "#f87171";
+                    confirmStatusAlert.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> Chyba spojení se serverem.`;
+                }
+                if (confirmModalFooter && btnConfirmProgressDone) {
+                    confirmModalFooter.style.display = "flex";
+                    btnConfirmProgressDone.innerHTML = `<i class="fa-solid fa-xmark"></i> Zavřít`;
+                }
             } finally {
                 btnBrowserConfirmPost.disabled = false;
                 btnBrowserConfirmPost.innerHTML = `<i class="fa-solid fa-check"></i> Potvrdit odeslání`;
@@ -2748,6 +3685,89 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let screencastWs = null;
 
+    // --- SCREENCAST ZOOM & PAN OVLÁDÁNÍ ---
+    const updateZoomControlsUI = () => {
+        const btnFit = document.getElementById("btn-zoom-fit");
+        const btn100 = document.getElementById("btn-zoom-100");
+        const badge = document.getElementById("zoom-level-badge");
+        if (btnFit) btnFit.classList.toggle("active", currentScreencastZoom === "fit");
+        if (btn100) btn100.classList.toggle("active", currentScreencastZoom === 1.0);
+        if (badge) {
+            badge.textContent = currentScreencastZoom === "fit" ? "Fit" : `${Math.round(currentScreencastZoom * 100)} %`;
+        }
+    };
+
+    function fitCanvasToContainer() {
+        const canvas = document.getElementById("screencast-canvas");
+        if (!canvas || !canvas.width || !canvas.height) return;
+        const parent = canvas.parentElement;
+        if (!parent) return;
+
+        if (currentScreencastZoom === "fit") {
+            parent.style.overflow = "hidden";
+            const pw = parent.clientWidth;
+            const ph = parent.clientHeight;
+            if (!pw || !ph) return;
+
+            const imgAspect = canvas.width / canvas.height;
+            const containerAspect = pw / ph;
+
+            if (containerAspect > imgAspect) {
+                canvas.style.height = `${ph}px`;
+                canvas.style.width = `${Math.round(ph * imgAspect)}px`;
+            } else {
+                canvas.style.width = `${pw}px`;
+                canvas.style.height = `${Math.round(pw / imgAspect)}px`;
+            }
+        } else {
+            parent.style.overflow = "auto";
+            const baseW = canvas.width || 1280;
+            const baseH = canvas.height || 800;
+            canvas.style.width = `${Math.round(baseW * currentScreencastZoom)}px`;
+            canvas.style.height = `${Math.round(baseH * currentScreencastZoom)}px`;
+        }
+    }
+
+    const setScreencastZoom = (newZoom) => {
+        currentScreencastZoom = newZoom;
+        updateZoomControlsUI();
+        fitCanvasToContainer();
+    };
+
+    // Zoom Buttons
+    const btnZoomFit = document.getElementById("btn-zoom-fit");
+    if (btnZoomFit) {
+        btnZoomFit.addEventListener("click", () => setScreencastZoom("fit"));
+    }
+    const btnZoom100 = document.getElementById("btn-zoom-100");
+    if (btnZoom100) {
+        btnZoom100.addEventListener("click", () => setScreencastZoom(1.0));
+    }
+    const btnZoomIn = document.getElementById("btn-zoom-in");
+    if (btnZoomIn) {
+        btnZoomIn.addEventListener("click", () => {
+            if (currentScreencastZoom === "fit") {
+                setScreencastZoom(1.0);
+            } else {
+                const nextZoom = Math.min(2.5, +(currentScreencastZoom + 0.25).toFixed(2));
+                setScreencastZoom(nextZoom);
+            }
+        });
+    }
+    const btnZoomOut = document.getElementById("btn-zoom-out");
+    if (btnZoomOut) {
+        btnZoomOut.addEventListener("click", () => {
+            if (currentScreencastZoom === "fit") {
+                setScreencastZoom(0.75);
+            } else if (currentScreencastZoom > 0.5) {
+                const prevZoom = Math.max(0.5, +(currentScreencastZoom - 0.25).toFixed(2));
+                setScreencastZoom(prevZoom);
+            } else {
+                setScreencastZoom("fit");
+            }
+        });
+    }
+
     const initScreencast = () => {
         const canvas = document.getElementById("screencast-canvas");
         const placeholder = document.getElementById("screencast-placeholder");
@@ -2776,27 +3796,6 @@ document.addEventListener("DOMContentLoaded", () => {
         
         screencastWs = new WebSocket(wsUrl);
         screencastWs.binaryType = "arraybuffer";
-
-        function fitCanvasToContainer() {
-            if (!canvas.width || !canvas.height) return;
-            const parent = canvas.parentElement;
-            if (!parent) return;
-
-            const pw = parent.clientWidth;
-            const ph = parent.clientHeight;
-            if (!pw || !ph) return;
-
-            const imgAspect = canvas.width / canvas.height;
-            const containerAspect = pw / ph;
-
-            if (containerAspect > imgAspect) {
-                canvas.style.height = `${ph}px`;
-                canvas.style.width = `${Math.round(ph * imgAspect)}px`;
-            } else {
-                canvas.style.width = `${pw}px`;
-                canvas.style.height = `${Math.round(pw / imgAspect)}px`;
-            }
-        }
 
         window.addEventListener("resize", fitCanvasToContainer);
 

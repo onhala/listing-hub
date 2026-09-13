@@ -789,6 +789,12 @@ def get_listings():
             "notes": ad.get("notes"),
             "target_bazos": ad.get("target_bazos"),
             "target_aukro": ad.get("target_aukro"),
+            "publication_count": ad.get("publication_count", 1),
+            "cumulative_views": ad.get("cumulative_views", 0),
+            "is_reposted": ad.get("is_reposted", False),
+            "sale_price": ad.get("sale_price"),
+            "sold_at": ad.get("sold_at"),
+            "sold_notes": ad.get("sold_notes"),
             # We map bazos state for backwards compatibility if needed:
             "url": bazos_state.get("url", ""),
             "views": bazos_state.get("views", 0),
@@ -1355,6 +1361,151 @@ def delete_listing_endpoint():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/listings/<listing_id>/mark_sold", methods=["POST"])
+def mark_listing_sold(listing_id):
+    """Označí inzerát jako prodaný, nastaví prodejní cenu a volitelně smaže z Bazoše."""
+    try:
+        data = request.get_json(silent=True) or {}
+        sale_price = data.get("sale_price")
+        sold_at = data.get("sold_at") or datetime.now().strftime("%Y-%m-%d")
+        notes = data.get("notes") or ""
+        delete_on_bazos = data.get("delete_on_bazos", True)
+
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            # Fallback podle local_photos_dir
+            for cand in db.get_all_listings():
+                if cand.get("id") == listing_id or cand.get("local_photos_dir") == listing_id:
+                    listing = cand
+                    listing_id = cand.get("id")
+                    break
+
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen"}), 404
+
+        if sale_price is None or sale_price == "":
+            sale_price = listing.get("price", 0)
+        else:
+            try:
+                sale_price = max(0, int(float(sale_price)))
+            except (ValueError, TypeError):
+                sale_price = listing.get("price", 0)
+
+        # 1. Zapsat prodej do DB
+        db.mark_listing_as_sold(listing_id, sale_price, sold_at, notes)
+
+        # 2. Úklid na Bazoši pokud požadováno a existuje URL
+        portal_state = listing.get("portal_states", {}).get("bazos", {})
+        portal_url = portal_state.get("url") or listing.get("url")
+        deleted_online = False
+
+        if delete_on_bazos and portal_url:
+            import base64
+            _, user_config = load_data()
+            pwd_b64 = listing.get("ad_password_b64") or user_config.get("default_ad_password_b64") or ""
+            try:
+                ad_pwd = base64.b64decode(pwd_b64).decode("utf-8") if pwd_b64 else user_config.get("bazos_password", "heslo123")
+            except Exception:
+                ad_pwd = user_config.get("bazos_password", "heslo123")
+
+            def _async_delete_worker():
+                try:
+                    def _delete_worker(page, target_url, password):
+                        if not page or page.is_closed():
+                            return
+                        try:
+                            page.goto(target_url, timeout=20000)
+                            if "/inzerat/" not in page.url or "inzerát neexistuje" in page.content().lower():
+                                return
+                            old_m = re.search(r'/inzerat/(\d+)/', target_url)
+                            old_id_str = old_m.group(1) if old_m else ""
+                            try:
+                                page.evaluate("""(id) => {
+                                    if (typeof odeslatakci === 'function') {
+                                        odeslatakci('edit', id);
+                                    } else {
+                                        const f = document.forms['formaction'] || document.querySelector("form[name='formaction']");
+                                        if (f) {
+                                            f.elements['postaction'].value = 'edit';
+                                            f.elements['postv1'].value = id;
+                                            f.submit();
+                                        }
+                                    }
+                                }""", old_id_str)
+                            except Exception:
+                                pass
+                            action_span = page.locator("span.paction, span:has-text('Smazat'), a:has-text('Smazat')")
+                            if action_span.count() > 0 and action_span.first.is_visible():
+                                action_span.first.click()
+                            pwd_input = page.locator("input[name='heslobazar'], #heslobazar, input[name='heslo'], #heslo, input[type='password']")
+                            pwd_input.first.wait_for(timeout=5000)
+                            pwd_input.first.fill(password)
+                            radio_del = page.locator("input[type='radio'][value='2'], input[type='radio'][value='delete']")
+                            if radio_del.count() > 0:
+                                radio_del.first.click()
+                            submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], input[type='submit'][value*='Vymazat'], input[type='submit'][value*='Potvrdit']")
+                            if submit_btn.count() > 0:
+                                submit_btn.first.click()
+                            else:
+                                page.keyboard.press("Enter")
+                            page.wait_for_timeout(2000)
+                        except Exception as e:
+                            log_debug(f"Async delete on sold failed: {e}")
+
+                    session_manager.run_on_worker(_delete_worker, portal_url, ad_pwd, timeout=25.0)
+                except Exception as e:
+                    log_debug(f"Worker async delete error on sold: {e}")
+
+            threading.Thread(target=_async_delete_worker, daemon=True).start()
+            deleted_online = True
+
+        return jsonify({
+            "status": "success",
+            "message": f"Inzerát byl úspěšně označen jako prodaný ({sale_price} Kč) a přesunut do historie!",
+            "deleted_online": deleted_online
+        })
+    except Exception as e:
+        log_debug(f"MARK SOLD ERR: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/<listing_id>/restore_sold", methods=["POST"])
+def restore_sold_item(listing_id):
+    """Vrátí prodaný inzerát zpět do nabídky mezi neprodané (Věci k prodeji)."""
+    try:
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            for cand in db.get_all_listings():
+                if cand.get("id") == listing_id or cand.get("local_photos_dir") == listing_id:
+                    listing = cand
+                    listing_id = cand.get("id")
+                    break
+
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen"}), 404
+
+        db.restore_sold_listing(listing_id)
+        return jsonify({
+            "status": "success",
+            "message": f"Položka '{listing.get('title', '')}' byla úspěšně vrácena zpět mezi neprodané (Věci k prodeji)."
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/sold_stats", methods=["GET"])
+def get_sold_stats():
+    """Vrátí souhrnné statistiky prodejů pro dashboard."""
+    try:
+        stats = db.get_sold_statistics() or {}
+        return jsonify({
+            "status": "success",
+            "stats": stats,
+            "total_sold": stats.get("total_sold", 0),
+            "total_profit": stats.get("total_profit", 0),
+            "avg_price": stats.get("avg_price", 0)
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/action/<action_type>", methods=["POST"])
 def run_action(action_type):
     global playwright_process
@@ -1447,6 +1598,74 @@ def action_status():
         "error": error
     })
 
+def _lookup_bazos_ad_by_title_or_phone(title: str, phone: str = "", domain: str = "dum.bazos.cz"):
+    """Fallback dohledání inzerátu na Bazoši, pokud po odeslání došlo k 502 Bad Gateway."""
+    import requests, re
+    from bs4 import BeautifulSoup
+    from urllib.parse import quote
+
+    clean_title = (title or "").strip()
+    if not clean_title:
+        return None
+
+    clean_domain = domain.strip() if domain else "dum.bazos.cz"
+    if "/" in clean_domain:
+        clean_domain = clean_domain.split("/")[0]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    # 1. Vyhledání na dané subdoméně Bazoše podle názvu
+    search_term = clean_title[:35].strip()
+    search_url = f"https://{clean_domain}/hledat/?hledat={quote(search_term)}"
+    try:
+        resp = requests.get(search_url, headers=headers, timeout=8.0)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for h2 in soup.find_all("h2", class_="nadpis"):
+                a_tag = h2.find("a")
+                if not a_tag:
+                    continue
+                href = a_tag.get("href", "")
+                ad_title = a_tag.text.strip()
+                if ad_title and (clean_title.lower() in ad_title.lower() or ad_title.lower() in clean_title.lower() or clean_title[:20].lower() in ad_title.lower()):
+                    full_url = href if href.startswith("http") else f"https://{clean_domain}{href}"
+                    item_id_m = re.search(r'/inzerat/(\d+)/', full_url)
+                    return {
+                        "url": full_url,
+                        "item_id": item_id_m.group(1) if item_id_m else None,
+                        "title": ad_title
+                    }
+    except Exception as e:
+        log_debug(f"Fallback Bazoš search error: {e}")
+
+    # 2. Vyhledání podle telefonu uživatele
+    if phone:
+        clean_phone = "".join(c for c in phone if c.isdigit())
+        if len(clean_phone) >= 9:
+            clean_phone = clean_phone[-9:]
+            phone_url = f"https://www.bazos.cz/hodnoceni.php?tel={clean_phone}"
+            try:
+                resp = requests.get(phone_url, headers=headers, timeout=8.0)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    for a_tag in soup.find_all("a", href=re.compile(r'/inzerat/\d+/')):
+                        ad_title = a_tag.text.strip()
+                        href = a_tag.get("href", "")
+                        if ad_title and (clean_title.lower() in ad_title.lower() or ad_title.lower() in clean_title.lower()):
+                            full_url = href if href.startswith("http") else f"https://{clean_domain}{href}"
+                            item_id_m = re.search(r'/inzerat/(\d+)/', full_url)
+                            return {
+                                "url": full_url,
+                                "item_id": item_id_m.group(1) if item_id_m else None,
+                                "title": ad_title
+                            }
+            except Exception as pe:
+                log_debug(f"Fallback phone search error: {pe}")
+
+    return None
+
 @app.route("/api/action/confirm", methods=["POST"])
 def confirm_action():
     """Potvrzení odeslání inzerátu uživatelem z webu: ověří úspěch na Bazoši a uloží URL do DB."""
@@ -1456,8 +1675,15 @@ def confirm_action():
                 return {"submitted": False, "error": "Prohlížeč není otevřen."}
             
             cur_url = page.url or ""
+            page_content = ""
+            try:
+                page_content = page.content().lower()
+            except Exception:
+                pass
+
+            is_gateway_error = ("502 bad gateway" in page_content or "500 internal server" in page_content or "504 gateway time-out" in page_content)
+
             # Bazoš po odeslání zůstává na /pridat-inzerat.php s potvrzovacím textem nebo přesměruje na /inzerat/<id>/
-            # Hledáme odkaz na nově vytvořený inzerát
             ad_link_loc = page.locator("a[href*='/inzerat/']")
             new_ad_url = ""
             if ad_link_loc.count() > 0:
@@ -1468,7 +1694,6 @@ def confirm_action():
                         if href.startswith("http"):
                             new_ad_url = href
                         else:
-                            # relativní URL např. /inzerat/12345/nadpis.php
                             from urllib.parse import urlparse
                             parsed = urlparse(cur_url)
                             new_ad_url = f"{parsed.scheme}://{parsed.netloc}{href}"
@@ -1483,15 +1708,16 @@ def confirm_action():
                              page.locator("input[name='nadpis']").first.is_visible())
 
             return {
-                "submitted": bool(new_ad_url) or not still_on_form,
+                "submitted": bool(new_ad_url) or not still_on_form or is_gateway_error,
                 "new_url": new_ad_url,
                 "current_url": cur_url,
-                "still_on_form": still_on_form
+                "still_on_form": still_on_form,
+                "is_gateway_error": is_gateway_error
             }
 
         inspect_res = session_manager.run_on_worker(_check_page_submitted, timeout=10.0)
         
-        if inspect_res.get("still_on_form"):
+        if inspect_res.get("still_on_form") and not inspect_res.get("is_gateway_error"):
             return jsonify({
                 "status": "error", 
                 "message": "Inzerát ještě nebyl odeslán na Bazoši. Zkontrolujte formulář a klikněte v prohlížeči na 'Odeslat'."
@@ -1512,6 +1738,27 @@ def confirm_action():
                     listing = cand
                     listing_id = cand.get("id")
                     break
+
+        recovered_from_error = False
+        if not new_url and listing:
+            # Pokus o dohledání inzerátu na Bazoši při chybě 502 nebo výpadku přesměrování
+            _, user_config = load_data()
+            ad_domain = listing.get("category") or "dum.bazos.cz"
+            fallback_hit = _lookup_bazos_ad_by_title_or_phone(
+                title=listing.get("title", ""),
+                phone=user_config.get("phone", ""),
+                domain=ad_domain
+            )
+            if fallback_hit and fallback_hit.get("url"):
+                new_url = fallback_hit["url"]
+                recovered_from_error = True
+                log_debug(f"Recovered new ad URL via fallback lookup: {new_url}")
+
+        if not new_url and inspect_res.get("is_gateway_error"):
+            return jsonify({
+                "status": "error",
+                "message": "Bazoš vrátil chybu 502 Bad Gateway a inzerát se nepodařilo automaticky dohledat. Zkontrolujte prosím stav přímo na Bazoši."
+            }), 502
 
         old_portal_state = listing.get("portal_states", {}).get("bazos", {}) if listing else {}
         if not old_portal_url:
@@ -1534,12 +1781,13 @@ def confirm_action():
 
             def _delete_old_worker(page, target_url, password):
                 if not page or page.is_closed():
-                    return {"success": False, "reason": "Prohlížeč je zavřený"}
+                    return {"success": False, "status": "failed", "reason": "Prohlížeč je zavřený"}
                 try:
                     page.goto(target_url, timeout=20000)
                     page_content = page.content().lower()
-                    if "inzerát neexistuje" in page_content or "inzerat neexistuje" in page_content or "byl smazán" in page_content or "byl vymazán" in page_content:
-                        return {"success": True, "reason": "Inzerát již neexistoval"}
+                    # Pokud byl inzerát přesměrován do rubriky (301) nebo už neexistuje / expiroval
+                    if "/inzerat/" not in page.url or "inzerát neexistuje" in page_content or "inzerat neexistuje" in page_content or "byl smazán" in page_content or "byl vymazán" in page_content:
+                        return {"success": True, "status": "expired", "reason": "Původní inzerát na Bazoši již neexistoval (expiroval)."}
 
                     old_m = re.search(r'/inzerat/(\d+)/', target_url)
                     old_id_str = old_m.group(1) if old_m else ""
@@ -1580,10 +1828,10 @@ def confirm_action():
                     page.wait_for_timeout(2000)
                     res_content = page.content().lower()
                     if "chybné heslo" in res_content or "chybne heslo" in res_content:
-                        return {"success": False, "reason": "Chybné heslo inzerátu"}
-                    return {"success": True, "reason": "Inzerát byl vymazán"}
+                        return {"success": False, "status": "failed", "reason": "Chybné heslo inzerátu na Bazoši"}
+                    return {"success": True, "status": "deleted", "reason": "Původní inzerát byl vymazán z Bazoše"}
                 except Exception as del_e:
-                    return {"success": False, "reason": str(del_e)}
+                    return {"success": False, "status": "failed", "reason": str(del_e)}
 
             del_res = session_manager.run_on_worker(_delete_old_worker, old_portal_url, ad_pwd, timeout=25.0)
             old_deleted_info = del_res
@@ -1638,16 +1886,23 @@ def confirm_action():
         action_state_mgr.set_completed()
 
         msg = "Inzerát byl úspěšně potvrzen a uložen do databáze jako aktivní!"
+        if recovered_from_error:
+            msg = "Inzerát byl na Bazoši úspěšně dohledán a spárován (i přes výpadek spojení 502)!"
+
         if old_deleted_info:
             if old_deleted_info.get("success"):
-                msg += " Původní inzerát na Bazoši byl automaticky smazán."
+                if old_deleted_info.get("status") == "expired":
+                    msg += " Původní inzerát na Bazoši již dříve expiroval."
+                else:
+                    msg += " Původní inzerát byl na Bazoši automaticky smazán."
             else:
-                msg += f" (Upozornění: původní inzerát se nepodařilo smazat: {old_deleted_info.get('reason')})"
+                msg += f" (Upozornění k původnímu inzerátu: {old_deleted_info.get('reason')})"
 
         return jsonify({
             "status": "success", 
             "message": msg,
             "url": new_url,
+            "recovered_from_502": recovered_from_error,
             "old_deleted": old_deleted_info
         })
     except Exception as e:

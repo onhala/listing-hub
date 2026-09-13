@@ -33,9 +33,9 @@ Listing Hub je postaven na modulární vrstvené architektuře v Pythonu (Flask)
 ### Modulární struktura (`listing_hub/`):
 
 1. **`listing_hub.core`**:
-   - **`db.py`**: SQLite databázová vrstva (`listings.db`). Ukládá inzeráty s dynamickým JSON sloupcem `portal_states`, což umožňuje flexibilní evidenci stavu na Bazoši (URL, zhlédnutí, datum) i budoucí integraci Aukra.
+   - **`db.py`**: SQLite databázová vrstva (`listings.db`). Ukládá inzeráty s dynamickým JSON sloupcem `portal_states`, což umožňuje flexibilní evidenci stavu na Bazoši (URL, zhlédnutí, datum) i budoucí integraci Aukra. Podporuje evidenci prodejů (`sale_price`, `sold_at`, `sold_notes`) s automatickou migrací tabulky `listings` při startu (`init_db()`), a specializované funkce `mark_listing_as_sold()`, `restore_sold_listing()` a `get_sold_statistics()`.
    - **`config.py`**: Správa perzistentní konfigurace (`config/config.json`), base64 hesla a automatická verifikace/oprava přístupových práv svazků pro TrueNAS ZFS.
-   - **`version.py`**: Správa verzí (v3.8.7) s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
+   - **`version.py`**: Správa verzí (v3.8.8) s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
    - **Bezpečnost souborového systému**: Funkce `safe_delete_photos_dir()` v `app.py` ověřuje absolutní cesty vůči `PHOTOS_DIR` pomocí `target.is_relative_to(photos_base)` a blokuje jakékoliv pokusy o Directory/Path Traversal útoky (`../`).
 
 2. **`listing_hub.ai`**:
@@ -120,7 +120,7 @@ pytest -v --tb=short
 pytest tests/unit/test_categories.py # Testy rezoluce subdomén Bazoše, synonym a normalizace CZ
 pytest tests/unit/test_app.py        # Testy REST API (včetně /api/action/confirm, delete a safe_delete_photos_dir)
 pytest tests/unit/test_vision.py     # Testy AI Vision a práce s fotkami
-pytest tests/unit/test_version.py    # Testy detekce verzí (v3.8.7), GitHub cache a diff linku
+pytest tests/unit/test_version.py    # Testy detekce verzí (v3.8.8), GitHub cache a diff linku
 pytest tests/unit/test_advisor.py    # Testy cenového poradce a výpočtu mediánu
 pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
 ```
@@ -136,6 +136,12 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
   - Uloží změny v inzerátu (automaticky zkracuje `title` na max 50 znaků).
 - `POST /api/listings/create-with-photos` *(Multipart form-data)*
   - Atomicky založí inzerát v DB, uloží nahrané fotky a nastaví označenou titulní fotku jako `foto_1.jpg`.
+- `POST /api/listings/<listing_id>/mark_sold` *(JSON payload: `{"sale_price": int|null, "sold_at": "YYYY-MM-DD"|null, "sold_notes": str|null, "remove_from_bazos": bool}`)*
+  - Označí inzerát jako prodaný (`status = 'sold'`), uloží realizovanou cenu, datum a poznámku k prodeji. Pokud je `remove_from_bazos: true` a inzerát má aktivní URL na Bazoši, asynchronně zařadí do fronty Playwright workeru automatické stažení/smazání inzerátu z Bazoše.
+- `POST /api/listings/<listing_id>/restore_sold`
+  - Vrátí dříve prodaný inzerát zpět k prodeji (`status = 'unsold'`), vyresetuje `sale_price`, `sold_at` a `sold_notes`. Inzerát se přesune zpět do záložky "Věci k prodeji" (Koncepty) připraven k případnému znovuvystavení.
+- `GET /api/listings/sold_stats`
+  - Vrací souhrnné manažerské statistiky pro záložku "Prodané věci": `{"total_sold": int, "total_revenue": int, "avg_price": int}`.
 - `POST /api/listings/delete` *(podporuje také metodu `DELETE`, JSON payload: `{"id": "<listing_id>", "delete_photos": true|false}`)*
   - Odstraní inzerát z databáze SQLite. Pokud je `delete_photos: true`, bezpečně smaže odpovídající lokální složku fotografií s validací proti Path Traversal přes `safe_delete_photos_dir()`.
 

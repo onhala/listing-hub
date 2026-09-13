@@ -276,6 +276,13 @@ body {
     transform: translateY(-2px);
 }
 
+.btn-secondary.active {
+    background: rgba(131, 92, 223, 0.25);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 12px var(--primary-glow);
+}
+
 .btn-danger {
     background: rgba(239, 68, 68, 0.15);
     color: #fca5a5;
@@ -1389,4 +1396,466 @@ input:focus, textarea:focus, select:focus {
     color: #fff;
     border-color: var(--accent, #835cdf);
 }
+
+/* ==========================================
+   Screencast Zoom Controls
+   ========================================== */
+.zoom-pill {
+    background: transparent;
+    border: none;
+    color: #cbd5e1;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.zoom-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.zoom-pill.active {
+    background: var(--primary, #835cdf);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(131, 92, 223, 0.4);
+}
+
+.zoom-pill.icon-only {
+    padding: 3px 6px;
+    font-size: 0.72rem;
+}
+
+/* ==========================================
+   Listings Toolbar (Search & Sort)
+   ========================================== */
+.listings-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding: 0.75rem 1rem;
+    background: rgba(20, 16, 36, 0.5);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+}
+
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+}
+
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.search-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-input-wrapper i {
+    position: absolute;
+    left: 10px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    pointer-events: none;
+}
+
+.toolbar-input {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.42rem 0.85rem 0.42rem 2.1rem;
+    color: var(--text-main);
+    font-size: 0.85rem;
+    width: 220px;
+    outline: none;
+    transition: var(--transition-smooth);
+}
+
+.toolbar-input:focus {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+.sort-select-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.toolbar-label {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.toolbar-select {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.42rem 0.85rem;
+    color: var(--text-main);
+    font-size: 0.85rem;
+    cursor: pointer;
+    outline: none;
+    transition: var(--transition-smooth);
+}
+
+.toolbar-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+.toolbar-select option {
+    background: #0f0b1e;
+    color: #fff;
+}
+
+/* Age badge for ads */
+.age-badge {
+    font-size: 0.72rem;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.age-fresh {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.age-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.age-stale {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    animation: subtlePulse 2.5s infinite;
+}
+
+@keyframes subtlePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.75; }
+}
+
+/* ==========================================
+   Batch Selection & Action Bar
+   ========================================== */
+.card-select-checkbox {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    accent-color: var(--primary);
+    z-index: 5;
+    transition: transform 0.15s ease;
+}
+
+.card-select-checkbox:hover {
+    transform: scale(1.15);
+}
+
+.listing-card.batch-selected,
+.listing-card.selected-batch-card {
+    border-color: var(--primary) !important;
+    background: rgba(131, 92, 223, 0.1) !important;
+    box-shadow: 0 0 16px rgba(131, 92, 223, 0.25);
+}
+
+.batch-bar {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #110d22;
+    border: 1px solid rgba(131, 92, 223, 0.6);
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.7);
+    border-radius: 35px;
+    padding: 0.65rem 1.6rem;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    backdrop-filter: blur(14px);
+    animation: batchBarSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes batchBarSlideUp {
+    from {
+        transform: translate(-50%, 60px);
+        opacity: 0;
+    }
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+}
+
+.batch-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: #fff;
+    font-size: 0.92rem;
+}
+
+.batch-count-badge {
+    background: var(--primary);
+    color: #fff;
+    padding: 0.2rem 0.65rem;
+    border-radius: 14px;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.batch-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.batch-bar-actions .btn {
+    border-radius: 20px;
+    padding: 0.45rem 1rem;
+    font-size: 0.85rem;
+}
+
+/* ==========================================
+   Confirm Stepper Modal
+   ========================================== */
+.confirm-steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+}
+
+.confirm-step-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    transition: opacity 0.3s ease;
+}
+
+.confirm-step-row.completed {
+    opacity: 1 !important;
+}
+
+.confirm-step-row.active {
+    opacity: 1 !important;
+}
+
+.confirm-step-row.completed .step-icon-col i {
+    color: var(--success) !important;
+}
+
+.confirm-step-row.active .step-icon-col i {
+    color: var(--primary) !important;
+}
+
+.confirm-step-row.error .step-icon-col i {
+    color: var(--danger) !important;
+}
+
+/* ==========================================
+   Sold Executive Dashboard & Items
+   ========================================== */
+.sold-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 900px) {
+    .sold-summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.sold-stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.sold-stat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.sold-stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+}
+
+.sold-stat-icon.green {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.sold-stat-icon.purple {
+    background: rgba(131, 92, 223, 0.15);
+    color: var(--accent);
+}
+
+.sold-stat-icon.blue {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+}
+
+.sold-stat-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.sold-stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.sold-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+}
+
+/* Sold Details inside Listing Card */
+.sold-card-badge {
+    background: rgba(16, 185, 129, 0.18);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.sold-info-box {
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 8px;
+    padding: 0.75rem 0.9rem;
+    margin: 0.75rem 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.sold-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.3rem;
+}
+
+.sold-info-row:last-child {
+    margin-bottom: 0;
+}
+
+.price-diff-pill {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+
+.price-diff-pill.discount {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.price-diff-pill.exact {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.price-diff-pill.surplus {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.btn-mark-sold {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.btn-mark-sold:hover {
+    background: rgba(16, 185, 129, 0.25);
+    color: #fff;
+}
+
+.btn-restore-sold {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-restore-sold:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+/* Sold card container accent */
+.listing-card.is-sold {
+    border-color: rgba(16, 185, 129, 0.25);
+    background: rgba(16, 185, 129, 0.02);
+}
+
+.listing-card.is-sold:hover {
+    border-color: rgba(16, 185, 129, 0.45);
+    box-shadow: 0 8px 30px rgba(16, 185, 129, 0.1);
+}
+
+
+
 

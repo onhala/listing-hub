@@ -75,6 +75,13 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_pubs_url ON listing_publications(url)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_pubs_item_id ON listing_publications(portal_item_id)")
 
+    # Automatická migrace: prodejní atributy pro archivaci prodaných věcí
+    for col, col_type in [("sale_price", "INTEGER"), ("sold_at", "TEXT"), ("sold_notes", "TEXT")]:
+        try:
+            cursor.execute(f"ALTER TABLE listings ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
     # Backfill do listing_publications ze stávajících portal_states, pokud je tabulka prázdná
     cursor.execute("SELECT COUNT(*) FROM listing_publications")
     if cursor.fetchone()[0] == 0:
@@ -105,7 +112,7 @@ def init_db():
     conn.close()
 
 def save_listing(listing_data, portal_states=None):
-    """Vloží nebo aktualizuje inzerát v databázi (včetně stavů portálů)."""
+    """Vloží nebo aktualizuje inzerát v databázi (včetně stavů portálů a informací o prodeji)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -113,8 +120,9 @@ def save_listing(listing_data, portal_states=None):
             INSERT INTO listings (
                 id, title, description, price, category, condition, 
                 local_photos_dir, location, notes, ad_password_b64, 
-                bookmarklet_uri, days_old, created_at, target_bazos, target_aukro
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                bookmarklet_uri, days_old, created_at, target_bazos, target_aukro,
+                sale_price, sold_at, sold_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title,
                 description=excluded.description,
@@ -129,7 +137,10 @@ def save_listing(listing_data, portal_states=None):
                 days_old=excluded.days_old,
                 created_at=excluded.created_at,
                 target_bazos=excluded.target_bazos,
-                target_aukro=excluded.target_aukro
+                target_aukro=excluded.target_aukro,
+                sale_price=COALESCE(excluded.sale_price, listings.sale_price),
+                sold_at=COALESCE(excluded.sold_at, listings.sold_at),
+                sold_notes=COALESCE(excluded.sold_notes, listings.sold_notes)
         """, (
             listing_data.get("id"),
             listing_data.get("title"),
@@ -145,7 +156,10 @@ def save_listing(listing_data, portal_states=None):
             listing_data.get("days_old", 0),
             listing_data.get("created_at") or datetime.now().strftime("%Y-%m-%d"),
             listing_data.get("target_bazos", 1),
-            listing_data.get("target_aukro", 0)
+            listing_data.get("target_aukro", 0),
+            listing_data.get("sale_price"),
+            listing_data.get("sold_at"),
+            listing_data.get("sold_notes")
         ))
         
         if portal_states:
@@ -344,3 +358,113 @@ def get_listing_cumulative_stats(listing_id: str) -> dict:
         "is_reposted": pub_count > 1,
         "active_publication": active_pub
     }
+
+def mark_listing_as_sold(listing_id: str, sale_price: int = None, sold_at: str = None, notes: str = None) -> bool:
+    """Označí inzerát jako prodaný, nastaví prodejní cenu, datum a uzavře aktivní publikace."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Ověření existence inzerátu
+        cursor.execute("SELECT price FROM listings WHERE id = ?", (listing_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+
+        # Bezpečné přetypování ceny
+        if sale_price is not None and sale_price != "":
+            try:
+                final_price = max(0, int(float(sale_price)))
+            except (ValueError, TypeError):
+                final_price = row["price"] or 0
+        else:
+            final_price = row["price"] or 0
+
+        clean_sold_at = sold_at.strip() if isinstance(sold_at, str) and sold_at.strip() else datetime.now().strftime("%Y-%m-%d")
+        clean_notes = notes.strip() if isinstance(notes, str) else (str(notes) if notes is not None else None)
+
+        cursor.execute("""
+            UPDATE listings
+            SET sale_price = ?, sold_at = ?, sold_notes = ?
+            WHERE id = ?
+        """, (final_price, clean_sold_at, clean_notes, listing_id))
+
+        cursor.execute("""
+            UPDATE portal_states
+            SET status = 'Prodané', last_synced = ?
+            WHERE listing_id = ?
+        """, (datetime.now().isoformat(), listing_id))
+
+        if cursor.rowcount == 0:
+            cursor.execute("""
+                INSERT INTO portal_states (listing_id, portal_name, status, last_synced)
+                VALUES (?, 'bazos', 'Prodané', ?)
+            """, (listing_id, datetime.now().isoformat()))
+
+        cursor.execute("""
+            UPDATE listing_publications
+            SET status = 'sold', closed_at = ?, close_reason = 'sold'
+            WHERE listing_id = ? AND status = 'active'
+        """, (clean_sold_at, listing_id))
+
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+def restore_sold_listing(listing_id: str) -> bool:
+    """Vrátí prodaný inzerát zpět mezi neprodané (Věci k prodeji)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM listings WHERE id = ?", (listing_id,))
+        if not cursor.fetchone():
+            return False
+
+        cursor.execute("""
+            UPDATE listings
+            SET sale_price = NULL, sold_at = NULL, sold_notes = NULL
+            WHERE id = ?
+        """, (listing_id,))
+
+        cursor.execute("""
+            UPDATE portal_states
+            SET status = 'Expirováno', last_synced = ?
+            WHERE listing_id = ?
+        """, (datetime.now().isoformat(), listing_id))
+
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+def get_sold_statistics() -> dict:
+    """Spočítá souhrnné statistiky pro sekci Prodané věci s ochranou proti duplicitám při multi-portálech."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_sold,
+                SUM(COALESCE(sale_price, price, 0)) as total_profit,
+                AVG(COALESCE(sale_price, price, 0)) as avg_price
+            FROM listings
+            WHERE id IN (
+                SELECT listing_id FROM portal_states 
+                WHERE status IN ('Prodané', 'Sold', 'prodané')
+            ) OR sold_at IS NOT NULL
+        """)
+        row = cursor.fetchone()
+        if not row:
+            return {
+                "total_sold": 0,
+                "total_profit": 0,
+                "avg_price": 0
+            }
+        return {
+            "total_sold": row["total_sold"] or 0,
+            "total_profit": int(row["total_profit"] or 0),
+            "avg_price": int(round(row["avg_price"] or 0))
+        }
+    finally:
+        conn.close()
+

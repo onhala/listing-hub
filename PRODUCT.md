@@ -89,9 +89,17 @@ Aplikace organizuje inzeráty do logických kategorií odpovídajících reáln�
 | **Ke kontrole** | *Živý prohlížeč* | Formulář na Bazoši je vyplněn, čeká na schválení uživatelem a potvrzení bannerem. |
 | **Aktivní** | *Aktivní inzeráty* | Živý inzerát na Bazoši s počtem zhlédnutí, dny do expirace a přímým odkazem. |
 | **Vyžaduje SMS** | *Varovný banner v UI* | Bazoš vyžaduje ověření telefonního čísla. Worker se zastavil a čeká na intervenci. |
-| **Prodané** | *Prodané věci* | Realizovaný prodej se statistikou zisku, archivovaný pro účetnictví a exporty. |
+| **Prodané** | *Prodané věci* | Realizovaný prodej s evidencí prodejní ceny, data a poznámek. Zahrnuje Manažerský dashboard. |
 | **Smazáno** | *Odstraněno* | Vymazáno z databáze a portálů podle zvolené úrovně mazání. |
 
+- **Manažerský dashboard (Executive statistiky):** V záhlaví záložky *Prodané věci* je integrován přehledový panel s klíčovými metrikami prodeje v reálném čase:
+  - 📦 **Celkem prodáno** (počet úspěšně zobchodovaných položek)
+  - 💰 **Realizované tržby** (součet skutečných prodejních cen v Kč)
+  - 📊 **Průměrná cena** (průměrná výše tržby na jeden prodaný inzerát)
+- **Workflow „Označit jako prodané“ & Reverzibilita:**
+  - Každý aktivní inzerát i koncept lze dialogovým oknem převést do stavu *Prodané* se zadáním realizované ceny, data a volitelné poznámky o kupujícím nebo záruce.
+  - Volitelné zaškrtnutí *„Stáhnout také inzerát z Bazoše“* automaticky a asynchronně smaže nabídku online přes robota.
+  - Plná reverzibilita: kliknutím na tlačítko *„Vrátit k prodeji“* lze prodej kdykoliv stornovat a položku vrátit do konceptů k opětovné inzerci.
 - **Vyloučení fotografií:** Možnost kliknutím na náhled vyřadit konkrétní fotku (např. méně zdařilý detail), aniž by bylo nutné mazat soubor z disku.
 
 ---
