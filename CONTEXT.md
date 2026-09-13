@@ -64,6 +64,14 @@ _Avoid_: Price tiers, pricing suggestions, valuation quote
 An immutable specification of seller identity coordinates, postal routing parameters, and standard delivery terms.
 _Avoid_: User profile, account info, seller settings
 
+**PortalPublication**:
+A record tracking the publication of a listing to an external portal (Bazoš, Sbazar, Facebook Marketplace, Vinted, Aukro, or Custom), capturing portal name, external URL, status, publication method (auto vs manual), and timestamp.
+_Avoid_: External link, cross-post, portal record
+
+**SalesChannel**:
+The specific marketplace or external venue where a listing was successfully liquidated (e.g., Bazos, Sbazar, Marketplace, Vinted, Aukro, In-person/Other), used for sales distribution and channel performance analytics.
+_Avoid_: Sold portal, sold source, closing venue
+
 ### Operations
 
 **DraftAd**:
@@ -97,3 +105,12 @@ _Avoid_: Re-list, bump, top-up
 **PurgeListing**:
 The permanent removal of a listing record from local persistence, accompanied by optional de-listing from external portals and localized photo asset cleanup.
 _Avoid_: Delete ad, remove item, wipe listing
+
+**RecordExternalPublication**:
+The registration or manual linking of a listing published on an external sales channel, maintaining cross-portal evidence and tracking URLs.
+_Avoid_: Link URL, save external ad, add portal
+
+**BundlePhotoAssets**:
+The packaging of a listing's photo assets into a sequenced, numbered ZIP archive with stripped EXIF privacy metadata for drag-and-drop manual publishing on third-party portals.
+_Avoid_: Download images, zip photos, export media
+

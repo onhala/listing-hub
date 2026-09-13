@@ -1,6 +1,6 @@
-# 🤖 Listing Hub & AI Editor v3.8.8
+# 🤖 Listing Hub & AI Editor v3.9.0
 
-Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz a Aukro.cz, s integrovaným živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek a automatickou synchronizací do Google Kalendáře.
+Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s integrovaným asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů a automatickou synchronizací do Google Kalendáře.
 
 ---
 
@@ -131,6 +131,20 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
     - **Dvoufázový Human-in-the-Loop protokol**: Robot předvyplní formulář na Bazoši (Fáze 1) a předá živý screencast uživateli. Teprve po odeslání potvrdí a aktivuje inzerát (Fáze 2).
     - **Architektura & Use Casy**: Kanonický slovník v [CONTEXT.md](CONTEXT.md), architektonická rozhodnutí v [docs/adr/](docs/adr/) a podrobné scénáře v [docs/agent_use_cases.md](docs/agent_use_cases.md).
 
+19. **Asistent ručního zveřejnění & Multi-portál evidence (Cross-Portal Publishing)**:
+    - **Podpora dalších inzertních platforem**: Evidence a rychlé vystavení na **Facebook Marketplace**, **Sbazar.cz**, **Vinted**, **Aukro.cz**, ruční **Bazoš** i **vlastní platformy**.
+    - **1-Click Copy Asistent**: Okamžité zkopírování nadpisu, ceny a formátovaného popisu do schránky jedním kliknutím bez nutnosti přepínat okna.
+    - **📥 Stažení fotek v ZIP archivu (`GET /api/photos/<listing_id>/zip`)**: Vygeneruje a bleskově stáhne všechny fotky daného inzerátu v jednom přehledně očíslovaném ZIP balíčku pro snadné drag & drop nahrání na externí weby.
+    - **Barevné odznaky portálů**: Karty inzerátů vizuálně indikují aktivní publikace (modrý FB, červený Sbazar, tyrkysový Vinted, fialový Bazoš, žluté Aukro) s možností prokliku na živý inzerát nebo rychlého doplnění URL (`+URL`).
+
+20. **Atribuce prodejních kanálů (Sales Attribution)**:
+    - Výběr kanálu v modalu *Prodáno* (*Bazoš.cz*, *FB Marketplace*, *Sbazar.cz*, *Vinted*, *Aukro.cz*, *Osobní předání*, *Jiný kanál*).
+    - Zobrazení realizovaného kanálu přímo na kartě prodané položky a agregace tržeb v databázi (`sold_channel`).
+
+21. **Ochrana soukromí fotografií & SMS Relay Webhook**:
+    - **EXIF Sanitace & Auto-Orient**: Odstranění GPS souřadnic domova a metadat z fotografií při nahrání s automatickým narovnáním rotace z mobilních telefonů.
+    - **Webhook pro SMS ověření (`POST /api/sms/relay`)**: Přijímá SMS kódy z iOS Zkratek nebo Android Taskeru a automaticky je předává Playwright robotovi.
+
 
 ---
 
@@ -150,10 +164,16 @@ Kompletní specifikace a parametry jsou detailně popsány ve [Vývojářské p�
 ### Správa inzerátů & Životní cyklus
 - `GET /api/listings` – Přehled inzerátů rozdělených podle stavů (`active`, `unsold`, `sold`).
 - `POST /api/listings/save` – Uložení změn inzerátu s automatickým zkrácením titulku do 50 znaků.
-- `POST /api/listings/<listing_id>/mark_sold` – Označení inzerátu jako prodaného (`sale_price`, `sold_at`, `notes`, `delete_on_bazos`).
+- `POST /api/listings/<listing_id>/mark_sold` – Označení inzerátu jako prodaného (`sale_price`, `sold_at`, `notes`, `sold_channel`, `delete_on_bazos`).
 - `POST /api/listings/<listing_id>/restore_sold` – Vrácení prodaného inzerátu zpět mezi neprodané koncepty.
 - `GET /api/listings/sold_stats` – Souhrnné statistiky realizovaných prodejů (`total_sold`, `total_profit`, `avg_price`).
 - `POST /api/listings/delete` – Bezpečné smazání inzerátu s volitelným úklidem fotek na disku.
+
+### Multi-portál Evidence & Asistence
+- `POST /api/listings/<listing_id>/publish-manual` – Zaznamená ruční publikaci inzerátu na externím portálu (`portal_name`, `portal_label`, `url`, `notes`).
+- `POST /api/listings/<listing_id>/portal-url` – Rychlé doplnění nebo aktualizace URL odkazu na živý inzerát pro daný portál.
+- `GET /api/photos/<listing_id>/zip` – Zabalí a stáhne všechny fotografie inzerátu v jediném seřazeném ZIP balíčku.
+- `POST /api/sms/relay` – Webhook pro příjem a automatické vyplnění SMS ověřovacího kódu z mobilu (`text`, `code`, `token`).
 
 ### Automatizace & Dávkové akce (Playwright)
 - `POST /api/action/<action_type>` – Spuštění úlohy na pozadí (`post`, `edit_price`, `delete`, `repost`).

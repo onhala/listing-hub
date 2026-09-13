@@ -33,10 +33,10 @@ Listing Hub je postaven na modulární vrstvené architektuře v Pythonu (Flask)
 ### Modulární struktura (`listing_hub/`):
 
 1. **`listing_hub.core`**:
-   - **`db.py`**: SQLite databázová vrstva (`listings.db`). Ukládá inzeráty s dynamickým JSON sloupcem `portal_states`, což umožňuje flexibilní evidenci stavu na Bazoši (URL, zhlédnutí, datum) i budoucí integraci Aukra. Podporuje evidenci prodejů (`sale_price`, `sold_at`, `sold_notes`) s automatickou migrací tabulky `listings` při startu (`init_db()`), a specializované funkce `mark_listing_as_sold()`, `restore_sold_listing()` a `get_sold_statistics()`.
+   - **`db.py`**: SQLite databázová vrstva (`listings.db`). Ukládá inzeráty s dynamickým JSON sloupcem `portal_states`, což umožňuje flexibilní evidenci stavu na Bazoši (URL, zhlédnutí, datum, TOP status) i paralelní evidenci na dalších portálech (**Facebook Marketplace**, **Sbazar.cz**, **Vinted**, **Aukro.cz**, ruční Bazoš a vlastní platformy). Podporuje evidenci prodejů (`sale_price`, `sold_at`, `sold_notes`, `sold_channel`) s automatickými migracemi tabulek při startu (`init_db()`), a funkce `record_manual_publication()`, `update_listing_portal_url()`, `mark_listing_as_sold()`, `restore_sold_listing()` a `get_sold_statistics()`.
    - **`config.py`**: Správa perzistentní konfigurace (`config/config.json`), base64 hesla a automatická verifikace/oprava přístupových práv svazků pro TrueNAS ZFS.
-   - **`version.py`**: Správa verzí (v3.8.8) s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
-   - **Bezpečnost souborového systému**: Funkce `safe_delete_photos_dir()` v `app.py` ověřuje absolutní cesty vůči `PHOTOS_DIR` pomocí `target.is_relative_to(photos_base)` a blokuje jakékoliv pokusy o Directory/Path Traversal útoky (`../`).
+   - **`version.py`**: Správa verzí (v3.9.0) s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
+   - **Bezpečnost souborového systému & ochrana soukromí**: Funkce `safe_delete_photos_dir()` v `app.py` ověřuje absolutní cesty vůči `PHOTOS_DIR` pomocí `target.is_relative_to(photos_base)` a blokuje Path Traversal útoky. Funkce `strip_exif_and_normalize()` automaticky narovnává orientaci fotek z mobilů a odstraňuje citlivá EXIF GPS metadata.
 
 2. **`listing_hub.ai`**:
    - **`vision.py`**: Multimodální analýza fotografií pomocí modelu `gemini-2.5-flash`. Provádí automatické EXIF otočení a kompresi obrázků na max 1280 px (odezva do 2 s). Extrahuje parametry, navrhuje 3–5 úderných variant nadpisů do 50 znaků a vybírá nejlepší titulní fotografii. Propojeno s cenovým radarem z Bazoše.
@@ -188,8 +188,8 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
   - Uloží změny v inzerátu (automaticky zkracuje `title` na max 50 znaků).
 - `POST /api/listings/create-with-photos` *(Multipart form-data)*
   - Atomicky založí inzerát v DB, uloží nahrané fotky a nastaví označenou titulní fotku jako `foto_1.jpg`.
-- `POST /api/listings/<listing_id>/mark_sold` *(JSON payload: `{"sale_price": int|null, "sold_at": "YYYY-MM-DD"|null, "notes": str|null, "delete_on_bazos": bool}`)*
-  - Označí inzerát jako prodaný (`status = 'sold'`), zapíše realizovanou prodejní cenu, datum obchodu a interní poznámku do SQLite databáze.
+- `POST /api/listings/<listing_id>/mark_sold` *(JSON payload: `{"sale_price": int|null, "sold_at": "YYYY-MM-DD"|null, "notes": str|null, "sold_channel": str|null, "delete_on_bazos": bool}`)*
+  - Označí inzerát jako prodaný (`status = 'sold'`), zapíše realizovanou prodejní cenu, datum obchodu, interní poznámku a prodejní kanál (`sold_channel`, např. `facebook`, `sbazar`, `vinted`, `aukro`, `bazos`, `osobne`, `jiny`) do SQLite databáze.
   - Pokud je `delete_on_bazos: true` a inzerát má aktivní URL na Bazoši, spustí asynchronní worker vlákno, které provede online smazání inzerátu na Bazoši pomocí uloženého hesla.
   - Vrací: `{"status": "success", "message": str, "deleted_online": bool}`.
 - `POST /api/listings/<listing_id>/restore_sold`
@@ -207,6 +207,17 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
     ```
 - `POST /api/listings/delete` *(podporuje také metodu `DELETE`, JSON payload: `{"id": "<listing_id>", "delete_photos": true|false}`)*
   - Odstraní inzerát z databáze SQLite. Pokud je `delete_photos: true`, bezpečně smaže odpovídající lokální složku fotografií s validací proti Path Traversal přes `safe_delete_photos_dir()`.
+
+### Multi-portál Evidence & Asistent Ručního Vystavení:
+- `POST /api/listings/<listing_id>/publish-manual` *(JSON payload: `{"portal_name": str, "portal_label": str|null, "url": str|null, "notes": str|null}`)*
+  - Zaznamená ruční publikaci inzerátu na externím portálu (Facebook Marketplace, Sbazar, Vinted, Aukro, Bazoš, vlastní).
+  - Vytvoří / aktualizuje záznam v `portal_states` se stavem `Aktivní`, uloží datum a volitelnou URL i poznámku.
+- `POST /api/listings/<listing_id>/portal-url` *(JSON payload: `{"portal_name": str, "url": str}`)*
+  - Umožňuje rychlé doplnění nebo aktualizaci živého URL odkazu pro daný portál bez nutnosti otevírat celou editaci.
+- `GET /api/photos/<listing_id>/zip`
+  - Bleskově vygeneruje a streamuje in-memory ZIP archív (`fotky-<id>.zip`) obsahující všechny fotografie inzerátu přehledně seřazené pro snadné nahrání na externí inzertní servery.
+- `POST /api/sms/relay` *(JSON payload: `{"text": str|null, "code": str|null, "token": str|null}`)*
+  - Webhook pro příjem SMS ověřovacího kódu z telefonu (iOS Zkratky / Android Tasker) s volitelnou token autentizací (`sms_relay_token`), automatickou regex extrakcí 4–8 místného kódu a předáním do aktivní Playwright relace.
 
 ### Automatizace, Dávky & Browser akce (Playwright):
 - `POST /api/action/<action_type>` *(kde `<action_type>` je `post`, `edit_price`, `delete` nebo `repost`, JSON payload: `{"id": "<listing_id>", "target_domain": "dum.bazos.cz", "extra_val": ...}`)*

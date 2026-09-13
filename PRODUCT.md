@@ -210,3 +210,37 @@ Při mazání inzerátu nabízí Listing Hub inteligentní kontextové možnosti
 - **Asistované dvoufázové vystavování (HITL):** Agent bezpečně předvyplní formulář (Fáze 1) a předá řízení uživateli k vizuální kontrole na živém screencastu. Finální odeslání zůstává plně v rukou uživatele (Fáze 2).
 - **Prevence chyb a detekce expirací:** Automatické upozorňování na blížící se 60denní expiraci inzerátů a doporučení cenových úprav u ležáků.
 
+---
+
+### 14. Asistent pro ruční vystavení a Multi-portál evidence (Cross-Portal Selling)
+- **Rozšíření za hranice Bazoše:** Uživatel může inzerát jednoduše nabídnout a evidovat na dalších inzertních platformách:
+  - 🔵 **Facebook Marketplace**
+  - 🔴 **Sbazar.cz**
+  - 🟢 **Vinted**
+  - 🟡 **Aukro.cz**
+  - 🟣 **Bazoš.cz (ručně)**
+  - ⚪ **Vlastní inzertní platforma** (s volitelným vlastním názvem, např. *iFauna*, *Bike-forum*, *Bazar ČB*)
+- **1-Click Copy Asistent:**
+  - Tlačítka pro okamžité zkopírování vygenerovaného nadpisu, ceny a kompletního strukturovaného popisu do schránky s vizuální odezvou (`✓ Zkopírováno!`).
+  - Uživatel tak vkládá inzerát na externí web bleskově během několika vteřin bez přepínání a složitého opisování.
+- **📥 Stažení fotek v ZIP archivu jedním kliknutím:**
+  - Tlačítko *Stáhnout fotky (ZIP)* vygeneruje a stáhne přehledně seřazený ZIP archiv (`fotky-<id>.zip`) se všemi fotografiemi inzerátu.
+  - Při nahrávání fotek na Facebook či Sbazar stačí archiv rozbalit nebo přetáhnout z jednoho místa.
+- **Barevné odznaky & Živé odkazy:**
+  - Každý inzerát zobrazuje barevné odznaky všech portálů, na kterých je aktuálně evidován.
+  - Odznak obsahuje přímý odkaz na živý inzerát (otevře se v nové záložce).
+  - Pokud odkaz dosud nebyl vložen, odznak nabízí odkaz `+URL`, který otevře prompt pro okamžité doplnění odkazu přímo z hlavní obrazovky.
+
+---
+
+### 15. Sledování prodejních kanálů (Sales Attribution & Reporting)
+- **Výběr prodejního kanálu:** Při označení položky jako prodané (`Prodáno`) uživatel z rozbalovacího seznamu zvolí, přes jaký kanál k prodeji reálně došlo (*Bazoš.cz*, *Facebook Marketplace*, *Sbazar.cz*, *Vinted*, *Aukro.cz*, *Osobní předání*, *Jiný kanál*).
+- **Vizuální označení:** Na kartě prodané položky se zobrazuje dedikovaný řádek *Prodejní kanál* s modrým označením.
+- **Finanční vyhodnocení:** Databáze ukládá prodejní kanál v atributu `sold_channel` a statistický modul umožňuje agregovat tržby a počty prodaných položek podle jednotlivých prodejních platforem (`by_channel`).
+
+---
+
+### 16. Ochrana soukromí fotografií & SMS Relay Webhook
+- **EXIF Sanitace & Auto-Orientace:** Při nahrání fotografií do inzerátu systém automaticky narovná rotaci snímků z mobilních telefonů (`ImageOps.exif_transpose`) a bezpečně odstraní veškerá skrytá EXIF metadata (zejména GPS souřadnice polohy domova a sériová čísla fotoaparátů).
+- **SMS Relay Webhook (`POST /api/sms/relay`):** Umožňuje automaticky zachytit jednorázový ověřovací kód z SMS zprávy operátora přes mobilní automatizaci (iOS Zkratky, Mac Zprávy, Android Tasker) a bez nutnosti ručního přepínání jej předat přímo do běžící relace robota.
+
