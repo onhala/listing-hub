@@ -3718,6 +3718,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!configGeminiModel) return;
 
         const currentSelected = configGeminiModel.value;
+        // Klíč posíláme POUZE pokud uživatel právě zadal nový (input není prázdný).
+        // Po uložení se input vždy vymaže → backend použije uložený klíč ze serveru.
         const apiKey = configGeminiKey ? configGeminiKey.value.trim() : "";
 
         if (btnRefreshGeminiModels) {
@@ -3732,10 +3734,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         try {
             const queryParams = new URLSearchParams();
+            // Posíláme api_key jen pokud uživatel zadal nový klíč do pole (není placeholder)
             if (apiKey) queryParams.append("api_key", apiKey);
             if (force) queryParams.append("force", "true");
 
             const res = await fetch(`/api/ai/models?${queryParams.toString()}`);
+
             const data = await res.json();
 
             if (res.ok && data.status === "success" && Array.isArray(data.models) && data.models.length > 0) {
@@ -3777,13 +3781,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             } else {
                 if (geminiModelsInfo) {
-                    geminiModelsInfo.textContent = data.message || "Nepodařilo se načíst seznam modelů.";
+                    const msg = data.message || "Nepodařilo se načíst seznam modelů.";
+                    geminiModelsInfo.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f39c12;"></i> ${msg}`;
                 }
             }
         } catch (err) {
             console.error("loadGeminiModels err:", err);
             if (geminiModelsInfo) {
-                geminiModelsInfo.textContent = "Chyba při komunikaci se serverem při zjišťování modelů.";
+                geminiModelsInfo.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#e74c3c;"></i> Chyba spojení se serverem: ${err.message}`;
             }
         } finally {
             if (btnRefreshGeminiModels) {

@@ -63,6 +63,14 @@ DEFAULT_FALLBACK_MODELS: List[Dict[str, Any]] = [
         "is_preview": False
     },
     {
+        "id": "gemini-3.6-flash",
+        "name": "Gemini 3.6 Flash",
+        "label": "Gemini 3.6 Flash",
+        "description": "Rychlý flash model třetí generace.",
+        "recommended": False,
+        "is_preview": False
+    },
+    {
         "id": "gemini-3.1-pro-preview",
         "name": "Gemini 3.1 Pro Preview",
         "label": "Gemini 3.1 Pro Preview (Nejnovější model pro hlubokou analýzu)",
@@ -128,10 +136,14 @@ def get_available_gemini_models(api_key: str = "", force_refresh: bool = False) 
     try:
         response = requests.get(url, timeout=8)
         if response.status_code != 200:
+            try:
+                err_body = response.json().get("error", {}).get("message", response.text[:200])
+            except Exception:
+                err_body = response.text[:200]
             result = {
                 "models": DEFAULT_FALLBACK_MODELS,
                 "is_fallback": True,
-                "message": f"Google AI API vrátilo status {response.status_code}, použit výchozí seznam."
+                "message": f"Google AI API: HTTP {response.status_code} – {err_body}"
             }
             _MODELS_CACHE[cache_key] = {"timestamp": now, "data": result}
             return result
