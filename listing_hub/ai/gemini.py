@@ -1,6 +1,7 @@
 import requests
 import re
-from typing import Tuple
+import time
+from typing import Tuple, List, Dict, Any
 
 def strip_markdown_codeblocks(text: str) -> str:
     """
@@ -51,6 +52,159 @@ def clean_bazos_text(text: str) -> str:
     # Zredukujeme vícenásobné prázdné řádky
     cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
     return cleaned_text.strip()
+
+DEFAULT_FALLBACK_MODELS: List[Dict[str, Any]] = [
+    {
+        "id": "gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "label": "Gemini 2.5 Flash (Doporučeno - nejrychlejší a nejchytřejší)",
+        "description": "Multimodální model nové generace optimalizovaný pro rychlost a vysokou kvalitu výstupů.",
+        "recommended": True,
+        "is_preview": False
+    },
+    {
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro Preview",
+        "label": "Gemini 3.1 Pro Preview (Nejnovější model pro hlubokou analýzu)",
+        "description": "Špičkový model pro komplexní uvažování a detailní analýzu předmětů.",
+        "recommended": False,
+        "is_preview": True
+    },
+    {
+        "id": "gemini-2.0-flash",
+        "name": "Gemini 2.0 Flash",
+        "label": "Gemini 2.0 Flash (Rychlý a stabilní)",
+        "description": "Rychlý multimodální model předchozí generace.",
+        "recommended": False,
+        "is_preview": False
+    },
+    {
+        "id": "gemini-1.5-flash",
+        "name": "Gemini 1.5 Flash",
+        "label": "Gemini 1.5 Flash (Ověřený standard)",
+        "description": "Osvědčený lehký model pro běžné úlohy.",
+        "recommended": False,
+        "is_preview": False
+    },
+    {
+        "id": "gemini-1.5-pro",
+        "name": "Gemini 1.5 Pro",
+        "label": "Gemini 1.5 Pro (Stabilní dlouhý kontext)",
+        "description": "Stabilní model s masivním kontextovým oknem.",
+        "recommended": False,
+        "is_preview": False
+    }
+]
+
+_MODELS_CACHE: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL_SECONDS = 900  # 15 minut
+
+def get_available_gemini_models(api_key: str = "", force_refresh: bool = False) -> Dict[str, Any]:
+    """
+    Získá seznam aktuálně dostupných Gemini modelů přímo z Google Generative Language API.
+    Filtruje pouze modely podporující generateContent a vyřazuje nepotřebné embedding/imagen modely.
+    Při chybějícím klíči, timeoutu nebo chybě Google API bezpečně vrátí ověřený fallback seznam.
+    Výsledky jsou cachovány v paměti na 15 minut.
+    """
+    api_key_clean = (api_key or "").strip()
+    cache_key = api_key_clean[:12] if api_key_clean else "__default__"
+    now = time.time()
+
+    if not force_refresh and cache_key in _MODELS_CACHE:
+        entry = _MODELS_CACHE[cache_key]
+        if now - entry.get("timestamp", 0) < CACHE_TTL_SECONDS:
+            return entry.get("data", {})
+
+    if not api_key_clean:
+        result = {
+            "models": DEFAULT_FALLBACK_MODELS,
+            "is_fallback": True,
+            "message": "Není zadán API klíč, zobrazen výchozí ověřený seznam modelů."
+        }
+        _MODELS_CACHE[cache_key] = {"timestamp": now, "data": result}
+        return result
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key_clean}"
+    try:
+        response = requests.get(url, timeout=8)
+        if response.status_code != 200:
+            result = {
+                "models": DEFAULT_FALLBACK_MODELS,
+                "is_fallback": True,
+                "message": f"Google AI API vrátilo status {response.status_code}, použit výchozí seznam."
+            }
+            _MODELS_CACHE[cache_key] = {"timestamp": now, "data": result}
+            return result
+
+        data = response.json()
+        raw_models = data.get("models", [])
+        filtered_models: List[Dict[str, Any]] = []
+
+        for m in raw_models:
+            methods = m.get("supportedGenerationMethods", [])
+            if "generateContent" not in methods:
+                continue
+
+            name = m.get("name", "")
+            if not name.startswith("models/gemini-"):
+                continue
+
+            model_id = name.replace("models/", "").strip()
+            # Ignorovat embedding, imagen, aqa
+            id_lower = model_id.lower()
+            if any(ign in id_lower for ign in ["embedding", "imagen", "aqa", "learnlm"]):
+                continue
+
+            # Vynechat již Googlem ukončené modely (jako gemini-2.5-pro)
+            if model_id in ["gemini-2.5-pro"]:
+                continue
+
+            display_name = m.get("displayName") or model_id
+            description = m.get("description") or ""
+            is_recommended = (model_id == "gemini-2.5-flash")
+            is_preview = "preview" in id_lower or "experimental" in id_lower or "-exp" in id_lower
+
+            if is_recommended:
+                label = f"{display_name} (Doporučeno - nejrychlejší a nejchytřejší)"
+            elif is_preview:
+                label = f"{display_name} (Preview)"
+            else:
+                label = display_name
+
+            filtered_models.append({
+                "id": model_id,
+                "name": display_name,
+                "label": label,
+                "description": description,
+                "recommended": is_recommended,
+                "is_preview": is_preview
+            })
+
+        # Řazení: doporučený model první, poté sestupně podle verze
+        def sort_key(item: Dict[str, Any]):
+            rec_rank = 0 if item["recommended"] else 1
+            return (rec_rank, item["id"] != "gemini-3.1-pro-preview", item["id"])
+
+        filtered_models.sort(key=sort_key)
+
+        if not filtered_models:
+            filtered_models = DEFAULT_FALLBACK_MODELS
+
+        result = {
+            "models": filtered_models,
+            "is_fallback": False,
+            "message": f"Načteno {len(filtered_models)} dostupných modelů přímo z vašeho Google AI účtu."
+        }
+        _MODELS_CACHE[cache_key] = {"timestamp": now, "data": result}
+        return result
+    except Exception as e:
+        result = {
+            "models": DEFAULT_FALLBACK_MODELS,
+            "is_fallback": True,
+            "message": f"Spojení s Google AI selhalo ({str(e)}), použit výchozí seznam."
+        }
+        _MODELS_CACHE[cache_key] = {"timestamp": now, "data": result}
+        return result
 
 def improve_text_with_gemini(
     text: str,
@@ -128,6 +282,8 @@ def improve_text_with_gemini(
     try:
         response = requests.post(url, headers=headers, json=data, timeout=15)
         if response.status_code != 200:
+            if response.status_code == 404 or "no longer available" in response.text:
+                return False, f"Vybraný AI model '{model}' již není v Google AI dostupný (Status 404). Zvolte prosím v Nastavení aktuální model (např. gemini-2.5-flash nebo gemini-3.1-pro-preview)."
             return False, f"Chyba Gemini API (Status {response.status_code}): {response.text}"
             
         result_json = response.json()

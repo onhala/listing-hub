@@ -439,15 +439,20 @@
                             <p class="config-desc" style="margin-bottom: 0.5rem; font-size: 0.85rem;">Nastavení multimodálního AI modelu pro rozpoznávání fotografií, oceňování předmětů a generování prodejních textů.</p>
                         </div>
                         <div class="form-group">
-                            <label for="config-gemini-model">AI Model (Gemini)</label>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                                <label for="config-gemini-model" style="margin-bottom: 0;">AI Model (Gemini)</label>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-gemini-models" title="Načíst aktuálně dostupné modely z Google AI pro váš klíč" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.35rem;">
+                                    <i class="fa-solid fa-arrows-rotate" id="refresh-gemini-models-icon"></i> <span>Načíst z účtu</span>
+                                </button>
+                            </div>
                             <select id="config-gemini-model">
                                 <option value="gemini-2.5-flash">Gemini 2.5 Flash (Doporučeno - nejrychlejší a nejchytřejší)</option>
-                                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Hluboká analýza a preciznost)</option>
-                                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Stabilní)</option>
-                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Nejnovější model pro hlubokou analýzu)</option>
+                                <option value="gemini-2.0-flash">Gemini 2.0 Flash (Rychlý a stabilní)</option>
+                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Ověřený standard)</option>
+                                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Stabilní dlouhý kontext)</option>
                             </select>
-                            <span class="input-hint">Vybraný model se použije pro AI Vision i textové optimalizace.</span>
+                            <span class="input-hint" id="gemini-models-info">Vybraný model se použije pro AI Vision i textové optimalizace.</span>
                         </div>
                         <div class="form-group">
                             <label for="config-gemini-key">Gemini API Klíč</label>

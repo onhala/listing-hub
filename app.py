@@ -18,7 +18,7 @@ from post_to_bazos import load_data, save_listings, run_playwright_action, cli_u
 from listing_hub.core.config import CONFIG_PATH, SESSION_STATE_PATH, PHOTOS_DIR, PROJECT_ROOT, LOGS_DIR, LOG_FILE_PATH
 import uuid
 import listing_hub.core.db as db
-from listing_hub.ai.gemini import improve_text_with_gemini
+from listing_hub.ai.gemini import improve_text_with_gemini, get_available_gemini_models
 from listing_hub.ai.vision import analyze_photos_with_vision
 from listing_hub.core.version import get_version_status, is_docker, APP_VERSION
 from listing_hub.core.calendar import generate_ical_feed
@@ -1929,6 +1929,30 @@ def cancel_action():
         log_debug(f"CANCEL ERR: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/ai/models", methods=["GET"])
+def api_get_gemini_models():
+    """
+    Vrátí seznam aktuálně dostupných Gemini modelů pro zadaný klíč nebo klíč uložený v konfiguraci.
+    Podporuje force refresh pro vynucení dotazu na Google AI API.
+    """
+    try:
+        _, user_config = load_data()
+        api_key = request.args.get("api_key", "").strip() or user_config.get("gemini_api_key", "").strip()
+        force = request.args.get("force", "").lower() in ["true", "1", "yes"]
+        
+        models_data = get_available_gemini_models(api_key=api_key, force_refresh=force)
+        current_model = user_config.get("gemini_model", "").strip() or "gemini-2.5-flash"
+        
+        return jsonify({
+            "status": "success",
+            "models": models_data.get("models", []),
+            "is_fallback": models_data.get("is_fallback", False),
+            "current_model": current_model,
+            "message": models_data.get("message", "")
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/ai/test", methods=["POST"])
 def api_test_gemini():
     try:
@@ -1976,6 +2000,8 @@ def api_test_gemini():
                     err_msg += f": {err_data['error']['message']}"
             except Exception:
                 err_msg += f": {response.text[:200]}"
+            if response.status_code == 404 or "no longer available" in err_msg:
+                err_msg += " Model již není dostupný. Zvolte prosím jiný model (např. gemini-2.5-flash nebo gemini-3.1-pro-preview)."
             return jsonify({"status": "error", "message": err_msg, "model": model}), 400
     except requests.Timeout:
         return jsonify({"status": "error", "message": "Časový limit vypršel (Google AI neodpovědělo do 10 sekund)."}), 504

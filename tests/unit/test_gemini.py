@@ -176,5 +176,107 @@ def test_improve_text_with_gemini_custom_seller_context(mock_post):
     sys_instruction = json_payload["systemInstruction"]["parts"][0]["text"]
     assert "Férový prodejce z Českého Krumlova" in sys_instruction
 
+@patch("requests.post")
+def test_improve_text_with_gemini_404_deprecated_model(mock_post):
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.text = "This model models/gemini-2.5-pro is no longer available to new users."
+    mock_post.return_value = mock_response
 
+    success, result = improve_text_with_gemini("ahoj", "title", "improve", "dummy_key", model="gemini-2.5-pro")
+    assert not success
+    assert "již není v Google AI dostupný (Status 404)" in result
+    assert "gemini-2.5-flash" in result
 
+from listing_hub.ai.gemini import get_available_gemini_models, DEFAULT_FALLBACK_MODELS, _MODELS_CACHE
+
+def test_get_available_gemini_models_empty_key():
+    res = get_available_gemini_models(api_key="", force_refresh=True)
+    assert res["is_fallback"] is True
+    assert len(res["models"]) == len(DEFAULT_FALLBACK_MODELS)
+    model_ids = [m["id"] for m in res["models"]]
+    assert "gemini-2.5-flash" in model_ids
+    assert "gemini-2.5-pro" not in model_ids
+    assert "gemini-3.1-pro-preview" in model_ids
+
+@patch("requests.get")
+def test_get_available_gemini_models_api_success(mock_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {
+                "name": "models/gemini-2.5-flash",
+                "displayName": "Gemini 2.5 Flash",
+                "description": "Fast model",
+                "supportedGenerationMethods": ["generateContent", "countTokens"]
+            },
+            {
+                "name": "models/gemini-3.1-pro-preview",
+                "displayName": "Gemini 3.1 Pro Preview",
+                "description": "Smart frontier model",
+                "supportedGenerationMethods": ["generateContent"]
+            },
+            {
+                "name": "models/text-embedding-004",
+                "displayName": "Text Embedding",
+                "supportedGenerationMethods": ["embedContent"]
+            },
+            {
+                "name": "models/gemini-2.5-pro",
+                "displayName": "Gemini 2.5 Pro",
+                "supportedGenerationMethods": ["generateContent"]
+            },
+            {
+                "name": "models/imagen-3.0-generate-002",
+                "displayName": "Imagen 3",
+                "supportedGenerationMethods": ["generateContent"]
+            }
+        ]
+    }
+    mock_get.return_value = mock_response
+
+    res = get_available_gemini_models(api_key="valid_test_key_123", force_refresh=True)
+    assert res["is_fallback"] is False
+    assert len(res["models"]) == 2
+    model_ids = [m["id"] for m in res["models"]]
+    assert model_ids == ["gemini-2.5-flash", "gemini-3.1-pro-preview"]
+    assert "gemini-2.5-pro" not in model_ids
+    assert "text-embedding-004" not in model_ids
+    assert "imagen-3.0-generate-002" not in model_ids
+    assert res["models"][0]["recommended"] is True
+
+@patch("requests.get")
+def test_get_available_gemini_models_api_error_fallback(mock_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 403
+    mock_response.text = "Forbidden"
+    mock_get.return_value = mock_response
+
+    res = get_available_gemini_models(api_key="forbidden_key_456", force_refresh=True)
+    assert res["is_fallback"] is True
+    assert len(res["models"]) == len(DEFAULT_FALLBACK_MODELS)
+
+@patch("requests.get")
+def test_get_available_gemini_models_caching(mock_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {
+                "name": "models/gemini-2.5-flash",
+                "displayName": "Gemini 2.5 Flash",
+                "supportedGenerationMethods": ["generateContent"]
+            }
+        ]
+    }
+    mock_get.return_value = mock_response
+
+    test_key = "cache_test_key_789"
+    res1 = get_available_gemini_models(api_key=test_key, force_refresh=True)
+    assert mock_get.call_count == 1
+
+    # Second call without force_refresh should hit in-memory cache
+    res2 = get_available_gemini_models(api_key=test_key, force_refresh=False)
+    assert mock_get.call_count == 1
+    assert res1["models"] == res2["models"]

@@ -92,6 +92,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const configLocation = document.getElementById("config-location");
     const configPassword = document.getElementById("config-password");
     const configGeminiModel = document.getElementById("config-gemini-model");
+    const btnRefreshGeminiModels = document.getElementById("btn-refresh-gemini-models");
+    const refreshGeminiModelsIcon = document.getElementById("refresh-gemini-models-icon");
+    const geminiModelsInfo = document.getElementById("gemini-models-info");
     const configGeminiKey = document.getElementById("config-gemini-key");
     const configAiDelivery = document.getElementById("config-ai-delivery");
     const configAiSeller = document.getElementById("config-ai-seller");
@@ -654,6 +657,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (configGeminiModel) {
                     configGeminiModel.value = config.gemini_model || "gemini-2.5-flash";
                 }
+                loadGeminiModels(false);
                 if (config.gemini_api_key) {
                     configGeminiKey.placeholder = "••••••••••••••••••••••••••••••••";
                 } else {
@@ -3524,6 +3528,102 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotification("Chyba při ukládání nastavení.", "error");
         }
     });
+
+    // Dynamické načítání a aktualizace dostupných Google AI (Gemini) modelů
+    async function loadGeminiModels(force = false) {
+        if (!configGeminiModel) return;
+
+        const currentSelected = configGeminiModel.value;
+        const apiKey = configGeminiKey ? configGeminiKey.value.trim() : "";
+
+        if (btnRefreshGeminiModels) {
+            btnRefreshGeminiModels.disabled = true;
+        }
+        if (refreshGeminiModelsIcon) {
+            refreshGeminiModelsIcon.className = "fa-solid fa-arrows-rotate fa-spin";
+        }
+        if (geminiModelsInfo) {
+            geminiModelsInfo.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Zjišťuji dostupné modely z účtu...';
+        }
+
+        try {
+            const queryParams = new URLSearchParams();
+            if (apiKey) queryParams.append("api_key", apiKey);
+            if (force) queryParams.append("force", "true");
+
+            const res = await fetch(`/api/ai/models?${queryParams.toString()}`);
+            const data = await res.json();
+
+            if (res.ok && data.status === "success" && Array.isArray(data.models) && data.models.length > 0) {
+                configGeminiModel.innerHTML = "";
+                let targetModel = currentSelected || data.current_model || "gemini-2.5-flash";
+                let modelFound = false;
+
+                data.models.forEach(m => {
+                    const opt = document.createElement("option");
+                    opt.value = m.id;
+                    opt.textContent = m.label || m.name || m.id;
+                    if (m.description) {
+                        opt.title = m.description;
+                    }
+                    if (m.id === targetModel) {
+                        opt.selected = true;
+                        modelFound = true;
+                    }
+                    configGeminiModel.appendChild(opt);
+                });
+
+                // Pokud dříve vybraný model (např. ukončený gemini-2.5-pro) již v účtu neexistuje, zvolíme doporučený
+                if (!modelFound) {
+                    const fallbackModel = data.models.find(m => m.recommended) || data.models[0];
+                    if (fallbackModel) {
+                        configGeminiModel.value = fallbackModel.id;
+                        if (currentSelected && currentSelected !== fallbackModel.id && currentSelected !== "gemini-2.5-pro") {
+                            showNotification(`Původní model '${currentSelected}' není dostupný, nastaven ${fallbackModel.name}.`, "info");
+                        }
+                    }
+                }
+
+                if (geminiModelsInfo) {
+                    if (data.is_fallback) {
+                        geminiModelsInfo.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: #f39c12;"></i> ${data.message || "Výchozí seznam modelů (zadejte API klíč pro načtení z vašeho účtu)."}`;
+                    } else {
+                        geminiModelsInfo.innerHTML = `<i class="fa-solid fa-circle-check" style="color: #2ecc71;"></i> Načteno z vašeho Google AI účtu (${data.models.length} modelů).`;
+                    }
+                }
+            } else {
+                if (geminiModelsInfo) {
+                    geminiModelsInfo.textContent = data.message || "Nepodařilo se načíst seznam modelů.";
+                }
+            }
+        } catch (err) {
+            console.error("loadGeminiModels err:", err);
+            if (geminiModelsInfo) {
+                geminiModelsInfo.textContent = "Chyba při komunikaci se serverem při zjišťování modelů.";
+            }
+        } finally {
+            if (btnRefreshGeminiModels) {
+                btnRefreshGeminiModels.disabled = false;
+            }
+            if (refreshGeminiModelsIcon) {
+                refreshGeminiModelsIcon.className = "fa-solid fa-arrows-rotate";
+            }
+        }
+    }
+
+    if (btnRefreshGeminiModels) {
+        btnRefreshGeminiModels.addEventListener("click", () => {
+            loadGeminiModels(true);
+        });
+    }
+
+    if (configGeminiKey) {
+        configGeminiKey.addEventListener("change", () => {
+            if (configGeminiKey.value.trim()) {
+                loadGeminiModels(true);
+            }
+        });
+    }
 
     // Toggle viditelnosti API klíče
     toggleGeminiKeyBtn.addEventListener("click", () => {

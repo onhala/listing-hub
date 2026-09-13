@@ -296,6 +296,8 @@ def analyze_photos_with_vision(
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.status_code != 200:
+            if response.status_code == 404 or "no longer available" in response.text:
+                return False, {}, f"Vybraný AI model '{model}' již není v Google AI dostupný (Status 404). Zvolte prosím v Nastavení aktuální model (např. gemini-2.5-flash nebo gemini-3.1-pro-preview)."
             return False, {}, f"Chyba Gemini Vision API (Status {response.status_code}): {response.text}"
             
         result_json = response.json()

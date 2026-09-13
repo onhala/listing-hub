@@ -147,6 +147,53 @@ def test_api_test_gemini_error(mock_post, mock_load_data, client):
     assert data["status"] == "error"
     assert "API key not valid" in data["message"]
 
+@patch("app.load_data")
+@patch("requests.post")
+def test_api_test_gemini_404_deprecated(mock_post, mock_load_data, client):
+    mock_load_data.return_value = ({}, {"gemini_api_key": "valid_key"})
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.json.return_value = {
+        "error": {"message": "This model models/gemini-2.5-pro is no longer available to new users."}
+    }
+    mock_post.return_value = mock_response
+
+    res = client.post("/api/ai/test", json={"model": "gemini-2.5-pro"})
+    assert res.status_code == 400
+    data = json.loads(res.data)
+    assert data["status"] == "error"
+    assert "Model již není dostupný" in data["message"]
+
+@patch("app.load_data")
+def test_api_get_gemini_models_fallback(mock_load_data, client):
+    mock_load_data.return_value = ({}, {"gemini_api_key": "", "gemini_model": "gemini-2.5-flash"})
+    res = client.get("/api/ai/models")
+    assert res.status_code == 200
+    data = json.loads(res.data)
+    assert data["status"] == "success"
+    assert data["is_fallback"] is True
+    assert len(data["models"]) > 0
+    assert data["current_model"] == "gemini-2.5-flash"
+
+@patch("app.load_data")
+@patch("app.get_available_gemini_models")
+def test_api_get_gemini_models_with_key(mock_get_models, mock_load_data, client):
+    mock_load_data.return_value = ({}, {"gemini_api_key": "stored_key", "gemini_model": "gemini-3.1-pro-preview"})
+    mock_get_models.return_value = {
+        "models": [{"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro Preview"}],
+        "is_fallback": False,
+        "message": "Načteno z účtu."
+    }
+
+    res = client.get("/api/ai/models?api_key=custom_key&force=true")
+    assert res.status_code == 200
+    data = json.loads(res.data)
+    assert data["status"] == "success"
+    assert data["is_fallback"] is False
+    assert len(data["models"]) == 1
+    assert data["current_model"] == "gemini-3.1-pro-preview"
+    mock_get_models.assert_called_once_with(api_key="custom_key", force_refresh=True)
+
 
 @patch("app.load_data")
 def test_api_analyze_photos_missing_key(mock_load_data, client):
