@@ -56,12 +56,35 @@ def scrape_listings_from_html(html_content: str) -> List[Dict[str, Any]]:
                 date_text = date_el.get_text().strip()
                 date_str = parse_bazos_date(date_text)
                 
+            # --- TOP status ---
+            is_top = False
+            top_expires_at = None
+            top_info = None
+            top_count = None
+            ztop_el = el.find(class_="ztop")
+            if ztop_el:
+                is_top = True
+                title_attr = ztop_el.get("title", "")
+                top_info = title_attr or ztop_el.get_text(strip=True)
+                # Parsovat datum expirace: "TOP 1x Platí do 20.9. 2026"
+                exp_match = re.search(r"Plat\u00ed do (\d{1,2})\.(\d{1,2})\.\s*(\d{4})", title_attr)
+                if exp_match:
+                    day, month, year = exp_match.groups()
+                    top_expires_at = f"{year}-{int(month):02d}-{int(day):02d}"
+                cnt_match = re.search(r"TOP\s*(\d+)x", title_attr)
+                if cnt_match:
+                    top_count = int(cnt_match.group(1))
+
             scraped_listings.append({
                 "title": title_text,
                 "url": ad_url,
                 "price": price_val,
                 "views": views_val,
-                "date_created": date_str
+                "date_created": date_str,
+                "is_top": is_top,
+                "top_expires_at": top_expires_at,
+                "top_info": top_info,
+                "top_count": top_count,
             })
         except Exception:
             continue

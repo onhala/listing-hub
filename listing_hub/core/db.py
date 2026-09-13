@@ -94,6 +94,13 @@ def init_db() -> None:
             except sqlite3.OperationalError:
                 pass
 
+        # Automatická migrace: TOP status pro Bazoš
+        for col, col_type in [("is_top", "INTEGER DEFAULT 0"), ("top_expires_at", "TEXT"), ("top_info", "TEXT")]:
+            try:
+                cursor.execute(f"ALTER TABLE portal_states ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError:
+                pass
+
         # Backfill do listing_publications ze stávajících portal_states, pokud je tabulka prázdná
         cursor.execute("SELECT COUNT(*) FROM listing_publications")
         if cursor.fetchone()[0] == 0:
@@ -179,14 +186,18 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
             for portal_name, state in portal_states.items():
                 cursor.execute("""
                     INSERT INTO portal_states (
-                        listing_id, portal_name, portal_item_id, url, status, views, last_synced
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        listing_id, portal_name, portal_item_id, url, status, views, last_synced,
+                        is_top, top_expires_at, top_info
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(listing_id, portal_name) DO UPDATE SET
                         portal_item_id=excluded.portal_item_id,
                         url=excluded.url,
                         status=excluded.status,
                         views=excluded.views,
-                        last_synced=excluded.last_synced
+                        last_synced=excluded.last_synced,
+                        is_top=excluded.is_top,
+                        top_expires_at=excluded.top_expires_at,
+                        top_info=excluded.top_info
                 """, (
                     listing_data.get("id"),
                     portal_name,
@@ -194,7 +205,10 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                     state.get("url"),
                     state.get("status"),
                     state.get("views", 0),
-                    state.get("last_synced") or datetime.now().isoformat()
+                    state.get("last_synced") or datetime.now().isoformat(),
+                    1 if state.get("is_top") else 0,
+                    state.get("top_expires_at"),
+                    state.get("top_info")
                 ))
                 
         conn.commit()
@@ -220,6 +234,12 @@ def get_all_listings() -> List[Dict[str, Any]]:
             cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (listing["id"],))
             states_rows = cursor.fetchall()
             listing["portal_states"] = {state["portal_name"]: dict(state) for state in states_rows}
+
+            # Propagace TOP statusu z Bazoš portal_state
+            bazos_state = listing["portal_states"].get("bazos", {})
+            listing["is_top"] = bool(bazos_state.get("is_top", 0))
+            listing["top_expires_at"] = bazos_state.get("top_expires_at")
+            listing["top_info"] = bazos_state.get("top_info")
 
             # Načtení publikací (historie)
             cursor.execute("SELECT * FROM listing_publications WHERE listing_id = ? ORDER BY id ASC", (listing["id"],))
@@ -248,6 +268,12 @@ def get_listing_by_id(listing_id: str) -> Optional[Dict[str, Any]]:
         cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (listing_id,))
         states_rows = cursor.fetchall()
         listing["portal_states"] = {state["portal_name"]: dict(state) for state in states_rows}
+
+        # Propagace TOP statusu z Bazoš portal_state
+        bazos_state = listing["portal_states"].get("bazos", {})
+        listing["is_top"] = bool(bazos_state.get("is_top", 0))
+        listing["top_expires_at"] = bazos_state.get("top_expires_at")
+        listing["top_info"] = bazos_state.get("top_info")
 
         # Načtení publikací (historie)
         cursor.execute("SELECT * FROM listing_publications WHERE listing_id = ? ORDER BY id ASC", (listing_id,))

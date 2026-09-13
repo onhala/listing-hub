@@ -879,6 +879,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const isTopExpired = (top_expires_at) => {
+        if (!top_expires_at) return true;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const expDate = new Date(top_expires_at);
+        return expDate < today;
+    };
+
+    const formatTopExpiry = (top_expires_at) => {
+        if (!top_expires_at) return '';
+        const [year, month, day] = top_expires_at.split('-');
+        return `${parseInt(day)}. ${parseInt(month)}.`;
+    };
+
     const createAdCard = (ad, isSold) => {
         const card = document.createElement("div");
         card.className = "listing-card";
@@ -940,6 +954,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${ad.is_reposted ? `
                     <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4);" title="${ad.publication_count}. vystavení (přeceněno/obnoveno)">
                         <i class="fa-solid fa-arrows-rotate"></i> ${ad.publication_count}. vystavení
+                    </span>` : ''}
+                    ${ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at) ? `
+                    <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 165, 0, 0.2); color: #ff9900; border: 1px solid rgba(255, 165, 0, 0.5); box-shadow: 0 0 6px rgba(255,140,0,0.3);" title="${escapeHtml(ad.top_info || 'Aktivní placené TOPování na Bazoši')}">
+                        🔥 TOP <span style="font-size:0.65rem;opacity:0.85;">(do ${formatTopExpiry(ad.top_expires_at)})</span>
                     </span>` : ''}
                 </div>
                 <p class="listing-desc">${escapeHtml(descText)}</p>
@@ -2786,8 +2804,28 @@ document.addEventListener("DOMContentLoaded", () => {
             priceInput.value = ad.price || "";
         }
         const autoDeleteCheckbox = document.getElementById("repost-autodelete-checkbox");
+        // TOP safety: if active paid TOP, uncheck auto-delete by default and show warning
+        const hasActivePaidTop = ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at);
         if (autoDeleteCheckbox) {
-            autoDeleteCheckbox.checked = true;
+            autoDeleteCheckbox.checked = !hasActivePaidTop;
+        }
+        // Show/hide TOP warning
+        const topWarning = document.getElementById("repost-top-warning-container");
+        if (topWarning) {
+            if (hasActivePaidTop) {
+                const expStr = formatTopExpiry(ad.top_expires_at);
+                topWarning.innerHTML = `<div style="background: rgba(220,38,38,0.12); border: 1px solid rgba(220,38,38,0.5); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; display:flex; align-items:flex-start; gap:0.6rem;">
+                    <span style="font-size:1.2rem;">🔥</span>
+                    <div>
+                        <div style="font-size:0.88rem; font-weight:700; color:#f87171;">Pozor: Aktivní placené TOPování na Bazoši!</div>
+                        <div style="font-size:0.8rem; color:#fca5a5; margin-top:3px;">Tento inzerát má aktivní TOPování platné do <strong>${expStr}</strong>. Smazáním inzerátu by zaplacené zvýhodnění nenávratně propadlo. Automatické smazání bylo proto odškrtnuto – překontroluj nastavení níže.</div>
+                    </div>
+                </div>`;
+                topWarning.style.display = 'block';
+            } else {
+                topWarning.innerHTML = '';
+                topWarning.style.display = 'none';
+            }
         }
 
         openChildModal(repostConfirmModal);

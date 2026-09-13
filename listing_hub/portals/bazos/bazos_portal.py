@@ -93,7 +93,8 @@ def fetch_bazos_ad_details(ad_url: str) -> dict:
     Běžné třídy 'popis' a 'inzeratylok' jsou na detailu použity POUZE pro sekci Podobné inzeráty
     na spodku stránky, proto se jim striktně vyhýbáme.
     """
-    result = {"description": "", "location": "", "title": "", "price": 0, "is_deleted": False}
+    result = {"description": "", "location": "", "title": "", "price": 0, "is_deleted": False,
+              "is_top": False, "top_expires_at": None, "top_info": None}
     if not ad_url:
         return result
     try:
@@ -162,6 +163,17 @@ def fetch_bazos_ad_details(ad_url: str) -> dict:
                         except Exception:
                             pass
                 break
+
+        # --- TOP status z detailu inzerátu ---
+        ztop_el = soup.find(class_="ztop")
+        if ztop_el:
+            result["is_top"] = True
+            title_attr = ztop_el.get("title", "")
+            result["top_info"] = title_attr or ztop_el.get_text(strip=True)
+            exp_match = re.search(r"Plat\u00ed do (\d{1,2})\.(\d{1,2})\.\s*(\d{4})", title_attr)
+            if exp_match:
+                day, month, year = exp_match.groups()
+                result["top_expires_at"] = f"{year}-{int(month):02d}-{int(day):02d}"
 
     except Exception:
         pass
@@ -408,12 +420,19 @@ class BazosPortal(AbstractPortal):
                 if _details.get("location"):
                     local_ad["location"] = _details["location"]
                 
+                # TOP status: preferuj data z detailu (is_top z fetch_bazos_ad_details), fallback na scraped list
+                _top_is = _details.get("is_top") or best_scraped_match.get("is_top", False)
+                _top_exp = _details.get("top_expires_at") or best_scraped_match.get("top_expires_at")
+                _top_inf = _details.get("top_info") or best_scraped_match.get("top_info")
                 bazos_state_data = {
                     "portal_item_id": portal_item_id,
                     "url": best_scraped_match["url"],
                     "status": "Aktivní",
                     "views": best_scraped_match["views"],
-                    "last_synced": datetime.now().isoformat()
+                    "last_synced": datetime.now().isoformat(),
+                    "is_top": _top_is,
+                    "top_expires_at": _top_exp,
+                    "top_info": _top_inf,
                 }
                 save_listing(local_ad, {"bazos": bazos_state_data})
                 
@@ -497,7 +516,10 @@ class BazosPortal(AbstractPortal):
                 "url": scraped_ad["url"],
                 "status": "Aktivní",
                 "views": scraped_ad["views"],
-                "last_synced": datetime.now().isoformat()
+                "last_synced": datetime.now().isoformat(),
+                "is_top": ad_details.get("is_top", scraped_ad.get("is_top", False)),
+                "top_expires_at": ad_details.get("top_expires_at") or scraped_ad.get("top_expires_at"),
+                "top_info": ad_details.get("top_info") or scraped_ad.get("top_info"),
             }
             
             save_listing(new_listing, {"bazos": bazos_state_data})
