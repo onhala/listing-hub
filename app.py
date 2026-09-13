@@ -2077,7 +2077,7 @@ def ai_improve():
         
         _, user_config = load_data()
         api_key = user_config.get("gemini_api_key", "")
-        model = user_config.get("gemini_model") or "gemini-2.5-flash"
+        model = payload.get("model", "").strip() or user_config.get("gemini_model") or "gemini-2.5-flash"
         seller_context = user_config.get("ai_seller_context", "")
         
         if not api_key:
@@ -2102,12 +2102,12 @@ def api_analyze_photos():
     try:
         _, user_config = load_data()
         api_key = user_config.get("gemini_api_key", "")
-        model = user_config.get("gemini_model") or "gemini-2.5-flash"
         if not api_key:
             return jsonify({"status": "error", "message": "Chybí Gemini API klíč v nastavení."}), 400
 
         image_bytes_list = []
         user_notes = ""
+        req_model = ""
 
         if request.files:
             files = request.files.getlist("photos") or request.files.getlist("files")
@@ -2115,9 +2115,11 @@ def api_analyze_photos():
                 if f and f.filename:
                     image_bytes_list.append(f.read())
             user_notes = request.form.get("notes", "").strip()
+            req_model = request.form.get("model", "").strip()
         elif request.is_json:
             payload = request.json or {}
             user_notes = payload.get("notes", "").strip()
+            req_model = payload.get("model", "").strip()
             raw_dir = payload.get("photos_dir", "").strip()
             if raw_dir:
                 photos_dir = resolve_photos_dir(raw_dir)
@@ -2132,6 +2134,8 @@ def api_analyze_photos():
                                 image_bytes_list.append(img_f.read())
                         except Exception:
                             pass
+
+        model = req_model or user_config.get("gemini_model") or "gemini-2.5-flash"
 
         if not image_bytes_list:
             return jsonify({"status": "error", "message": "Nebyly přiloženy žádné fotografie k analýze."}), 400
@@ -2199,6 +2203,8 @@ def api_analyze_existing_listing(listing_id):
 
         payload = request.get_json(silent=True) or {}
         user_notes = payload.get("notes") or row["notes"] or ""
+        req_model = payload.get("model", "").strip()
+        model = req_model or user_config.get("gemini_model") or "gemini-2.5-flash"
         delivery_options = user_config.get("ai_delivery_options", "")
         seller_context = user_config.get("ai_seller_context", "")
 

@@ -294,10 +294,38 @@ def analyze_photos_with_vision(
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
+        fallback_used = False
+        fallback_model = "gemini-2.5-flash"
+
+        # Pokud vybraný model narazí na 503 (vysoká zátěž/nedostupnost) nebo 429 (rate limit), zkusíme automatický fallback na 2.5 Flash
+        if response.status_code in [503, 429] and model != fallback_model:
+            fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={api_key}"
+            try:
+                fallback_resp = requests.post(fallback_url, headers=headers, json=payload, timeout=30)
+                if fallback_resp.status_code == 200:
+                    response = fallback_resp
+                    fallback_used = True
+            except Exception:
+                pass
+
         if response.status_code != 200:
             if response.status_code == 404 or "no longer available" in response.text:
                 return False, {}, f"Vybraný AI model '{model}' již není v Google AI dostupný (Status 404). Zvolte prosím v Nastavení aktuální model (např. gemini-2.5-flash nebo gemini-3.1-pro-preview)."
-            return False, {}, f"Chyba Gemini Vision API (Status {response.status_code}): {response.text}"
+            
+            err_detail = ""
+            try:
+                err_data = response.json()
+                err_detail = err_data.get("error", {}).get("message", "")
+            except Exception:
+                err_detail = response.text[:200]
+
+            if response.status_code == 503:
+                return False, {}, f"Model '{model}' je na straně Google AI momentálně přetížený (Status 503: High demand). Zkuste to za okamžik nebo v Nastavení zvolte stabilní Gemini 2.5 Flash. Detail: {err_detail}"
+            elif response.status_code == 429:
+                return False, {}, f"Byl vyčerpán limit požadavků pro model '{model}' (Status 429: Quota exceeded). Zkuste to za chvíli nebo zvolte jiný model. Detail: {err_detail}"
+            else:
+                msg = err_detail or response.text
+                return False, {}, f"Chyba Gemini Vision API (Status {response.status_code}): {msg}"
             
         result_json = response.json()
         raw_text = result_json["candidates"][0]["content"]["parts"][0]["text"]
@@ -305,6 +333,9 @@ def analyze_photos_with_vision(
         
         parsed_data = json.loads(cleaned_text)
         parsed_data = normalize_vision_data(parsed_data, len(image_bytes_list), delivery_options=deliv_line)
+        if fallback_used:
+            parsed_data["_fallback_notice"] = f"Model '{model}' byl na straně Google AI dočasně přetížen (Status 503: High demand). Analýza byla automaticky úspěšně dokončena stabilním modelem Gemini 2.5 Flash."
+
 
         # Pokud je zapnutý market advisor, spustíme tržní analýzu (Bazoš + Sbazar + Web + Gemini)
         if run_market_advisor:

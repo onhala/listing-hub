@@ -182,4 +182,59 @@ def test_normalize_vision_data_custom_delivery():
     normalized = normalize_vision_data(raw, total_photos=1, delivery_options="Vlastní odběr v Krumlově")
     assert "Vlastní odběr v Krumlově" in normalized["description"]
 
+@patch("requests.post")
+def test_analyze_photos_503_fallback_success(mock_post):
+    """Testuje, že při 503 na vybraném modelu proběhne úspěšný automatický fallback na gemini-2.5-flash."""
+    resp_503 = MagicMock()
+    resp_503.status_code = 503
+    resp_503.text = json.dumps({"error": {"code": 503, "message": "This model is currently experiencing high demand."}})
+    resp_503.json.return_value = {"error": {"code": 503, "message": "This model is currently experiencing high demand."}}
+
+    resp_200 = MagicMock()
+    resp_200.status_code = 200
+    resp_200.json.return_value = {
+        "candidates": [{
+            "content": {
+                "parts": [{"text": json.dumps({"recommended_title": "Předmět z fallbacku", "titles": ["Předmět z fallbacku"]})}]
+            }
+        }]
+    }
+
+    mock_post.side_effect = [resp_503, resp_200]
+    img_bytes = create_dummy_image_bytes()
+    success, data, msg = analyze_photos_with_vision(
+        [img_bytes],
+        api_key="dummy_key",
+        model="gemini-3.8-flash",
+        run_market_advisor=False
+    )
+    assert success is True
+    assert "_fallback_notice" in data
+    assert "gemini-3.8-flash" in data["_fallback_notice"]
+    assert "Gemini 2.5 Flash" in data["_fallback_notice"]
+    assert mock_post.call_count == 2
+    # Ověříme, že druhý požadavek šel na fallback model gemini-2.5-flash
+    assert "gemini-2.5-flash" in mock_post.call_args_list[1][0][0]
+
+@patch("requests.post")
+def test_analyze_photos_503_clean_error_when_no_fallback(mock_post):
+    """Testuje, že při trvající chybě 503 se vrátí srozumitelná česká hláška namísto surového JSONu."""
+    resp_503 = MagicMock()
+    resp_503.status_code = 503
+    resp_503.text = json.dumps({"error": {"code": 503, "message": "This model is currently experiencing high demand."}})
+    resp_503.json.return_value = {"error": {"code": 503, "message": "This model is currently experiencing high demand."}}
+    mock_post.return_value = resp_503
+
+    img_bytes = create_dummy_image_bytes()
+    success, data, msg = analyze_photos_with_vision(
+        [img_bytes],
+        api_key="dummy_key",
+        model="gemini-2.5-flash",
+        run_market_advisor=False
+    )
+    assert success is False
+    assert "Status 503: High demand" in msg
+    assert "momentálně přetížený" in msg
+
+
 

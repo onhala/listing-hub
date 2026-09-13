@@ -63,10 +63,34 @@ DEFAULT_FALLBACK_MODELS: List[Dict[str, Any]] = [
         "is_preview": False
     },
     {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "label": "Gemini 3.8 Flash (Preview)",
+        "description": "Nejnovější experimentální Flash model z Google AI.",
+        "recommended": False,
+        "is_preview": True
+    },
+    {
+        "id": "gemini-3.7-flash",
+        "name": "Gemini 3.7 Flash",
+        "label": "Gemini 3.7 Flash (Preview)",
+        "description": "Rychlý model nové generace s pokročilým uvažováním.",
+        "recommended": False,
+        "is_preview": True
+    },
+    {
         "id": "gemini-3.6-flash",
         "name": "Gemini 3.6 Flash",
         "label": "Gemini 3.6 Flash",
         "description": "Rychlý flash model třetí generace.",
+        "recommended": False,
+        "is_preview": False
+    },
+    {
+        "id": "gemini-3.5-flash",
+        "name": "Gemini 3.5 Flash",
+        "label": "Gemini 3.5 Flash",
+        "description": "Pokročilý multimodální flash model.",
         "recommended": False,
         "is_preview": False
     },
@@ -295,10 +319,36 @@ def improve_text_with_gemini(
     
     try:
         response = requests.post(url, headers=headers, json=data, timeout=15)
+        fallback_model = "gemini-2.5-flash"
+
+        # Pokud vybraný model narazí na 503 (vysoká zátěž) nebo 429 (rate limit), zkusíme automatický fallback na stabilní 2.5 Flash
+        if response.status_code in [503, 429] and model != fallback_model:
+            fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={api_key}"
+            try:
+                fallback_resp = requests.post(fallback_url, headers=headers, json=data, timeout=15)
+                if fallback_resp.status_code == 200:
+                    response = fallback_resp
+            except Exception:
+                pass
+
         if response.status_code != 200:
             if response.status_code == 404 or "no longer available" in response.text:
                 return False, f"Vybraný AI model '{model}' již není v Google AI dostupný (Status 404). Zvolte prosím v Nastavení aktuální model (např. gemini-2.5-flash nebo gemini-3.1-pro-preview)."
-            return False, f"Chyba Gemini API (Status {response.status_code}): {response.text}"
+            
+            err_detail = ""
+            try:
+                err_data = response.json()
+                err_detail = err_data.get("error", {}).get("message", "")
+            except Exception:
+                err_detail = response.text[:200]
+
+            if response.status_code == 503:
+                return False, f"Model '{model}' je na straně Google AI momentálně přetížený (Status 503: High demand). Zkuste to za okamžik nebo v Nastavení zvolte stabilní Gemini 2.5 Flash. Detail: {err_detail}"
+            elif response.status_code == 429:
+                return False, f"Byl vyčerpán limit požadavků pro model '{model}' (Status 429: Quota exceeded). Zkuste to za chvíli nebo zvolte jiný model. Detail: {err_detail}"
+            else:
+                msg = err_detail or response.text
+                return False, f"Chyba Gemini API (Status {response.status_code}): {msg}"
             
         result_json = response.json()
         raw_text = result_json["candidates"][0]["content"]["parts"][0]["text"]

@@ -304,6 +304,16 @@ def estimate_price_with_gemini(
     }
     try:
         res = requests.post(url, headers=headers, json=payload, timeout=12)
+        fallback_model = "gemini-2.5-flash"
+        if res.status_code in [503, 429] and model != fallback_model:
+            fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={api_key}"
+            try:
+                fallback_res = requests.post(fallback_url, headers=headers, json=payload, timeout=12)
+                if fallback_res.status_code == 200:
+                    res = fallback_res
+            except Exception:
+                pass
+
         if res.status_code != 200:
             return None
         data = res.json()

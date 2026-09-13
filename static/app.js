@@ -657,6 +657,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (configGeminiModel) {
                     configGeminiModel.value = config.gemini_model || "gemini-2.5-flash";
                 }
+                if (visionLoadingText) {
+                    visionLoadingText.textContent = `${getActiveModelDisplayName()} detailně analyzuje fotografie předmětu...`;
+                }
                 loadGeminiModels(false);
                 if (config.gemini_api_key) {
                     configGeminiKey.placeholder = "••••••••••••••••••••••••••••••••";
@@ -2397,6 +2400,22 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    function getActiveModelDisplayName() {
+        if (configGeminiModel && configGeminiModel.selectedOptions && configGeminiModel.selectedOptions[0]) {
+            const txt = configGeminiModel.selectedOptions[0].text;
+            return txt.split('(')[0].trim();
+        }
+        if (userConfig && userConfig.gemini_model) {
+            const m = userConfig.gemini_model;
+            if (configGeminiModel) {
+                const opt = Array.from(configGeminiModel.options).find(o => o.value === m);
+                if (opt) return opt.text.split('(')[0].trim();
+            }
+            return m.replace(/^models\//, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+        return "Gemini 2.5 Flash";
+    }
+
     // Run Vision AI analysis
     if (btnRunVisionAi) {
         btnRunVisionAi.addEventListener("click", async () => {
@@ -2406,6 +2425,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             if (newAiActionBar) newAiActionBar.style.display = "none";
+            if (visionLoadingText) {
+                visionLoadingText.textContent = `${getActiveModelDisplayName()} detailně analyzuje fotografie předmětu...`;
+            }
             if (visionAiLoading) visionAiLoading.style.display = "block";
             btnRunVisionAi.disabled = true;
 
@@ -2415,6 +2437,9 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             if (newUserNotes) {
                 formData.append("notes", newUserNotes.value.trim());
+            }
+            if (configGeminiModel && configGeminiModel.value) {
+                formData.append("model", configGeminiModel.value);
             }
 
             try {
@@ -2430,6 +2455,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 const visionData = data.data;
+
+                if (visionData._fallback_notice) {
+                    showNotification(visionData._fallback_notice, "warning");
+                }
 
                 // 1. Detected item banner & Quality Tips
                 if (newAiDetectedBanner) {
@@ -2643,15 +2672,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
+            const modelName = getActiveModelDisplayName();
             btnReanalyzeExisting.disabled = true;
             btnReanalyzeExisting.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzuji fotky...';
-            showNotification("Spouštím Gemini Vision na fotografiích inzerátu...", "info");
+            showNotification(`Spouštím ${modelName} na fotografiích inzerátu...`, "info");
 
             try {
                 const res = await fetch(`${API.aiAnalyzeExisting}/${currentAd.id}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ notes: editNotes ? editNotes.value : "" })
+                    body: JSON.stringify({
+                        notes: editNotes ? editNotes.value : "",
+                        model: configGeminiModel ? configGeminiModel.value : ""
+                    })
                 });
 
                 const data = await res.json();
@@ -2661,6 +2694,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 const visionData = data.data;
+
+                if (visionData._fallback_notice) {
+                    showNotification(visionData._fallback_notice, "warning");
+                }
 
                 if (visionData.description) {
                     openAiModal("description", "improve", visionData.description);
@@ -3772,6 +3809,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 }
 
+                if (visionLoadingText) {
+                    visionLoadingText.textContent = `${getActiveModelDisplayName()} detailně analyzuje fotografie předmětu...`;
+                }
+
                 if (geminiModelsInfo) {
                     if (data.is_fallback) {
                         geminiModelsInfo.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color: #f39c12;"></i> ${data.message || "Výchozí seznam modelů (zadejte API klíč pro načtení z vašeho účtu)."}`;
@@ -3803,6 +3844,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnRefreshGeminiModels) {
         btnRefreshGeminiModels.addEventListener("click", () => {
             loadGeminiModels(true);
+        });
+    }
+
+    if (configGeminiModel) {
+        configGeminiModel.addEventListener("change", () => {
+            if (visionLoadingText) {
+                visionLoadingText.textContent = `${getActiveModelDisplayName()} detailně analyzuje fotografie předmětu...`;
+            }
         });
     }
 
