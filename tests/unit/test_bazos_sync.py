@@ -151,3 +151,142 @@ def test_bazos_sync_skips_historical_publications(mock_db):
         assert listings[0]["portal_states"]["bazos"]["portal_item_id"] == "222000111"
         assert listings[0]["portal_states"]["bazos"]["views"] == 5
 
+
+def test_fetch_bazos_ad_details_extracts_popisdetail_not_similar_popis():
+    """
+    Ověří, že fetch_bazos_ad_details extrahuje skutečný popis z div.popisdetail
+    a lokaci z hlavní tabulky inzerátu a nesahá do sekce 'Podobné inzeráty' (div.popis, span.inzeratylok).
+    """
+    from listing_hub.portals.bazos.bazos_portal import fetch_bazos_ad_details
+    import io
+
+    sample_html = """
+    <html>
+    <head><title>Bazoš detail</title></head>
+    <body>
+        <h1>Elektrická strunová sekačka AL-KO TE 600</h1>
+        <table class="listadv">
+            <tr>
+                <td>Lokalita:</td>
+                <td>381 01 Český Krumlov</td>
+            </tr>
+            <tr>
+                <td>Cena:</td>
+                <td><b>400 Kč</b></td>
+            </tr>
+        </table>
+        <div class="popisdetail">
+            Prodám plně funkční elektrickou strunovou sekačku AL-KO TE 600.
+            Lehká, zachovalá, motor 600W.
+        </div>
+
+        <div class="podobne">
+            <h2>Podobné inzeráty</h2>
+            <div class="inzeraty">
+                <span class="nadpis"><a href="#">Black & Decker GL360</a></span>
+                <div class="popis">Úplně cizí popis sekačky Black & Decker ze spodku stránky.</div>
+                <span class="inzeratylok">Praha 1</span>
+                <span class="cena">350 Kč</span>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    mock_resp = MagicMock()
+    mock_resp.geturl.return_value = "https://dum.bazos.cz/inzerat/223744456/strunovka.php"
+    mock_resp.read.return_value = sample_html.encode("utf-8")
+    mock_resp.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        details = fetch_bazos_ad_details("https://dum.bazos.cz/inzerat/223744456/strunovka.php")
+
+    assert details["is_deleted"] is False
+    assert details["title"] == "Elektrická strunová sekačka AL-KO TE 600"
+    assert "Prodám plně funkční elektrickou strunovou sekačku AL-KO TE 600" in details["description"]
+    assert "Black & Decker" not in details["description"]
+    assert "381 01 Český Krumlov" in details["location"]
+    assert details["price"] == 400
+
+
+def test_bazos_sync_keyword_matching_for_reposted_ads(mock_db):
+    """
+    Ověří, že znovuvystavený inzerát s mírně pozměněným titulkem se spáruje
+    podle shody klíčových slov (Priority 4) a nevytvoří nový duplicitní listing.
+    """
+    portal = BazosPortal()
+
+    # 1. Lokální inzerát s původním názvem
+    listing_data = {
+        "id": "plamenak_1",
+        "title": "Obří nafukovací ostrov XXL Plameňák pro 5 osob",
+        "description": "Původní popis ostrova",
+        "price": 3900,
+        "category": "ostatni",
+        "condition": "Použité",
+        "local_photos_dir": "photos/plamenak_1",
+        "location": "České Budějovice",
+        "notes": "",
+        "ad_password_b64": "MTIzNDU2",
+        "bookmarklet_uri": "",
+        "days_old": 10,
+        "created_at": "2026-08-01",
+        "target_bazos": 1,
+        "target_aukro": 0
+    }
+    portal_states = {
+        "bazos": {
+            "portal_item_id": "222999000",
+            "url": "https://sport.bazos.cz/inzerat/222999000/stary-plamenak.php",
+            "status": "Aktivní",
+            "views": 25,
+            "last_synced": "2026-08-05T10:00:00"
+        }
+    }
+    save_listing(listing_data, portal_states)
+
+    # 2. Bazoš vrátí nový inzerát s pozměněným titulkem
+    scraped_mock = [
+        {
+            "title": "XXL Plameňák ostrov pro 5 osob - TOP stav",
+            "price": 3900,
+            "views": 1,
+            "url": "https://sport.bazos.cz/inzerat/223745085/xxl-plamenak-ostrov.php",
+            "date_created": datetime.today().strftime("%Y-%m-%d")
+        }
+    ]
+
+    user_config = {
+        "email": "test@example.com",
+        "phone": "777654321",
+        "location": "České Budějovice"
+    }
+
+    mock_page = MagicMock()
+    mock_page.locator.return_value.is_visible.return_value = False
+    mock_page.content.return_value = "<html></html>"
+
+    mock_detail = {
+        "description": "Nový reálný popis ostrova Plameňák z Bazoše.",
+        "location": "370 01 České Budějovice",
+        "title": "XXL Plameňák ostrov pro 5 osob - TOP stav",
+        "price": 3900,
+        "is_deleted": False
+    }
+
+    with patch("listing_hub.portals.bazos.session.session_manager.run_on_worker", side_effect=lambda func, *args, **kwargs: func(mock_page, *args, **kwargs)), \
+         patch("listing_hub.portals.bazos.session.session_manager.get_session", return_value=(None, None, None, mock_page)), \
+         patch("listing_hub.portals.bazos.bazos_portal.scrape_listings_from_html", return_value=scraped_mock), \
+         patch("listing_hub.portals.bazos.bazos_portal.fetch_bazos_ad_details", return_value=mock_detail):
+
+        portal.sync_listings(user_config)
+
+        # 3. Ověříme, že nevznikla duplicita a původní záznam byl aktualizován
+        listings = get_all_listings()
+        assert len(listings) == 1
+        assert listings[0]["id"] == "plamenak_1"
+        assert listings[0]["title"] == "XXL Plameňák ostrov pro 5 osob - TOP stav"
+        assert listings[0]["portal_states"]["bazos"]["portal_item_id"] == "223745085"
+        assert listings[0]["description"] == "Nový reálný popis ostrova Plameňák z Bazoše."
+
+

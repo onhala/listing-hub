@@ -468,3 +468,9 @@ def get_sold_statistics() -> dict:
     finally:
         conn.close()
 
+# Automatická inicializace a migrace schématu při načtení modulu
+try:
+    init_db()
+except Exception:
+    pass
+

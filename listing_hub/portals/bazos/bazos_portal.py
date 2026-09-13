@@ -87,10 +87,13 @@ def download_bazos_photos_if_missing(ad_url: str, local_photos_dir_str: str):
 
 def fetch_bazos_ad_details(ad_url: str) -> dict:
     """
-    Stáhne detail stránky inzerátu z Bazoše a vytáhne popis a lokaci.
-    Vrátí dict s klíči 'description', 'location' a 'is_deleted'.
+    Stáhne detail stránky inzerátu z Bazoše a vytáhne přesný popis a lokaci.
+    Vrátí dict s klíči 'description', 'location', 'title', 'price' a 'is_deleted'.
+    DŮLEŽITÉ: Popis inzerátu je na Bazoši v div.popisdetail.
+    Běžné třídy 'popis' a 'inzeratylok' jsou na detailu použity POUZE pro sekci Podobné inzeráty
+    na spodku stránky, proto se jim striktně vyhýbáme.
     """
-    result = {"description": "", "location": "", "is_deleted": False}
+    result = {"description": "", "location": "", "title": "", "price": 0, "is_deleted": False}
     if not ad_url:
         return result
     try:
@@ -118,23 +121,47 @@ def fetch_bazos_ad_details(ad_url: str) -> dict:
 
         soup = BeautifulSoup(html, 'html.parser')
 
-        # --- Popis ---
-        desc_el = soup.find(class_='popis')
+        # --- Nadpis ---
+        h1_el = soup.find('h1')
+        if h1_el:
+            result["title"] = h1_el.get_text(strip=True)
+
+        # --- Popis (POUZE popisdetail na detailu inzerátu, NIKDY 'popis' z podobných inzerátů!) ---
+        desc_el = soup.find(class_='popisdetail') or soup.find(id='popisdetail')
         if not desc_el:
-            desc_el = soup.find(attrs={'class': re.compile(r'popis', re.I)})
+            # Fallback pouze uvnitř hlavní tabulky inzerátu, ne v podobných inzerátech
+            main_table = soup.find('table', class_=re.compile(r'listadv|inzeratdetail', re.I))
+            if main_table:
+                desc_el = main_table.find(class_=re.compile(r'popis', re.I))
         if desc_el:
             result["description"] = desc_el.get_text(separator='\n', strip=True)
 
-        # --- Lokace ---
-        loc_el = soup.find(class_='inzeratylok')
-        if not loc_el:
-            loc_el = soup.find(attrs={'class': re.compile(r'lok|lokal|lokace', re.I)})
-        if loc_el:
-            loc_text = loc_el.get_text(separator=' ', strip=True)
-            loc_text = re.sub(r'([^\d\s])(\d)', r'\1 \2', loc_text)
-            loc_text = re.sub(r'\s+', ' ', loc_text).strip()
-            if loc_text:
-                result["location"] = loc_text
+        # --- Lokace (z řádku Lokalita: v detailu inzerátu) ---
+        loc_text = ""
+        for td in soup.find_all('td'):
+            if td.get_text(strip=True) == 'Lokalita:' and not td.find('td'):
+                parent_tr = td.find_parent('tr')
+                if parent_tr:
+                    cells = [c for c in parent_tr.find_all('td', recursive=False) if c != td]
+                    loc_parts = [c.get_text(separator=' ', strip=True) for c in cells if c.get_text(strip=True)]
+                    loc_text = ' '.join(loc_parts)
+                    loc_text = re.sub(r'\s+', ' ', loc_text).strip()
+                    break
+        if loc_text:
+            result["location"] = loc_text
+
+        # --- Cena z detailu ---
+        for td in soup.find_all('td'):
+            if td.get_text(strip=True) == 'Cena:' and not td.find('td'):
+                parent_tr = td.find_parent('tr')
+                if parent_tr:
+                    p_match = re.search(r'(\d[\d\s]*)\s*Kč', parent_tr.get_text())
+                    if p_match:
+                        try:
+                            result["price"] = int(re.sub(r'\s+', '', p_match.group(1)))
+                        except Exception:
+                            pass
+                break
 
     except Exception:
         pass
@@ -319,6 +346,34 @@ class BazosPortal(AbstractPortal):
                         best_scraped_match = scraped_ad
                         best_scraped_idx = s_idx
                         break
+
+            # Priority 4: Match podle klíčových slov v nadpisu (pro znovuvystavené inzeráty s mírně pozměněným názvem)
+            if not best_scraped_match and local_ad.get("title"):
+                import unicodedata
+                def extract_kw(txt):
+                    norm = unicodedata.normalize('NFKD', txt).encode('ascii', 'ignore').decode('utf-8').lower()
+                    words = re.findall(r'[a-z0-9]{3,}', norm)
+                    stop = {'pro', 'pod', 'nad', 'bez', 'nebo', 'prodam', 'nabizim', 'top', 'stav', 'nova', 'novy', 'osob'}
+                    return set(w for w in words if w not in stop)
+
+                l_kw = extract_kw(local_ad["title"])
+                if len(l_kw) >= 2:
+                    best_kw_ratio = 0.0
+                    candidate_idx = -1
+                    for s_idx, scraped_ad in enumerate(scraped_listings):
+                        if s_idx in matched_scraped_indices:
+                            continue
+                        s_kw = extract_kw(scraped_ad["title"])
+                        if not s_kw:
+                            continue
+                        common = l_kw & s_kw
+                        ratio = len(common) / min(len(l_kw), len(s_kw))
+                        if len(common) >= 2 and ratio >= 0.6 and ratio > best_kw_ratio:
+                            best_kw_ratio = ratio
+                            candidate_idx = s_idx
+                    if candidate_idx >= 0:
+                        best_scraped_match = scraped_listings[candidate_idx]
+                        best_scraped_idx = candidate_idx
             
             if best_scraped_match:
                 matched_scraped_indices.add(best_scraped_idx)
@@ -336,15 +391,15 @@ class BazosPortal(AbstractPortal):
                 
                 local_ad["price"] = best_scraped_match["price"]
                 local_ad["days_old"] = days_old_val
+                local_ad["title"] = best_scraped_match["title"]
+                local_ad["condition"] = "Aktivní"
 
-                # Pokud má inzerát ještě placeholder popis, dofetchuj reálný z Bazoše
-                _PLACEHOLDER = "Automaticky importovaný inzerát z Bazoše. Doplňte prosím popis."
-                if local_ad.get("description", "").strip() == _PLACEHOLDER:
-                    _details = fetch_bazos_ad_details(best_scraped_match["url"])
-                    if _details["description"]:
-                        local_ad["description"] = _details["description"]
-                    if _details["location"]:
-                        local_ad["location"] = _details["location"]
+                # Stáhneme a synchronizujeme aktuální autentický detail z Bazoše (popisdetail + lokalita)
+                _details = fetch_bazos_ad_details(best_scraped_match["url"])
+                if _details.get("description"):
+                    local_ad["description"] = _details["description"]
+                if _details.get("location"):
+                    local_ad["location"] = _details["location"]
                 
                 bazos_state_data = {
                     "portal_item_id": portal_item_id,
