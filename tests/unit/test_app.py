@@ -733,6 +733,70 @@ def test_api_suggest_rubrika_endpoint(client):
         assert data2["status"] == "success"
         assert data2["top_domain"] == "dum.bazos.cz"
 
+def test_lookup_bazos_ad_normalizes_textual_category():
+    from app import _lookup_bazos_ad_by_title_or_phone
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = """
+    <html><body>
+        <h2 class="nadpis"><a href="https://deti.bazos.cz/inzerat/223769494/nestle-alfamino-hmo-400g-5-ks-exp-112026.php">Nestlé Alfamino HMO 400g - 5 ks (exp. 11/2026)</a></h2>
+    </body></html>
+    """
+    with patch("requests.get", return_value=mock_resp) as mock_get:
+        res = _lookup_bazos_ad_by_title_or_phone(
+            title="Nestlé Alfamino HMO 400g - 5 ks (exp. 11/2026)",
+            domain="Dětské potřeby"  # Textová rubrika namísto domény
+        )
+        assert res is not None
+        assert "223769494" in res["url"]
+        assert res["item_id"] == "223769494"
+        # Ověření, že byl dotazován globální search nebo normalizovaná subdoména (nikoliv https://Dětské potřeby/...)
+        called_url = mock_get.call_args[0][0]
+        assert "Dětské" not in called_url
+        assert "bazos.cz" in called_url
+
+def test_browser_inspect_detects_502_bad_gateway(client):
+    mock_page = MagicMock()
+    mock_page.is_closed.return_value = False
+    mock_page.url = "https://deti.bazos.cz/pridat-inzerat.php"
+    mock_page.content.return_value = "<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>nginx</center></body></html>"
+    mock_page.evaluate.return_value = {
+        "title": "502 Bad Gateway",
+        "url": "https://deti.bazos.cz/pridat-inzerat.php",
+        "inputs": [],
+        "buttons": [],
+        "alerts": []
+    }
+
+    with patch("app.session_manager.running", True), \
+         patch("app.session_manager.page", mock_page), \
+         patch("app.session_manager.run_on_worker", side_effect=lambda fn: fn(mock_page)):
+        res = client.get("/api/browser/inspect")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["is_gateway_error"] is True
+        assert data["detected_step"] == "gateway_502"
+        assert "502 Bad Gateway" in data["step_description"]
+
+def test_browser_inspect_recovers_from_navigation_destroy(client):
+    mock_page = MagicMock()
+    mock_page.is_closed.return_value = False
+    mock_page.url = "https://deti.bazos.cz/pridat-inzerat.php"
+    mock_page.content.return_value = ""
+    mock_page.evaluate.side_effect = Exception("Execution context was destroyed, most likely because of a navigation.")
+
+    with patch("app.session_manager.running", True), \
+         patch("app.session_manager.page", mock_page), \
+         patch("app.session_manager.run_on_worker", side_effect=lambda fn: fn(mock_page)):
+        res = client.get("/api/browser/inspect")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "running"
+        assert data["detected_step"] == "navigating"
+
+
 
 
 

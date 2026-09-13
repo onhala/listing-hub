@@ -568,96 +568,141 @@ def browser_inspect():
         if not page or page.is_closed():
             return {"status": "closed"}
         
-        info = page.evaluate(r"""() => {
-            const inputs = Array.from(document.querySelectorAll('input, textarea, select')).map(el => {
-                const rect = el.getBoundingClientRect();
-                const isVis = (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden');
-                let valPreview = '';
-                if (el.type === 'password') {
-                    valPreview = el.value ? '***' : '';
-                } else if (el.type === 'checkbox') {
-                    valPreview = el.checked ? 'zaškrtnuto' : 'nezaškrtnuto';
-                } else {
-                    valPreview = el.value ? (el.value.length > 25 ? el.value.substring(0, 25) + '...' : el.value) : '';
-                }
-                return {
-                    tag: el.tagName.toLowerCase(),
-                    type: el.type || '',
-                    name: el.name || '',
-                    id: el.id || '',
-                    placeholder: el.placeholder || '',
-                    value: valPreview,
-                    visible: isVis,
-                    focused: (document.activeElement === el),
-                    disabled: el.disabled || el.readOnly
-                };
-            });
+        try:
+            cur_url = getattr(page, "url", "") or ""
+            page_content = ""
+            try:
+                page_content = (page.content() or "").lower()
+            except Exception:
+                pass
 
-            const buttons = Array.from(document.querySelectorAll('input[type="submit"], button')).map(el => {
-                const rect = el.getBoundingClientRect();
-                const isVis = (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden');
-                return {
-                    tag: el.tagName.toLowerCase(),
-                    text: (el.value || el.innerText || '').trim(),
-                    visible: isVis,
-                    type: el.type || 'button'
-                };
-            }).filter(b => b.visible && b.text.length > 0);
+            is_gateway_error = (
+                "502 bad gateway" in page_content or 
+                "500 internal server" in page_content or 
+                "504 gateway time-out" in page_content or 
+                "504 gateway timeout" in page_content
+            )
 
-            const alerts = Array.from(document.querySelectorAll('.upozorneni, .chyba, font[color="red"], span[style*="red"], div[style*="red"], p[style*="red"]'))
-                .map(el => el.innerText.trim())
-                .filter(txt => txt.length > 0 && txt.length < 250);
+            info = page.evaluate(r"""() => {
+                const inputs = Array.from(document.querySelectorAll('input, textarea, select')).map(el => {
+                    const rect = el.getBoundingClientRect();
+                    const isVis = (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden');
+                    let valPreview = '';
+                    if (el.type === 'password') {
+                        valPreview = el.value ? '***' : '';
+                    } else if (el.type === 'checkbox') {
+                        valPreview = el.checked ? 'zaškrtnuto' : 'nezaškrtnuto';
+                    } else {
+                        valPreview = el.value ? (el.value.length > 25 ? el.value.substring(0, 25) + '...' : el.value) : '';
+                    }
+                    return {
+                        tag: el.tagName.toLowerCase(),
+                        type: el.type || '',
+                        name: el.name || '',
+                        id: el.id || '',
+                        placeholder: el.placeholder || '',
+                        value: valPreview,
+                        visible: isVis,
+                        focused: (document.activeElement === el),
+                        disabled: el.disabled || el.readOnly
+                    };
+                });
+
+                const buttons = Array.from(document.querySelectorAll('input[type="submit"], button')).map(el => {
+                    const rect = el.getBoundingClientRect();
+                    const isVis = (rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden');
+                    return {
+                        tag: el.tagName.toLowerCase(),
+                        text: (el.value || el.innerText || '').trim(),
+                        visible: isVis,
+                        type: el.type || 'button'
+                    };
+                }).filter(b => b.visible && b.text.length > 0);
+
+                const alerts = Array.from(document.querySelectorAll('.upozorneni, .chyba, font[color="red"], span[style*="red"], div[style*="red"], p[style*="red"]'))
+                    .map(el => el.innerText.trim())
+                    .filter(txt => txt.length > 0 && txt.length < 250);
+
+                return {
+                    url: window.location.href,
+                    title: document.title,
+                    inputs: inputs.filter(i => i.visible || i.type === 'hidden'),
+                    buttons: buttons,
+                    alerts: alerts
+                };
+            }""")
+
+            title_str = (info.get("title") or "").lower()
+            if "502 bad gateway" in title_str or "504 gateway" in title_str:
+                is_gateway_error = True
+
+            inputs = info.get("inputs", [])
+            has_klic = any(i.get("name") == "klic" and i.get("visible") for i in inputs)
+            has_kodd = any(i.get("name") == "kodd" and i.get("visible") for i in inputs)
+            has_teloverit = any(i.get("name") == "teloverit" and i.get("visible") for i in inputs)
+            has_nadpis = any(i.get("name") == "nadpis" and i.get("visible") for i in inputs)
+            has_login_mail = any(i.get("name") in ("mail", "email") and i.get("visible") for i in inputs)
+
+            detected_step = "other"
+            step_description = "Běžná stránka"
+            if is_gateway_error:
+                detected_step = "gateway_502"
+                step_description = "Bazoš vrátil 502 Bad Gateway (častý timeout při ukládání fotek). Inzerát je obvykle v pořádku vytvořen."
+            elif has_klic:
+                detected_step = "sms_new_ad"
+                step_description = "Bazoš: Zadání SMS Mobilního klíče ('klic') pro vystavení nového inzerátu"
+            elif has_kodd:
+                detected_step = "sms_login"
+                step_description = "Bazoš: Zadání SMS ověřovacího kódu ('kodd') pro přihlášení / správu"
+            elif has_teloverit:
+                detected_step = "phone_new_ad"
+                step_description = "Bazoš: Krok 1 – Zadání telefonního čísla ('teloverit')"
+            elif has_nadpis:
+                detected_step = "ad_form"
+                step_description = "Bazoš: Formulář inzerátu (pole 'nadpis' připraveno)"
+            elif has_login_mail:
+                detected_step = "login_form"
+                step_description = "Bazoš: Přihlašovací formulář (e-mail a telefon)"
 
             return {
-                url: window.location.href,
-                title: document.title,
-                inputs: inputs.filter(i => i.visible || i.type === 'hidden'),
-                buttons: buttons,
-                alerts: alerts
-            };
-        }""")
-
-        inputs = info.get("inputs", [])
-        has_klic = any(i.get("name") == "klic" and i.get("visible") for i in inputs)
-        has_kodd = any(i.get("name") == "kodd" and i.get("visible") for i in inputs)
-        has_teloverit = any(i.get("name") == "teloverit" and i.get("visible") for i in inputs)
-        has_nadpis = any(i.get("name") == "nadpis" and i.get("visible") for i in inputs)
-        has_login_mail = any(i.get("name") in ("mail", "email") and i.get("visible") for i in inputs)
-
-        detected_step = "other"
-        step_description = "Běžná stránka"
-        if has_klic:
-            detected_step = "sms_new_ad"
-            step_description = "Bazoš: Zadání SMS Mobilního klíče ('klic') pro vystavení nového inzerátu"
-        elif has_kodd:
-            detected_step = "sms_login"
-            step_description = "Bazoš: Zadání SMS ověřovacího kódu ('kodd') pro přihlášení / správu"
-        elif has_teloverit:
-            detected_step = "phone_new_ad"
-            step_description = "Bazoš: Krok 1 – Zadání telefonního čísla ('teloverit')"
-        elif has_nadpis:
-            detected_step = "ad_form"
-            step_description = "Bazoš: Formulář inzerátu (pole 'nadpis' připraveno)"
-        elif has_login_mail:
-            detected_step = "login_form"
-            step_description = "Bazoš: Přihlašovací formulář (e-mail a telefon)"
-
-        return {
-            "status": "running",
-            "url": info.get("url", ""),
-            "title": info.get("title", ""),
-            "detected_step": detected_step,
-            "step_description": step_description,
-            "inputs": inputs,
-            "buttons": info.get("buttons", []),
-            "alerts": info.get("alerts", [])
-        }
+                "status": "running",
+                "url": info.get("url", cur_url),
+                "title": info.get("title", ""),
+                "detected_step": detected_step,
+                "step_description": step_description,
+                "is_gateway_error": is_gateway_error,
+                "inputs": inputs,
+                "buttons": info.get("buttons", []),
+                "alerts": info.get("alerts", [])
+            }
+        except Exception as eval_err:
+            log_debug(f"browser_inspect eval error (page likely navigating): {eval_err}")
+            return {
+                "status": "running",
+                "url": getattr(page, "url", ""),
+                "title": "",
+                "detected_step": "navigating",
+                "step_description": "Stránka se načítá...",
+                "is_gateway_error": False,
+                "inputs": [],
+                "buttons": [],
+                "alerts": []
+            }
 
     try:
         res = session_manager.run_on_worker(_inspect)
         return jsonify(res)
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        log_debug(f"browser_inspect worker error: {e}")
+        return jsonify({
+            "status": "running",
+            "detected_step": "busy",
+            "step_description": "Prohlížeč zpracovává požadavek...",
+            "is_gateway_error": False,
+            "inputs": [],
+            "buttons": [],
+            "alerts": []
+        })
 
 @app.route("/api/browser/fill-field", methods=["POST"])
 def browser_fill_field():
@@ -1602,12 +1647,15 @@ def _lookup_bazos_ad_by_title_or_phone(title: str, phone: str = "", domain: str 
     import requests, re
     from bs4 import BeautifulSoup
     from urllib.parse import quote
+    from listing_hub.portals.bazos.categories import get_target_domain
 
     clean_title = (title or "").strip()
     if not clean_title:
         return None
 
-    clean_domain = domain.strip() if domain else "dum.bazos.cz"
+    clean_domain = (domain or "").strip()
+    if not clean_domain.endswith(".bazos.cz"):
+        clean_domain = get_target_domain(title=clean_title, category=clean_domain)
     if "/" in clean_domain:
         clean_domain = clean_domain.split("/")[0]
 
@@ -1615,44 +1663,100 @@ def _lookup_bazos_ad_by_title_or_phone(title: str, phone: str = "", domain: str 
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    # 1. Vyhledání na dané subdoméně Bazoše podle názvu
-    search_term = clean_title[:35].strip()
-    search_url = f"https://{clean_domain}/hledat/?hledat={quote(search_term)}"
-    try:
-        resp = requests.get(search_url, headers=headers, timeout=8.0)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for h2 in soup.find_all("h2", class_="nadpis"):
-                a_tag = h2.find("a")
-                if not a_tag:
-                    continue
-                href = a_tag.get("href", "")
-                ad_title = a_tag.text.strip()
-                if ad_title and (clean_title.lower() in ad_title.lower() or ad_title.lower() in clean_title.lower() or clean_title[:20].lower() in ad_title.lower()):
-                    full_url = href if href.startswith("http") else f"https://{clean_domain}{href}"
-                    item_id_m = re.search(r'/inzerat/(\d+)/', full_url)
-                    return {
-                        "url": full_url,
-                        "item_id": item_id_m.group(1) if item_id_m else None,
-                        "title": ad_title
-                    }
-    except Exception as e:
-        log_debug(f"Fallback Bazoš search error: {e}")
+    def _matches_title(target_title, candidate_title):
+        t1 = (target_title or "").lower().strip()
+        t2 = (candidate_title or "").lower().strip()
+        if not t1 or not t2:
+            return False
+        if t1 in t2 or t2 in t1:
+            return True
+        # Shoda prvních 20 znaků
+        if len(t1) >= 15 and t1[:20] in t2:
+            return True
+        # Tokenová shoda: pokud alespoň 60 % slov o délce >= 3 znaky sedí
+        words1 = set(w for w in re.findall(r'\w+', t1) if len(w) >= 3)
+        words2 = set(w for w in re.findall(r'\w+', t2) if len(w) >= 3)
+        if words1 and len(words1 & words2) / len(words1) >= 0.6:
+            return True
+        return False
 
-    # 2. Vyhledání podle telefonu uživatele
+    # Příprava variant hledacích výrazů: celý oříznutý a první 3-4 významová slova
+    search_terms = [clean_title[:35].strip()]
+    tokens = [w for w in clean_title.split() if len(w) >= 3]
+    if len(tokens) >= 2:
+        short_term = " ".join(tokens[:4])
+        if short_term not in search_terms:
+            search_terms.append(short_term)
+
+    # 1. Globální vyhledávání na www.bazos.cz (prohledává všech 20 subdomén)
+    for term in search_terms:
+        if not term:
+            continue
+        global_url = f"https://www.bazos.cz/search.php?hledat={quote(term)}"
+        try:
+            resp = requests.get(global_url, headers=headers, timeout=8.0)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for h2 in soup.find_all("h2", class_="nadpis"):
+                    a_tag = h2.find("a")
+                    if not a_tag:
+                        continue
+                    href = a_tag.get("href", "")
+                    ad_title = a_tag.get_text(strip=True)
+                    if _matches_title(clean_title, ad_title):
+                        full_url = href if href.startswith("http") else f"https://{clean_domain}{href}"
+                        item_id_m = re.search(r'/inzerat/(\d+)/', full_url)
+                        return {
+                            "url": full_url,
+                            "item_id": item_id_m.group(1) if item_id_m else None,
+                            "title": ad_title
+                        }
+        except Exception as e:
+            log_debug(f"Global Bazoš search error for '{term}': {e}")
+
+    # 2. Vyhledávání na konkrétní subdoméně Bazoše
+    for term in search_terms:
+        if not term:
+            continue
+        subdomain_url = f"https://{clean_domain}/hledat/?hledat={quote(term)}"
+        try:
+            resp = requests.get(subdomain_url, headers=headers, timeout=8.0)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for h2 in soup.find_all("h2", class_="nadpis"):
+                    a_tag = h2.find("a")
+                    if not a_tag:
+                        continue
+                    href = a_tag.get("href", "")
+                    ad_title = a_tag.get_text(strip=True)
+                    if _matches_title(clean_title, ad_title):
+                        full_url = href if href.startswith("http") else f"https://{clean_domain}{href}"
+                        item_id_m = re.search(r'/inzerat/(\d+)/', full_url)
+                        return {
+                            "url": full_url,
+                            "item_id": item_id_m.group(1) if item_id_m else None,
+                            "title": ad_title
+                        }
+        except Exception as e:
+            log_debug(f"Subdomain Bazoš search error for '{term}': {e}")
+
+    # 3. Vyhledání podle telefonu uživatele
     if phone:
         clean_phone = "".join(c for c in phone if c.isdigit())
         if len(clean_phone) >= 9:
             clean_phone = clean_phone[-9:]
-            phone_url = f"https://www.bazos.cz/hodnoceni.php?tel={clean_phone}"
+            phone_url = f"https://www.bazos.cz/search.php?hledat={clean_phone}"
             try:
                 resp = requests.get(phone_url, headers=headers, timeout=8.0)
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    for a_tag in soup.find_all("a", href=re.compile(r'/inzerat/\d+/')):
-                        ad_title = a_tag.text.strip()
+                    for h2 in soup.find_all("h2", class_="nadpis"):
+                        a_tag = h2.find("a")
+                        if not a_tag:
+                            continue
                         href = a_tag.get("href", "")
-                        if ad_title and (clean_title.lower() in ad_title.lower() or ad_title.lower() in clean_title.lower()):
+                        ad_title = a_tag.get_text(strip=True)
+                        if _matches_title(clean_title, ad_title):
                             full_url = href if href.startswith("http") else f"https://{clean_domain}{href}"
                             item_id_m = re.search(r'/inzerat/(\d+)/', full_url)
                             return {
@@ -1742,7 +1846,13 @@ def confirm_action():
         if not new_url and listing:
             # Pokus o dohledání inzerátu na Bazoši při chybě 502 nebo výpadku přesměrování
             _, user_config = load_data()
-            ad_domain = listing.get("category") or "dum.bazos.cz"
+            from listing_hub.portals.bazos.categories import get_target_domain
+            ad_domain = get_target_domain(
+                title=listing.get("title", ""),
+                original_url=old_portal_url or listing.get("url", ""),
+                category=listing.get("category", ""),
+                description=listing.get("description", "")
+            )
             fallback_hit = _lookup_bazos_ad_by_title_or_phone(
                 title=listing.get("title", ""),
                 phone=user_config.get("phone", ""),
@@ -1752,6 +1862,11 @@ def confirm_action():
                 new_url = fallback_hit["url"]
                 recovered_from_error = True
                 log_debug(f"Recovered new ad URL via fallback lookup: {new_url}")
+                # Okamžitě navigujeme Playwright na nalezený inzerát, aby screencast nezůstal viset na chybě 502
+                try:
+                    session_manager.run_on_worker(lambda p, *_: p.goto(new_url, timeout=15000))
+                except Exception as nav_e:
+                    log_debug(f"Nepodařilo se přesměrovat stránku na dohledanou URL: {nav_e}")
 
         if not new_url and inspect_res.get("is_gateway_error"):
             return jsonify({

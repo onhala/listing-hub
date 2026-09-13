@@ -2754,9 +2754,30 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // Skryjeme banner kontroly z předchozích akcí
+        // Skryjeme a resetujeme banner kontroly z předchozích akcí
         if (browserReviewBanner) {
             browserReviewBanner.style.display = "none";
+            browserReviewBanner.style.background = "rgba(16, 185, 129, 0.15)";
+            browserReviewBanner.style.borderColor = "rgba(16, 185, 129, 0.4)";
+            const bannerIcon = browserReviewBanner.querySelector(".fa-circle-check, .fa-triangle-exclamation");
+            if (bannerIcon) {
+                bannerIcon.className = "fa-solid fa-circle-check";
+                bannerIcon.style.color = "#10b981";
+            }
+            const textContainer = browserReviewBanner.querySelector("div > div");
+            if (textContainer) {
+                textContainer.innerHTML = `
+                    <div style="font-weight: 600; font-size: 0.95rem;">Formulář inzerátu byl předvyplněn!</div>
+                    <div style="font-size: 0.8rem; color: #cbd5e1;">Zkontroluj údaje na obrazovce, v prohlížeči klikni na <strong>Odeslat</strong> a poté potvrď zde:</div>
+                `;
+            }
+            const confirmBtn = document.getElementById("btn-browser-confirm-post");
+            if (confirmBtn) {
+                confirmBtn.style.background = "#10b981";
+                confirmBtn.style.borderColor = "#059669";
+                confirmBtn.style.boxShadow = "0 4px 12px rgba(16, 185, 129, 0.4)";
+                confirmBtn.innerHTML = `<i class="fa-solid fa-check"></i> Potvrdit odeslání`;
+            }
         }
 
         // Automaticky přepnout na záložku s živým prohlížečem, aby uživatel viděl spuštěné okno
@@ -4531,6 +4552,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 browserStepBadge.style.background = "rgba(139, 92, 246, 0.25)";
                 browserStepBadge.style.color = "#c4b5fd";
                 browserStepBadge.style.border = "1px solid rgba(139, 92, 246, 0.4)";
+            } else if (step === "gateway_502") {
+                browserStepBadge.textContent = "⚠️ 502 Bad Gateway (Bazoš)";
+                browserStepBadge.style.background = "rgba(245, 158, 11, 0.25)";
+                browserStepBadge.style.color = "#fcd34d";
+                browserStepBadge.style.border = "1px solid rgba(245, 158, 11, 0.4)";
+            } else if (step === "navigating" || step === "busy") {
+                browserStepBadge.textContent = "⏳ Načítám...";
+                browserStepBadge.style.background = "rgba(59, 130, 246, 0.25)";
+                browserStepBadge.style.color = "#93c5fd";
+                browserStepBadge.style.border = "1px solid rgba(59, 130, 246, 0.4)";
             } else if (step === "closed") {
                 browserStepBadge.textContent = "Prohlížeč neběží";
                 browserStepBadge.style.background = "rgba(255, 255, 255, 0.05)";
@@ -4584,6 +4615,33 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 updateBrowserStepBadge(data.detected_step, data.step_description);
+
+                // Dynamická reakce na 502 Bad Gateway po odeslání inzerátu
+                if (data.is_gateway_error || data.detected_step === "gateway_502") {
+                    if (browserReviewBanner && browserReviewBanner.style.display !== "none") {
+                        browserReviewBanner.style.background = "rgba(245, 158, 11, 0.2)";
+                        browserReviewBanner.style.borderColor = "rgba(245, 158, 11, 0.6)";
+                        const bannerIcon = browserReviewBanner.querySelector(".fa-circle-check, .fa-triangle-exclamation");
+                        if (bannerIcon) {
+                            bannerIcon.className = "fa-solid fa-triangle-exclamation";
+                            bannerIcon.style.color = "#f59e0b";
+                        }
+                        const textContainer = browserReviewBanner.querySelector("div > div");
+                        if (textContainer) {
+                            textContainer.innerHTML = `
+                                <div style="font-weight: 700; font-size: 0.95rem; color: #fde68a;">Bazoš vrátil 502 Bad Gateway (častý timeout při ukládání fotek)</div>
+                                <div style="font-size: 0.82rem; color: #fef3c7;">Inzerát byl v databázi Bazoše pravděpodobně úspěšně vytvořen! Klikni na <strong>Potvrdit odeslání</strong> pro automatické dohledání a uložení:</div>
+                            `;
+                        }
+                        const confirmBtn = document.getElementById("btn-browser-confirm-post");
+                        if (confirmBtn) {
+                            confirmBtn.style.background = "#f59e0b";
+                            confirmBtn.style.borderColor = "#d97706";
+                            confirmBtn.style.boxShadow = "0 0 16px rgba(245, 158, 11, 0.6)";
+                            confirmBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Dohledat a potvrdit`;
+                        }
+                    }
+                }
 
                 // Vykreslíme rychlé čipy polí pod screencastem
                 if (browserDetectedFields) {
