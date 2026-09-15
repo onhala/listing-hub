@@ -85,7 +85,18 @@ def init_db() -> None:
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_pubs_listing ON listing_publications(listing_id, portal_name)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_pubs_url ON listing_publications(url)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_pubs_item_id ON listing_publications(portal_item_id)")
+        # Tabulka historie zhlédnutí pro sledování trendů (časové řady)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS listing_views_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                listing_id TEXT NOT NULL,
+                portal_name TEXT NOT NULL,
+                views INTEGER NOT NULL,
+                recorded_at TEXT NOT NULL,
+                FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_views_hist_time ON listing_views_history(listing_id, recorded_at)")
 
         # Automatická migrace: prodejní atributy pro archivaci prodaných věcí
         for col, col_type in [("sale_price", "INTEGER"), ("sold_at", "TEXT"), ("sold_notes", "TEXT"), ("sold_channel", "TEXT")]:
@@ -623,6 +634,86 @@ def get_sold_statistics(include_channels: bool = False) -> Dict[str, Any]:
             res["by_channel"] = {r["channel"]: {"count": r["count"], "profit": int(r["profit"] or 0)} for r in channel_rows}
 
         return res
+    finally:
+        conn.close()
+
+def record_views_snapshot(listing_id: str, portal_name: str, views: int) -> None:
+    """Zaznamená snapshot počtu zhlédnutí pro časové řady a sledování trendů."""
+    if views is None or views < 0 or not listing_id or not portal_name:
+        return
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        now_str = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO listing_views_history (listing_id, portal_name, views, recorded_at)
+            VALUES (?, ?, ?, ?)
+        """, (listing_id, portal_name, int(views), now_str))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_metrics_snapshot_data() -> Dict[str, Any]:
+    """Získá kompletní sadu dat potřebnou pro sestavení Prometheus metrik."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Aktivní inzeráty a jejich zhlédnutí podle portálu
+        cursor.execute("""
+            SELECT l.id, l.title, l.price, l.category, l.days_old, l.created_at,
+                   ps.portal_name, ps.views, ps.is_top, ps.status as portal_status, ps.last_synced
+            FROM listings l
+            JOIN portal_states ps ON l.id = ps.listing_id
+            WHERE ps.status = 'Aktivní'
+        """)
+        active_portal_rows = [dict(r) for r in cursor.fetchall()]
+
+        # 2. Celkový počet inzerátů dle životního cyklu (active, sold, unsold)
+        cursor.execute("""
+            SELECT 
+                COUNT(DISTINCT l.id) as count,
+                CASE 
+                    WHEN l.sold_at IS NOT NULL OR EXISTS (
+                        SELECT 1 FROM portal_states ps2 WHERE ps2.listing_id = l.id AND ps2.status IN ('Prodané', 'Sold', 'prodané')
+                    ) THEN 'sold'
+                    WHEN EXISTS (
+                        SELECT 1 FROM portal_states ps3 WHERE ps3.listing_id = l.id AND ps3.status = 'Aktivní'
+                    ) THEN 'active'
+                    ELSE 'unsold'
+                END as lifecycle_status
+            FROM listings l
+            GROUP BY lifecycle_status
+        """)
+        counts_by_status = {r["lifecycle_status"]: r["count"] for r in cursor.fetchall()}
+
+        # 3. Sumární statistiky prodaných položek
+        sold_stats = get_sold_statistics(include_channels=True)
+
+        # 4. Portálové agregace (počet inzerátů a celková zhlédnutí dle portálu)
+        cursor.execute("""
+            SELECT portal_name, COUNT(*) as active_count, SUM(COALESCE(views, 0)) as total_views, MAX(last_synced) as last_sync
+            FROM portal_states
+            WHERE status = 'Aktivní'
+            GROUP BY portal_name
+        """)
+        portal_aggs = [dict(r) for r in cursor.fetchall()]
+
+        # 5. Celková hodnota aktivních inzerátů (unikátní inzeráty s alespoň jedním aktivním portálem)
+        cursor.execute("""
+            SELECT SUM(COALESCE(price, 0)) as active_value
+            FROM listings
+            WHERE id IN (SELECT DISTINCT listing_id FROM portal_states WHERE status = 'Aktivní')
+        """)
+        row_val = cursor.fetchone()
+        active_inventory_value = int(row_val["active_value"] or 0) if row_val else 0
+
+        return {
+            "active_portal_listings": active_portal_rows,
+            "counts_by_status": counts_by_status,
+            "sold_stats": sold_stats,
+            "portal_aggs": portal_aggs,
+            "active_inventory_value": active_inventory_value
+        }
     finally:
         conn.close()
 

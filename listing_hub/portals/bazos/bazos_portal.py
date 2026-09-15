@@ -14,7 +14,7 @@ from listing_hub.portals.base import AbstractPortal
 from listing_hub.portals.bazos.session import session_manager
 from listing_hub.portals.bazos.categories import extract_ad_id, get_target_domain
 from listing_hub.portals.bazos.scraper import scrape_listings_from_html
-from listing_hub.core.db import save_listing, get_all_listings, get_publication_by_url_or_item_id
+from listing_hub.core.db import save_listing, get_all_listings, get_publication_by_url_or_item_id, record_views_snapshot
 from listing_hub.core.config import PHOTOS_DIR, PROJECT_ROOT, SESSION_STATE_PATH
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
@@ -435,6 +435,8 @@ class BazosPortal(AbstractPortal):
                     "top_info": _top_inf,
                 }
                 save_listing(local_ad, {"bazos": bazos_state_data})
+                if local_ad.get("id") and best_scraped_match.get("views") is not None:
+                    record_views_snapshot(local_ad["id"], "bazos", best_scraped_match["views"])
                 
                 # Stáhnout fotky z Bazoše pouze pokud lokální složka neobsahuje žádné fotky
                 download_bazos_photos_if_missing(best_scraped_match["url"], local_ad.get("local_photos_dir", ""))

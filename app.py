@@ -26,6 +26,7 @@ from listing_hub.ai.vision import analyze_photos_with_vision
 from listing_hub.core.version import get_version_status, is_docker
 from listing_hub.core.calendar import generate_ical_feed
 from listing_hub.ai.photo_editor import process_photo_pipeline
+from listing_hub.metrics import generate_prometheus_metrics
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -1321,6 +1322,16 @@ def get_refresh_status():
         "last_refresh_time": user_config.get("last_refresh_time", ""),
         "is_running": playwright_process.is_alive() if playwright_process else False
     })
+
+@app.route("/metrics", methods=["GET"])
+def prometheus_metrics():
+    """Prometheus exposition format endpoint pro centrální monitoring (Grafana)."""
+    try:
+        content = generate_prometheus_metrics()
+        return Response(content, mimetype="text/plain; version=0.0.4; charset=utf-8")
+    except Exception as e:
+        app.logger.error(f"Error generating Prometheus metrics: {e}")
+        return Response(f"# Error generating metrics: {e}\nlistinghub_up 0\n", status=500, mimetype="text/plain; charset=utf-8")
 
 @app.route("/api/calendar/feed.ics", methods=["GET"])
 def get_calendar_feed():
