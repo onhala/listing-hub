@@ -145,6 +145,12 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
     - **EXIF Sanitace & Auto-Orient**: Odstranění GPS souřadnic domova a metadat z fotografií při nahrání s automatickým narovnáním rotace z mobilních telefonů.
     - **Webhook pro SMS ověření (`POST /api/sms/relay`)**: Přijímá SMS kódy z iOS Zkratek nebo Android Taskeru a automaticky je předává Playwright robotovi.
 
+22. **Prometheus Metriky & Monitoring v Grafaně (`GET /metrics`)**:
+    - **OpenMetrics / Prometheus Exporter**: Nativní endpoint `GET /metrics` exportující metriky zhlédnutí inzerátů, trendů, expiračních lhůt, prodejních statistik a stavu workerů.
+    - **Historické snapshoty zhlédnutí**: Automatické ukládání historie zhlédnutí při synchronizaci inzerátů pro sledování rychlosti růstu popularity (`listing_views_history`).
+    - **Metriky úspěšnosti a fotografií**: Korelace počtu fotografií s rychlostí prodeje (`days_to_sell`, `photos_count`), hlídání expiračních lhůt (countdown do smazání Bazošem) a SMS guard monitoring.
+
+
 
 ---
 
@@ -181,6 +187,10 @@ Kompletní specifikace a parametry jsou detailně popsány ve [Vývojářské p�
 - `POST /api/action/confirm` – Potvrzení odeslání inzerátu (Fáze 2 HITL protokolu).
 - `POST /api/action/cancel` – Zrušení běžící akce a uvolnění prohlížeče.
 - `POST /api/action/repost_with_new_price` – Přenastavení ceny a bezpečné znovuvystavení inzerátu (topování).
+
+### Metriky & Monitoring (Prometheus)
+- `GET /metrics` – Nativní Prometheus OpenMetrics (0.0.4) formát se statistikami zhlédnutí, expirací, prodejů a stavu automatizací pro scraping TrueNAS Prometheus serverem.
+
 
 
 ---

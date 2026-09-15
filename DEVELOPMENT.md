@@ -261,6 +261,24 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
 - `GET /api/calendar/feed.ics?token=<token>`
   - Webcal / iCal feed s termíny vypršení 60denní platnosti inzerátů a archívem prodejů.
 
+### Monitoring & Prometheus Telemetrie:
+- `GET /metrics`
+  - Vrací standardní formát Prometheus text exposition (version 0.0.4 / OpenMetrics) pro centrální sběr v Prometheu a Grafaně.
+  - Poskytuje klíčové metriky:
+    - `listinghub_up`: Indikátor běhu a dostupnosti služby (1 = online).
+    - `listinghub_listing_views`: Aktuální zhlédnutí inzerátu dle portálu a kategorie.
+    - `listinghub_listing_views_total`: Celkový kumulativní součet zhlédnutí aktivních inzerátů.
+    - `listinghub_listing_days_to_expire`: Zbývající počet dnů do 60denní expirace na Bazoši (`max(0, 60 - days_old)`).
+    - `listinghub_listing_photos_count`: Počet fotografií nahraných u inzerátu.
+    - `listinghub_active_inventory_value_czk`: Souhrnná nabídková hodnota aktivního skladu v Kč.
+    - `listinghub_listing_days_old`: Stáří inzerátů ve dnech (detekce ležáků).
+    - `listinghub_portal_listings_count` & `listinghub_portal_views_total`: Statistiky rozdělené dle jednotlivých portálů (Bazoš, Sbazar, FB Marketplace, Vinted, Aukro).
+    - `listinghub_sales_total_czk` & `listinghub_sales_count_total`: Kumulativní realizované tržby a počet prodaných kusů.
+    - `listinghub_sales_avg_days_to_sell`: Průměrná doba do realizace prodeje ve dnech (*Time-to-Sell*).
+    - `listinghub_sales_by_channel_total_czk` & `listinghub_sales_by_channel_count`: Finanční atribuce dle prodejních kanálů.
+    - `listinghub_baza_auto_refresh_status`: Provozní stav auto-refresh workeru Bazoše (1 = OK, 0 = vyžaduje SMS nebo chyba).
+    - `listinghub_last_refresh_timestamp_seconds`: Unix timestamp posledního dokončeného refresh cyklu.
+
 ### AI Agent Interface (Antigravity & MCP):
 - `GET /api/agent/v1/summary`
   - Tokenově efektivní dashboard JSON: počty inzerátů (Aktivní, Koncepty, Prodané, V kontrole), inzeráty blížící se 60denní expiraci a stav Playwright workeru včetně SMS guardu.
