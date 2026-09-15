@@ -941,6 +941,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const cfg = getPortalBadgeConfig(normKey, state.portal_label);
             const label = escapeHtml(state.portal_label || cfg.name);
             const url = state.url || (normKey === "bazos" ? ad.url : "");
+            const viewsVal = (state.views !== undefined && state.views !== null) ? state.views : (normKey === "bazos" ? (ad.views || 0) : 0);
+            const viewsHtml = `
+                <span class="badge-portal-views" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" data-portal-label="${label}" data-views="${viewsVal}" data-url="${escapeHtml(url)}" style="cursor: pointer; display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(0, 0, 0, 0.32); border-radius: 4px; margin-left: 2px; font-size: 0.65rem;" title="Klikni pro změnu počtu zhlédnutí na ${label} (aktuálně: ${viewsVal})">
+                    <i class="fa-regular fa-eye" style="font-size: 0.6rem;"></i> ${viewsVal}
+                </span>
+            `;
 
             let actionHtml = "";
             if (url) {
@@ -950,8 +956,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             badgesHtml += `
-                <span class="portal-badge badge-${escapeHtml(normKey)}" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.3rem; background: ${cfg.bg}; color: ${cfg.color}; border: 1px solid ${cfg.border};">
-                    <i class="${cfg.icon}"></i> ${label} ${actionHtml}
+                <span class="portal-badge badge-${escapeHtml(normKey)}" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: ${cfg.bg}; color: ${cfg.color}; border: 1px solid ${cfg.border};">
+                    <i class="${cfg.icon}"></i> ${label} ${viewsHtml} ${actionHtml}
                 </span>
             `;
         });
@@ -1018,6 +1024,76 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch (err) {
             showNotification("Chyba při ukládání odkazu: " + err.message, "error");
+        }
+    };
+
+    const promptUpdatePortalViews = async (listingId, portalName, portalLabel, currentViews, url, spanElement) => {
+        let msg = `Zadej aktuální počet zhlédnutí pro ${portalLabel}:`;
+        if (url && (url.includes("sportovnivozy.cz") || url.includes("rajveteranu.cz") || url.includes("motorkari.cz") || url.includes("bazos.cz"))) {
+            msg += "\n(Tip: Pro automatické stažení z webu zadej 'auto' nebo nech pole prázdné)";
+        }
+        const input = prompt(msg, currentViews !== undefined && currentViews !== null ? currentViews : 0);
+        if (input === null) return;
+        const cleanInput = input.trim().toLowerCase();
+
+        if (cleanInput === "auto" || (cleanInput === "" && url)) {
+            try {
+                showNotification(`Stahuji zhlédnutí z webu pro ${portalLabel}...`, "info");
+                const res = await fetch(`/api/listings/${listingId}/portal-views-refresh`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ portal_name: portalName })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showNotification(data.message || `Zhlédnutí pro ${portalLabel} aktualizováno!`, "success");
+                    if (spanElement) {
+                        spanElement.innerHTML = `<i class="fa-regular fa-eye" style="font-size: 0.6rem;"></i> ${data.views}`;
+                        spanElement.setAttribute("data-views", data.views);
+                        spanElement.setAttribute("title", `Klikni pro změnu počtu zhlédnutí na ${portalLabel} (aktuálně: ${data.views})`);
+                    } else {
+                        loadListings();
+                    }
+                } else {
+                    showNotification(data.message || "Nepodařilo se automaticky stáhnout zhlédnutí.", "warning");
+                }
+            } catch (err) {
+                showNotification("Chyba při stahování: " + err.message, "error");
+            }
+            return;
+        }
+
+        const viewsNum = parseInt(cleanInput, 10);
+        if (isNaN(viewsNum) || viewsNum < 0) {
+            showNotification("Zadej platné nezáporné číslo zhlédnutí.", "error");
+            return;
+        }
+
+        try {
+            showNotification(`Ukládám zhlédnutí pro ${portalLabel}...`, "info");
+            const res = await fetch(`/api/listings/${listingId}/portal-views`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    portal_name: portalName,
+                    views: viewsNum
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                showNotification(`Počet zhlédnutí pro ${portalLabel} nastaven na ${viewsNum}!`, "success");
+                if (spanElement) {
+                    spanElement.innerHTML = `<i class="fa-regular fa-eye" style="font-size: 0.6rem;"></i> ${viewsNum}`;
+                    spanElement.setAttribute("data-views", viewsNum);
+                    spanElement.setAttribute("title", `Klikni pro změnu počtu zhlédnutí na ${portalLabel} (aktuálně: ${viewsNum})`);
+                } else {
+                    loadListings();
+                }
+            } else {
+                showNotification(data.message || "Chyba při ukládání zhlédnutí.", "error");
+            }
+        } catch (err) {
+            showNotification("Chyba při ukládání zhlédnutí: " + err.message, "error");
         }
     };
 
@@ -1225,6 +1301,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 const portal = span.getAttribute("data-portal");
                 const pLabel = span.getAttribute("data-portal-label");
                 promptUpdatePortalUrl(listingId, portal, pLabel, "");
+            });
+        });
+
+        // 1-Click úprava a synchronizace zhlédnutí na portálových odznacích
+        card.querySelectorAll(".badge-portal-views").forEach(span => {
+            span.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const listingId = span.getAttribute("data-ad-id");
+                const portal = span.getAttribute("data-portal");
+                const pLabel = span.getAttribute("data-portal-label");
+                const curViews = parseInt(span.getAttribute("data-views") || "0", 10);
+                const url = span.getAttribute("data-url") || "";
+                promptUpdatePortalViews(listingId, portal, pLabel, curViews, url, span);
             });
         });
 

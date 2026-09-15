@@ -573,6 +573,55 @@ def update_listing_portal_url(listing_id: str, portal_name: str, url: str) -> bo
     finally:
         conn.close()
 
+def update_listing_portal_views(listing_id: str, portal_name: str, views: int) -> bool:
+    """Aktualizuje počet zhlédnutí pro konkrétní portál inzerátu a zapíše snapshot do historie."""
+    if views is None or views < 0 or not listing_id:
+        return False
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        clean_portal_name = (portal_name or "custom").strip().lower()
+        now_iso = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE portal_states
+            SET views = ?, last_synced = ?
+            WHERE listing_id = ? AND portal_name = ?
+        """, (int(views), now_iso, listing_id, clean_portal_name))
+        updated = cursor.rowcount > 0
+
+        # Aktualizujeme také listing_publications pokud existuje
+        cursor.execute("""
+            UPDATE listing_publications
+            SET views = ?
+            WHERE listing_id = ? AND portal_name = ?
+        """, (int(views), listing_id, clean_portal_name))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    if updated:
+        record_views_snapshot(listing_id, clean_portal_name, int(views))
+    return updated
+
+def get_active_external_portal_urls() -> List[Dict[str, Any]]:
+    """Vrátí všechny aktivní externí portály (mimo Bazoš), které mají vyplněnou platnou URL."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT ps.listing_id, ps.portal_name, ps.portal_label, ps.url, ps.views, l.title
+            FROM portal_states ps
+            JOIN listings l ON ps.listing_id = l.id
+            WHERE ps.status = 'Aktivní'
+              AND ps.portal_name != 'bazos'
+              AND ps.url IS NOT NULL
+              AND ps.url != ''
+        """)
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
 def restore_sold_listing(listing_id: str) -> bool:
     """Vrátí prodaný inzerát zpět mezi neprodané (Věci k prodeji)."""
     conn = get_db_connection()

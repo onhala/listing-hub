@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from listing_hub.core import db
 from listing_hub.core.db import save_listing, record_views_snapshot
 from listing_hub.metrics.exporter import generate_prometheus_metrics, sanitize_label_value, parse_iso_to_unix
@@ -189,4 +190,85 @@ def test_photo_counting_and_multi_portal(tmp_path, monkeypatch):
     # Zkontrolujeme obě portálové metriky
     assert 'listinghub_portal_listings_count{portal="bazos"} 1' in metrics
     assert 'listinghub_portal_listings_count{portal="sbazar"} 1' in metrics
+
+def test_update_listing_portal_views_and_history():
+    listing = {
+        "id": "ad-views-test",
+        "title": "Arteon Test",
+        "price": 650000,
+        "category": "auto"
+    }
+    portal_states = {
+        "custom": {
+            "portal_item_id": "cust1",
+            "url": "https://www.sportovnivozy.cz/123",
+            "status": "Aktivní",
+            "views": 0,
+            "portal_label": "Sportovní vozy"
+        }
+    }
+    save_listing(listing, portal_states)
+
+    # 1. Neplatné vstupy
+    assert not db.update_listing_portal_views("ad-views-test", "custom", -10)
+    assert not db.update_listing_portal_views("", "custom", 100)
+
+    # 2. Úspěšná aktualizace
+    assert db.update_listing_portal_views("ad-views-test", "custom", 715)
+
+    # Ověříme hodnotu v portal_states
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT views FROM portal_states WHERE listing_id = 'ad-views-test' AND portal_name = 'custom'")
+    assert cursor.fetchone()[0] == 715
+
+    # Ověříme, že vznikl záznam v listing_views_history
+    cursor.execute("SELECT views FROM listing_views_history WHERE listing_id = 'ad-views-test' AND portal_name = 'custom'")
+    assert cursor.fetchone()[0] == 715
+    conn.close()
+
+    # Ověříme get_active_external_portal_urls
+    ext_portals = db.get_active_external_portal_urls()
+    matching = [p for p in ext_portals if p["listing_id"] == "ad-views-test"]
+    assert len(matching) == 1
+    assert matching[0]["portal_name"] == "custom"
+    assert matching[0]["url"] == "https://www.sportovnivozy.cz/123"
+
+def test_api_update_portal_views_endpoint():
+    from app import app
+    client = app.test_client()
+
+    listing = {
+        "id": "ad-api-views",
+        "title": "Kolo Test",
+        "price": 5000,
+        "category": "sport"
+    }
+    portal_states = {
+        "facebook": {
+            "url": "https://facebook.com/item/1",
+            "status": "Aktivní",
+            "views": 0
+        }
+    }
+    save_listing(listing, portal_states)
+
+    # Neplatné volání bez views
+    res = client.post("/api/listings/ad-api-views/portal-views", json={"portal_name": "facebook"})
+    assert res.status_code == 400
+
+    # Úspěšná aktualizace na 145 zhlédnutí
+    res = client.post("/api/listings/ad-api-views/portal-views", json={"portal_name": "facebook", "views": 145})
+    assert res.status_code == 200
+    json_data = res.get_json()
+    assert json_data["status"] == "success"
+    assert json_data["views"] == 145
+
+    # Test auto-refresh s mockovaným scraperem
+    with patch("listing_hub.portals.scrapers.universal.scrape_listing_views", return_value=180):
+        res_ref = client.post("/api/listings/ad-api-views/portal-views-refresh", json={"portal_name": "facebook"})
+        assert res_ref.status_code == 200
+        assert res_ref.get_json()["status"] == "success"
+        assert res_ref.get_json()["views"] == 180
+
 

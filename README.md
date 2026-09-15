@@ -1,4 +1,4 @@
-# 🤖 Listing Hub & AI Editor v3.11.0
+# 🤖 Listing Hub & AI Editor v3.12.0
 
 Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s integrovaným asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů a automatickou synchronizací do Google Kalendáře.
 
@@ -178,6 +178,8 @@ Kompletní specifikace a parametry jsou detailně popsány ve [Vývojářské p�
 ### Multi-portál Evidence & Asistence
 - `POST /api/listings/<listing_id>/publish-manual` – Zaznamená ruční publikaci inzerátu na externím portálu (`portal_name`, `portal_label`, `url`, `notes`).
 - `POST /api/listings/<listing_id>/portal-url` – Rychlé doplnění nebo aktualizace URL odkazu na živý inzerát pro daný portál.
+- `POST /api/listings/<listing_id>/portal-views` – Nastavení aktuálního počtu zhlédnutí pro zvolený portál (`portal_name`, `views`) s okamžitým Prometheus snapshotem.
+- `POST /api/listings/<listing_id>/portal-views-refresh` – Automatické stažení a aktualizace zhlédnutí z externí URL (Sportovní vozy, Ráj veteránů, Motorkáři, Schema.org).
 - `GET /api/photos/<listing_id>/zip` – Zabalí a stáhne všechny fotografie inzerátu v jediném seřazeném ZIP balíčku.
 - `POST /api/sms/relay` – Webhook pro příjem a automatické vyplnění SMS ověřovacího kódu z mobilu (`text`, `code`, `token`).
 

@@ -219,6 +219,24 @@ def process_target(ad, user_config, action_type, extra_val, meta=None):
                 from listing_hub.core.config import load_user_config
                 BazosPortal().sync_listings(load_user_config())
                 log_debug("5. Done BazosPortal().sync_listings")
+
+                # 5b. Auto-scrape externích portálů (Sportovní vozy, Ráj veteránů, apod.)
+                try:
+                    from listing_hub.portals.scrapers.universal import scrape_listing_views
+                    external_portals = db.get_active_external_portal_urls()
+                    log_debug(f"5b. Found {len(external_portals)} external portal URLs to check")
+                    for ep in external_portals:
+                        url = ep.get("url")
+                        l_id = ep.get("listing_id")
+                        p_name = ep.get("portal_name")
+                        if url and l_id and p_name:
+                            scraped_val = scrape_listing_views(url)
+                            if scraped_val is not None:
+                                db.update_listing_portal_views(l_id, p_name, scraped_val)
+                                log_debug(f"Auto-scraped views for {p_name} ({l_id}): {scraped_val}")
+                            time.sleep(0.3)
+                except Exception as ext_scrape_err:
+                    log_debug(f"Non-fatal error during external portal scraping: {ext_scrape_err}")
                 
                 # Zaznamenáme čas úspěšné aktualizace
                 if CONFIG_PATH.exists():
@@ -1687,6 +1705,71 @@ def update_portal_url(listing_id):
         if success:
             return jsonify({"status": "success", "message": "URL byla úspěšně aktualizována."})
         return jsonify({"status": "error", "message": "Portál inzerátu nebyl nalezen."}), 404
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/<listing_id>/portal-views", methods=["POST"])
+def update_portal_views(listing_id):
+    """Aktualizuje počet zhlédnutí pro konkrétní portál inzerátu a zapíše snapshot pro Prometheus."""
+    try:
+        data = request.get_json(silent=True) or {}
+        portal_name = (data.get("portal_name") or "bazos").strip().lower()
+        views = data.get("views")
+        if views is None:
+            return jsonify({"status": "error", "message": "Chybí parametr views."}), 400
+        try:
+            views_int = int(views)
+            if views_int < 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            return jsonify({"status": "error", "message": "Počet zhlédnutí musí být nezáporné celé číslo."}), 400
+
+        success = db.update_listing_portal_views(listing_id, portal_name, views_int)
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": f"Počet zhlédnutí pro {portal_name} byl úspěšně aktualizován na {views_int}.",
+                "views": views_int,
+                "portal_name": portal_name
+            })
+        return jsonify({"status": "error", "message": "Inzerát nebo portál nebyl nalezen."}), 404
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/<listing_id>/portal-views-refresh", methods=["POST"])
+def refresh_portal_views(listing_id):
+    """Zkusí automaticky stáhnout a aktualizovat zhlédnutí z externí URL inzerátu."""
+    try:
+        data = request.get_json(silent=True) or {}
+        portal_name = (data.get("portal_name") or "custom").strip().lower()
+
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+
+        portal_states = listing.get("portal_states") or {}
+        portal_info = portal_states.get(portal_name) or {}
+        url = portal_info.get("url")
+        if not url:
+            return jsonify({"status": "error", "message": f"Pro portál {portal_name} není zadána žádná URL."}), 400
+
+        from listing_hub.portals.scrapers.universal import scrape_listing_views
+        scraped_views = scrape_listing_views(url)
+        if scraped_views is not None:
+            db.update_listing_portal_views(listing_id, portal_name, scraped_views)
+            return jsonify({
+                "status": "success",
+                "message": f"Zhlédnutí z webu úspěšně načteno: {scraped_views}.",
+                "views": scraped_views,
+                "portal_name": portal_name
+            })
+        else:
+            return jsonify({
+                "status": "warning",
+                "message": "Nepodařilo se automaticky detekovat zhlédnutí z webu. Zadejte prosím hodnotu ručně.",
+                "views": portal_info.get("views", 0),
+                "portal_name": portal_name
+            })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

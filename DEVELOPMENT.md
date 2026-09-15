@@ -214,6 +214,10 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
   - Vytvoří / aktualizuje záznam v `portal_states` se stavem `Aktivní`, uloží datum a volitelnou URL i poznámku.
 - `POST /api/listings/<listing_id>/portal-url` *(JSON payload: `{"portal_name": str, "url": str}`)*
   - Umožňuje rychlé doplnění nebo aktualizaci živého URL odkazu pro daný portál bez nutnosti otevírat celou editaci.
+- `POST /api/listings/<listing_id>/portal-views` *(JSON payload: `{"portal_name": str, "views": int}`)*
+  - Aktualizuje počet zhlédnutí pro zvolený portál v tabulkách `portal_states` i `listing_publications` a okamžitě zapíše snapshot do `listing_views_history` pro Prometheus metriky a Grafanu.
+- `POST /api/listings/<listing_id>/portal-views-refresh` *(JSON payload: `{"portal_name": str}`)*
+  - Načte uloženou URL pro daný portál a pomocí univerzálního 3úrovňového scraperu (`listing_hub/portals/scrapers/universal.py`) zkusí automaticky zjistit počet zhlédnutí z veřejného webu (např. Sportovní vozy, Ráj veteránů, Motorkáři, Schema.org).
 - `GET /api/photos/<listing_id>/zip`
   - Bleskově vygeneruje a streamuje in-memory ZIP archív (`fotky-<id>.zip`) obsahující všechny fotografie inzerátu přehledně seřazené pro snadné nahrání na externí inzertní servery.
 - `POST /api/sms/relay` *(JSON payload: `{"text": str|null, "code": str|null, "token": str|null}`)*
