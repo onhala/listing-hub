@@ -1,4 +1,4 @@
-# 🤖 Listing Hub & AI Editor v3.10.0
+# 🤖 Listing Hub & AI Editor v3.11.0
 
 Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s integrovaným asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů a automatickou synchronizací do Google Kalendáře.
 

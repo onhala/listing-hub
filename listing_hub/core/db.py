@@ -1,4 +1,6 @@
+import os
 import sqlite3
+from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Union
 from contextlib import contextmanager
@@ -660,13 +662,29 @@ def get_metrics_snapshot_data() -> Dict[str, Any]:
     try:
         # 1. Aktivní inzeráty a jejich zhlédnutí podle portálu
         cursor.execute("""
-            SELECT l.id, l.title, l.price, l.category, l.days_old, l.created_at,
+            SELECT l.id, l.title, l.price, l.category, l.days_old, l.created_at, l.local_photos_dir,
                    ps.portal_name, ps.views, ps.is_top, ps.status as portal_status, ps.last_synced
             FROM listings l
             JOIN portal_states ps ON l.id = ps.listing_id
             WHERE ps.status = 'Aktivní'
         """)
         active_portal_rows = [dict(r) for r in cursor.fetchall()]
+
+        # Spočítáme počet fotografií pro každý aktivní inzerát
+        from listing_hub.core.config import PROJECT_ROOT
+        for row in active_portal_rows:
+            p_dir = row.get("local_photos_dir")
+            photo_count = 0
+            if p_dir:
+                path = Path(p_dir)
+                if not path.is_absolute():
+                    path = PROJECT_ROOT / path
+                if path.exists() and path.is_dir():
+                    try:
+                        photo_count = len([f for f in os.listdir(path) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
+                    except Exception:
+                        photo_count = 0
+            row["photo_count"] = photo_count
 
         # 2. Celkový počet inzerátů dle životního cyklu (active, sold, unsold)
         cursor.execute("""
@@ -686,8 +704,34 @@ def get_metrics_snapshot_data() -> Dict[str, Any]:
         """)
         counts_by_status = {r["lifecycle_status"]: r["count"] for r in cursor.fetchall()}
 
-        # 3. Sumární statistiky prodaných položek
+        # 3. Sumární statistiky prodaných položek a analýza Time-to-Sell
         sold_stats = get_sold_statistics(include_channels=True)
+        cursor.execute("""
+            SELECT id, title, created_at, sold_at, sold_channel, price, sale_price
+            FROM listings
+            WHERE (id IN (
+                SELECT listing_id FROM portal_states 
+                WHERE status IN ('Prodané', 'Sold', 'prodané')
+            ) OR sold_at IS NOT NULL)
+        """)
+        sold_rows = [dict(r) for r in cursor.fetchall()]
+        days_to_sell_list = []
+        for s in sold_rows:
+            c_at = s.get("created_at")
+            s_at = s.get("sold_at")
+            if c_at and s_at:
+                try:
+                    dt_c = datetime.strptime(str(c_at)[:10], "%Y-%m-%d")
+                    dt_s = datetime.strptime(str(s_at)[:10], "%Y-%m-%d")
+                    diff_days = max(0, (dt_s - dt_c).days)
+                    s["days_to_sell"] = diff_days
+                    days_to_sell_list.append(diff_days)
+                except Exception:
+                    s["days_to_sell"] = None
+            else:
+                s["days_to_sell"] = None
+
+        avg_days_to_sell = round(sum(days_to_sell_list) / len(days_to_sell_list), 1) if days_to_sell_list else 0
 
         # 4. Portálové agregace (počet inzerátů a celková zhlédnutí dle portálu)
         cursor.execute("""
@@ -711,6 +755,8 @@ def get_metrics_snapshot_data() -> Dict[str, Any]:
             "active_portal_listings": active_portal_rows,
             "counts_by_status": counts_by_status,
             "sold_stats": sold_stats,
+            "sold_items": sold_rows,
+            "avg_days_to_sell": avg_days_to_sell,
             "portal_aggs": portal_aggs,
             "active_inventory_value": active_inventory_value
         }

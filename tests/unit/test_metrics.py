@@ -103,6 +103,10 @@ def test_generate_prometheus_metrics_with_data():
     assert "listinghub_sales_total_czk 3500" in metrics
     assert "listinghub_sales_count_total 1" in metrics
     assert 'listinghub_sales_by_channel_total_czk{channel="facebook"} 3500' in metrics
+    assert 'listinghub_listing_days_to_expire{id="ad-active-1",title="Aku vrtačka Bosch",portal="bazos"} 55' in metrics
+    assert 'listinghub_listing_photos_count{id="ad-active-1",title="Aku vrtačka Bosch",portal="bazos"} 0' in metrics
+    assert "listinghub_sales_avg_days_to_sell 12.0" in metrics
+    assert 'listinghub_sales_days_to_sell{id="ad-sold-1",title="Monitor Dell 27",channel="facebook"} 12' in metrics
 
 def test_flask_metrics_endpoint():
     client = app.test_client()

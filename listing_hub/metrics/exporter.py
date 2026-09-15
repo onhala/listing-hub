@@ -62,6 +62,8 @@ def generate_prometheus_metrics() -> str:
     active_portal_listings = data.get("active_portal_listings", [])
     counts_by_status = data.get("counts_by_status", {})
     sold_stats = data.get("sold_stats", {})
+    sold_items = data.get("sold_items", [])
+    avg_days_to_sell = data.get("avg_days_to_sell", 0)
     portal_aggs = data.get("portal_aggs", [])
     active_inv_value = data.get("active_inventory_value", 0)
 
@@ -119,6 +121,29 @@ def generate_prometheus_metrics() -> str:
         lines.append(f'listinghub_listing_days_old{{id="{l_id}",title="{title}",portal="{portal}"}} {days_old}')
     lines.append("")
 
+    # 6b. Odpočet dnů do expirace (specificky pro Bazoš 60denní limit)
+    lines.append("# HELP listinghub_listing_days_to_expire Zbývající počet dnů do expirace inzerátu (Bazoš 60denní cyklus)")
+    lines.append("# TYPE listinghub_listing_days_to_expire gauge")
+    for row in active_portal_listings:
+        if row.get("portal_name") == "bazos":
+            l_id = sanitize_label_value(row.get("id"))
+            title = sanitize_label_value(row.get("title"))
+            days_old = int(row.get("days_old") or 0)
+            days_to_expire = max(0, 60 - days_old)
+            lines.append(f'listinghub_listing_days_to_expire{{id="{l_id}",title="{title}",portal="bazos"}} {days_to_expire}')
+    lines.append("")
+
+    # 6c. Počet nahraných fotografií u inzerátu
+    lines.append("# HELP listinghub_listing_photos_count Počet fotografií inzerátu")
+    lines.append("# TYPE listinghub_listing_photos_count gauge")
+    for row in active_portal_listings:
+        l_id = sanitize_label_value(row.get("id"))
+        title = sanitize_label_value(row.get("title"))
+        portal = sanitize_label_value(row.get("portal_name"))
+        photos_count = int(row.get("photo_count") or 0)
+        lines.append(f'listinghub_listing_photos_count{{id="{l_id}",title="{title}",portal="{portal}"}} {photos_count}')
+    lines.append("")
+
     # 7. Placené TOPování
     lines.append("# HELP listinghub_listing_is_top Indikátor aktivního placeného TOPování (1 = ano, 0 = ne)")
     lines.append("# TYPE listinghub_listing_is_top gauge")
@@ -173,6 +198,23 @@ def generate_prometheus_metrics() -> str:
     lines.append("# HELP listinghub_sales_avg_price_czk Průměrná realizovaná cena prodaných položek v Kč")
     lines.append("# TYPE listinghub_sales_avg_price_czk gauge")
     lines.append(f"listinghub_sales_avg_price_czk {avg_price}")
+    lines.append("")
+
+    lines.append("# HELP listinghub_sales_avg_days_to_sell Průměrná doba od vystavení do realizace prodeje ve dnech")
+    lines.append("# TYPE listinghub_sales_avg_days_to_sell gauge")
+    lines.append(f"listinghub_sales_avg_days_to_sell {avg_days_to_sell}")
+    lines.append("")
+
+    # Doba do prodeje u jednotlivých prodaných položek
+    lines.append("# HELP listinghub_sales_days_to_sell Počet dní od vystavení do prodeje dané položky")
+    lines.append("# TYPE listinghub_sales_days_to_sell gauge")
+    for item in sold_items:
+        d_sell = item.get("days_to_sell")
+        if d_sell is not None:
+            s_id = sanitize_label_value(item.get("id"))
+            title = sanitize_label_value(item.get("title"))
+            channel = sanitize_label_value(item.get("sold_channel") or "bazos")
+            lines.append(f'listinghub_sales_days_to_sell{{id="{s_id}",title="{title}",channel="{channel}"}} {d_sell}')
     lines.append("")
 
     # 10. Prodeje dle kanálů
