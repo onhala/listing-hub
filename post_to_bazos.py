@@ -1040,10 +1040,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
         )
         from playwright.sync_api import sync_playwright
 
-    title = ad["title"]
-    description = ad["description"]
-    price = str(ad["price"]) if not extra_val else extra_val
-    photos_dir = ad["local_photos_dir"]
+    title = ad.get("title") or ""
+    description = ad.get("description") or ""
+    price = str(ad.get("price", "")) if not extra_val else extra_val
+    photos_dir = ad.get("local_photos_dir") or ""
     url = ad.get("url", "")
     
     ad_id = extract_ad_id(url)
@@ -1082,15 +1082,16 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
         
         # --- AKCE: SMAZÁNÍ (DELETE) ---
         if action == "delete":
-            if not url:
-                print(f"{Colors.FAIL}Chyba: Chybí URL inzerátu pro smazání z Bazoše!{Colors.ENDC}")
+            if not url and not ad_id:
+                print(f"{Colors.FAIL}Chyba: Chybí URL nebo ID inzerátu pro smazání z Bazoše!{Colors.ENDC}")
                 return False
                 
-            print(f"\n{Colors.BLUE}Otevírám inzerát na Bazoši: {url}...{Colors.ENDC}")
+            smazat_url = f"https://{subdomain}/smazat/{ad_id}.php" if (subdomain and ad_id) else url
+            print(f"\n{Colors.BLUE}Směřuji na správu inzerátu pro smazání: {smazat_url}...{Colors.ENDC}")
             try:
-                page.goto(url, timeout=30000)
+                page.goto(smazat_url, timeout=30000)
             except Exception as nav_e:
-                print(f"Chyba navigace na inzerát: {nav_e}")
+                print(f"Chyba navigace: {nav_e}")
             
             # 1. Kontrola, zda inzerát již nebyl dříve smazán nebo neexpiroval
             try:
@@ -1102,34 +1103,40 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 pass
                 
             try:
-                # 2. Vyvoláme zobrazení akcí inzerátu na Bazoši (odeslatakci('edit', id))
-                try:
-                    page.evaluate("""(id) => {
-                        if (typeof odeslatakci === 'function') {
-                            odeslatakci('edit', id);
-                        } else {
-                            const f = document.forms['formaction'] || document.querySelector("form[name='formaction']");
-                            if (f) {
-                                f.elements['postaction'].value = 'edit';
-                                f.elements['postv1'].value = id;
-                                f.submit();
-                            }
-                        }
-                    }""", ad_id)
-                except Exception:
-                    pass
-                
-                # Případně klikneme na prvek 'Smazat/ Upravit/ Topovat'
-                action_span = page.locator("span.paction, span:has-text('Smazat'), a:has-text('Smazat')")
-                if action_span.count() > 0 and action_span.first.is_visible():
-                    action_span.first.click()
-                
-                # 3. Vyplníme heslo inzerátu
+                # 2. Kontrola, zda Bazoš vyžaduje ověření telefonu
+                phone_input = page.locator("input[name='teloverit'], #teloverit")
+                if phone_input.count() > 0 and phone_input.first.is_visible():
+                    print(f"  {Colors.BLUE}Bazoš vyžaduje ověření telefonu.{Colors.ENDC}")
+                    podminky_cb = page.locator("input[name='podminky'], #podminky")
+                    if podminky_cb.count() > 0:
+                        try:
+                            podminky_cb.first.check()
+                        except Exception:
+                            podminky_cb.first.click()
+                    phone_val_to_fill = phone_val
+                    if not phone_val_to_fill and isinstance(user_config, dict):
+                        user_dict = user_config.get("user", user_config) if isinstance(user_config.get("user"), dict) else user_config
+                        phone_val_to_fill = str(user_dict.get("phone") or "").strip()
+                    if phone_val_to_fill:
+                        phone_input.first.fill(phone_val_to_fill)
+                        submit_phone = page.locator("form[name='formovereni'] input[type='submit'], input[type='submit'][value='Odeslat']")
+                        if submit_phone.count() > 0:
+                            submit_phone.first.click()
+                            time.sleep(1.0)
+
+                # Čekání na případný SMS kód
+                sms_input = page.locator("input[name='klic'], input[id='klic'], input[name='kodd'], input[id='kodd'], input[name='cr'], input[name='kod'], input[name='overkod']")
+                if sms_input.count() > 0 and sms_input.first.is_visible():
+                    print(f"\n{Colors.WARNING}📱 Bazoš odeslal ověřovací SMS. Čekám na zadání kódu v prohlížeči...{Colors.ENDC}")
+                    session_manager.wait_while(lambda: bool(sms_input.first.is_visible()), timeout=90)
+                    time.sleep(1.0)
+
+                # 3. Vyplníme heslo inzerátu, pokud je pole přítomno
                 password_input = page.locator("input[name='heslobazar'], #heslobazar, input[name='heslo'], #heslo, input[type='password'], input[name*='hesl']")
-                password_input.first.wait_for(timeout=6000)
-                password_input.first.scroll_into_view_if_needed(timeout=1000)
-                password_input.first.fill(password)
-                print(f"  {Colors.GREEN}✓ Heslo inzerátu předvyplněno.{Colors.ENDC}")
+                if password_input.count() > 0 and password_input.first.is_visible():
+                    password_input.first.scroll_into_view_if_needed(timeout=1000)
+                    password_input.first.fill(password)
+                    print(f"  {Colors.GREEN}✓ Heslo inzerátu předvyplněno.{Colors.ENDC}")
                 
                 # 4. Zaškrtneme radio button 'Vymazat inzerát' (hodnota 2)
                 radio_delete = page.locator("input[type='radio'][value='2'], input[type='radio'][value='delete']")
@@ -1138,7 +1145,7 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                     print(f"  {Colors.GREEN}✓ Možnost 'Vymazat inzerát' vybrána.{Colors.ENDC}")
                 
                 # 5. Odeslání formuláře pro smazání
-                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], input[type='submit'][value*='Vymazat'], input[type='submit'][value*='Potvrdit']")
+                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], input[type='submit'][value*='Vymazat'], input[type='submit'][value*='Potvrdit'], input[type='submit']")
                 if submit_btn.count() > 0:
                     submit_btn.first.click()
                 else:
@@ -1164,36 +1171,69 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 return False
                 
         # --- AKCE: ZMĚNA CENY / EDITACE ---
-        elif action == "edit_price":
+        elif action in ("edit_price", "change_price"):
             if not ad_id:
                 print(f"{Colors.FAIL}Chyba: Chybí ID inzerátu pro editaci!{Colors.ENDC}")
                 return False
                 
-            print(f"\n{Colors.BLUE}Směřuji na administrační formulář: https://{subdomain}/delete.php?id={ad_id}...{Colors.ENDC}")
-            page.goto(f"https://{subdomain}/delete.php?id={ad_id}")
+            smazat_url = f"https://{subdomain}/smazat/{ad_id}.php" if (subdomain and ad_id) else url
+            print(f"\n{Colors.BLUE}Směřuji na administrační formulář: {smazat_url}...{Colors.ENDC}")
+            try:
+                page.goto(smazat_url, timeout=30000)
+            except Exception as nav_e:
+                print(f"Chyba navigace: {nav_e}")
             
             try:
-                # Vyplníme heslo
+                # 1. Kontrola, zda Bazoš vyžaduje ověření telefonu
+                phone_input = page.locator("input[name='teloverit'], #teloverit")
+                if phone_input.count() > 0 and phone_input.first.is_visible():
+                    print(f"  {Colors.BLUE}Bazoš vyžaduje ověření telefonu.{Colors.ENDC}")
+                    podminky_cb = page.locator("input[name='podminky'], #podminky")
+                    if podminky_cb.count() > 0:
+                        try:
+                            podminky_cb.first.check()
+                        except Exception:
+                            podminky_cb.first.click()
+                    phone_val_to_fill = phone_val
+                    if not phone_val_to_fill and isinstance(user_config, dict):
+                        user_dict = user_config.get("user", user_config) if isinstance(user_config.get("user"), dict) else user_config
+                        phone_val_to_fill = str(user_dict.get("phone") or "").strip()
+                    if phone_val_to_fill:
+                        phone_input.first.fill(phone_val_to_fill)
+                        submit_phone = page.locator("form[name='formovereni'] input[type='submit'], input[type='submit'][value='Odeslat']")
+                        if submit_phone.count() > 0:
+                            submit_phone.first.click()
+                            time.sleep(1.0)
+
+                # Čekání na případný SMS kód
+                sms_input = page.locator("input[name='klic'], input[id='klic'], input[name='kodd'], input[id='kodd'], input[name='cr'], input[name='kod'], input[name='overkod']")
+                if sms_input.count() > 0 and sms_input.first.is_visible():
+                    print(f"\n{Colors.WARNING}📱 Bazoš odeslal ověřovací SMS. Čekám na zadání kódu v prohlížeči...{Colors.ENDC}")
+                    session_manager.wait_while(lambda: bool(sms_input.first.is_visible()), timeout=90)
+                    time.sleep(1.0)
+
+                # 2. Vyplníme heslo inzerátu, pokud je pole přítomno
                 password_input = page.locator("input[name='heslobazar'], #heslobazar, input[name='heslo'], #heslo, input[type='password'], input[name*='hesl']")
-                password_input.first.wait_for(timeout=5000)
-                password_input.first.scroll_into_view_if_needed(timeout=1000)
-                password_input.first.fill(password)
+                if password_input.count() > 0 and password_input.first.is_visible():
+                    password_input.first.scroll_into_view_if_needed(timeout=1000)
+                    password_input.first.fill(password)
+                    print(f"  {Colors.GREEN}✓ Heslo inzerátu předvyplněno.{Colors.ENDC}")
                 
-                # Vybereme editaci
-                radio_edit = page.locator("input[type='radio'][value='edit'], input[value='1']")
+                # 3. Vybereme editaci (hodnota 1)
+                radio_edit = page.locator("input[type='radio'][value='1'], input[type='radio'][value='edit']")
                 if radio_edit.count() > 0:
-                    radio_edit.click()
+                    radio_edit.first.click()
                     print(f"  {Colors.GREEN}✓ Vybrána editace inzerátu.{Colors.ENDC}")
                     
-                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], form:has(input[name*='hesl']) button[type='submit']")
+                submit_btn = page.locator("form:has(input[name*='hesl']) input[type='submit'], form:has(input[type='password']) input[type='submit'], input[type='submit'][value*='Upravit'], input[type='submit'][value*='Potvrdit'], input[type='submit']")
                 if submit_btn.count() > 0:
                     submit_btn.first.click()
                 else:
-                    page.locator("input[type='submit'][value*='Upravit'], input[type='submit'][value*='Potvrdit']").first.click()
+                    page.keyboard.press("Enter")
                 
-                # Čekáme na načtení editačního formuláře ceny
+                # 4. Čekáme na načtení editačního formuláře ceny
                 price_input = page.locator("input[name='cena'], #cena")
-                price_input.wait_for(timeout=5000)
+                price_input.wait_for(timeout=10000)
                 price_input.fill(price)
                 
                 print(f"\n{Colors.GREEN}🎉 Nová cena {price} Kč byla úspěšně předvyplněna na Bazoši!{Colors.ENDC}")
@@ -1204,9 +1244,9 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                 else:
                     print(f"\n{Colors.BLUE}💬 [WEB] Čekám na uložení změn uživatelem v prohlížeči...{Colors.ENDC}")
                     try:
-                        session_manager.wait_while(lambda: "delete.php" in page.url, timeout=300)
-                        print(f"  {Colors.GREEN}✓ Detekováno uložení změn (změna URL). Relace se zavře za 5 sekund...{Colors.ENDC}")
-                        time.sleep(5)
+                        session_manager.wait_while(lambda: ("smazat" in page.url or "pridat" in page.url or "delete" in page.url) and price_input.is_visible(), timeout=300)
+                        print(f"  {Colors.GREEN}✓ Detekováno uložení změn. Relace se synchronizuje...{Colors.ENDC}")
+                        time.sleep(3)
                     except Exception as e:
                         print(f"  {Colors.WARNING}Čekání na uložení změn vypršelo nebo bylo přerušeno: {e}{Colors.ENDC}")
                 try:

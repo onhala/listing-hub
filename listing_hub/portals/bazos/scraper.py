@@ -17,10 +17,13 @@ def scrape_listings_from_html(html_content: str) -> List[Dict[str, Any]]:
     
     for el in ad_elements:
         try:
-            nadpis_el = el.find(class_="nadpis")
+            nadpis_el = el.find(class_="nadpis") or el.find(class_="inzeratynadpis") or el.find("h2")
             if not nadpis_el:
                 continue
-            a_tag = nadpis_el.find("a")
+            a_tags = nadpis_el.find_all("a")
+            a_tag = next((a for a in a_tags if a.get_text().strip()), None)
+            if not a_tag and a_tags:
+                a_tag = a_tags[0]
             if not a_tag:
                 continue
                 

@@ -65,7 +65,10 @@ class PlaywrightSessionManager:
 
             self.context.set_default_timeout(30000)
             self.page = self.context.new_page()
-            self.page.goto("https://www.bazos.cz/moje-inzeraty.php")
+            try:
+                self.page.goto("https://www.bazos.cz/moje-inzeraty.php", timeout=15000)
+            except Exception as init_nav_err:
+                print(f"Upozornění při úvodním načtení stránky (nefatální): {init_nav_err}")
 
             # Setup CDP Screencast
             import base64
@@ -216,6 +219,8 @@ class PlaywrightSessionManager:
             args = evt.get("args", ())
             kwargs = evt.get("kwargs", {})
             try:
+                if not self.page or self.page.is_closed():
+                    raise RuntimeError("Playwright page není inicializována nebo byla zavřena.")
                 res = func(self.page, *args, **kwargs)
                 evt["result_queue"].put((res, None))
             except Exception as ex:
@@ -265,6 +270,16 @@ class PlaywrightSessionManager:
     def run_on_worker(self, func, *args, timeout=30.0, **kwargs):
         """Dispatches `func(self.page, *args, **kwargs)` to execute on the Playwright worker thread."""
         self.start_worker()
+        # Čekáme až 15s na inicializaci page na worker vlákně
+        start_wait = time.time()
+        while time.time() - start_wait < 15.0:
+            if self.page and not self.page.is_closed():
+                break
+            time.sleep(0.05)
+
+        if not self.page or self.page.is_closed():
+            raise RuntimeError("Prohlížeč Playwright nebyl včas inicializován na worker vlákně.")
+
         res_q = queue.Queue()
         self.input_queue.put({
             "action": "call",
@@ -283,11 +298,13 @@ class PlaywrightSessionManager:
 
     def get_session(self):
         self.start_worker()
-        # Wait up to 10s for worker thread to initialize page
-        for _ in range(100):
+        # Wait up to 15s for worker thread to initialize page
+        for _ in range(150):
             if self.page and not self.page.is_closed():
                 break
             time.sleep(0.1)
+        if not self.page or self.page.is_closed():
+            raise RuntimeError("Prohlížeč Playwright nebyl včas inicializován.")
         return self.playwright, self.browser, self.context, self.page
 
     def send_cdp_click(self, x, y):
@@ -430,12 +447,7 @@ class PlaywrightSessionManager:
 
     def cancel_current_action(self):
         self.cancel_requested = True
-        if self.page:
-            try:
-                self.page.close()
-            except Exception:
-                pass
-        self.page = None
+        self.close()
 
 
     def close(self):

@@ -290,3 +290,79 @@ def test_bazos_sync_keyword_matching_for_reposted_ads(mock_db):
         assert listings[0]["description"] == "Nový reálný popis ostrova Plameňák z Bazoše."
 
 
+def test_scrape_listings_from_html_modern_structure():
+    """
+    Ověří, že scraper bezpečně parsuje moderní HTML strukturu Bazoše s inzeratynadpis
+    a h2.nadpis a odfiltruje odkaz na náhledovou fotku.
+    """
+    from listing_hub.portals.bazos.scraper import scrape_listings_from_html
+
+    sample_html = """
+    <div class="inzeraty inzeratyflex">
+        <div class="inzeratynadpis">
+            <a href="/inzerat/223514742/vw-arteon.php"><img class="obrazek" src="thumb.jpg"></a>
+            <h2 class="nadpis"><a href="/inzerat/223514742/vw-arteon.php">VW Arteon SB R-Line 2.0 TSI</a></h2>
+            <span class="velikost10">- <span class="ztop" title="TOP 1x Platí do 20.9. 2026">TOP</span> - [18.9. 2026]</span>
+        </div>
+        <div class="inzeratycena"><b>799 000 Kč</b></div>
+        <div class="inzeratyview">509 x</div>
+    </div>
+    """
+    ads = scrape_listings_from_html(sample_html)
+    assert len(ads) == 1
+    assert ads[0]["title"] == "VW Arteon SB R-Line 2.0 TSI"
+    assert ads[0]["price"] == 799000
+    assert ads[0]["views"] == 509
+    assert ads[0]["is_top"] is True
+    assert ads[0]["top_expires_at"] == "2026-09-20"
+
+
+def test_post_to_bazos_edit_price_uses_smazat_endpoint():
+    """
+    Ověří, že akce editace ceny a mazání v post_to_bazos směřují na /smazat/{id}.php
+    namísto odstraněného /delete.php.
+    """
+    import post_to_bazos
+
+    mock_page = MagicMock()
+    mock_page.content.return_value = "<html><body></body></html>"
+    mock_page.url = "https://auto.bazos.cz/smazat/223514742.php"
+    
+    # Locators
+    mock_loc = MagicMock()
+    mock_loc.count.return_value = 1
+    mock_loc.first = mock_loc
+    mock_loc.is_visible.return_value = True
+    mock_page.locator.return_value = mock_loc
+
+    ad = {
+        "title": "VW Arteon",
+        "price": 799000,
+        "url": "https://auto.bazos.cz/inzerat/223514742/vw-arteon.php",
+        "local_photos_dir": ""
+    }
+    user_config = {
+        "email": "test@example.com",
+        "phone": "775123456",
+        "bazos_password": "testpassword"
+    }
+
+    with patch("listing_hub.portals.bazos.session.session_manager.get_session", return_value=(None, None, None, mock_page)), \
+         patch("listing_hub.portals.bazos.session.session_manager.wait_while", return_value=True):
+        
+        success = post_to_bazos._run_playwright_action_impl(
+            ad=ad,
+            user_config=user_config,
+            action="edit_price",
+            extra_val="799000",
+            is_web=True
+        )
+
+        assert success is True
+        # Ověříme, že navigace šla na /smazat/223514742.php a ne na /delete.php
+        goto_urls = [call.args[0] for call in mock_page.goto.call_args_list]
+        assert any("/smazat/223514742.php" in url for url in goto_urls)
+        assert not any("/delete.php" in url for url in goto_urls)
+
+
+
