@@ -7,7 +7,7 @@ import unicodedata
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional, Tuple
 from bs4 import BeautifulSoup
 
 from listing_hub.portals.base import AbstractPortal
