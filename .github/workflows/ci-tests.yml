@@ -1,4 +1,4 @@
-name: CI Unit Tests & Quality Gate
+name: CI Tests & Quality Gate
 
 on:
   push:
@@ -6,20 +6,48 @@ on:
       - main
       - 'feature/**'
       - 'fix/**'
+      - 'refactor/**'
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    name: Run Pytest Suite
+  sanity-check:
+    name: Code Syntax & Sanity Check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Check Python compilation syntax
+        run: |
+          python -m compileall -q listing_hub/ app.py post_to_bazos.py tests/
+          echo "✅ All Python files compiled with zero syntax errors."
+
+  unit-tests:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    needs: [sanity-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.11', '3.12']
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
@@ -33,6 +61,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Pytest suite
+      - name: Run Pytest test suite
         run: |
           pytest tests/unit/ test_backend.py -v --tb=short
+
+      - name: Generate Test Summary
+        if: always()
+        run: |
+          echo "### 🧪 Test Run Summary (${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status == 'success' && '✅ PASSED' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY

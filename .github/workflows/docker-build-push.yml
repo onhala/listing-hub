@@ -1,4 +1,4 @@
-name: Build and Push Docker Image to GHCR
+name: Build, Push & Deploy Docker Image
 
 on:
   push:
@@ -7,18 +7,26 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      skip_deploy:
+        description: 'Skip TrueNAS / Watchtower deployment webhooks'
+        type: boolean
+        default: false
+
+concurrency:
+  group: docker-build-deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  # --- 1. Testovací fáze (Quality Gate) ---
+  test:
+    name: Run Pre-Build Verification
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,17 +35,38 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run backend unit tests
+      - name: Run unit test suite
         run: |
-          pytest tests/unit/
+          pytest tests/unit/ test_backend.py -v --tb=short
 
-      - name: Log in to the Container registry
+  # --- 2. Sestavení a publikace Docker image ---
+  build-and-push:
+    name: Build & Push Docker Image to GHCR
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -50,20 +79,20 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and push Docker image
+        id: docker_build
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -72,24 +101,61 @@ jobs:
           build-args: |
             GIT_COMMIT_SHA=${{ github.sha }}
 
-      - name: Trigger TrueNAS SCALE App Upgrade Webhook
-        if: env.TRUENAS_URL != '' && env.TRUENAS_API_KEY != ''
+      - name: Publish Build Artifacts Summary
+        run: |
+          echo "### 🐳 Docker Image Successfully Published" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry:** \`${{ env.REGISTRY }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags:** \`${{ steps.meta.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # --- 3. Automatický deployment na TrueNAS SCALE / Watchtower ---
+  deploy:
+    name: Trigger Deployment Webhooks
+    needs: [build-and-push]
+    if: ${{ github.event.inputs.skip_deploy != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger TrueNAS SCALE App Upgrade
+        if: ${{ secrets.TRUENAS_URL != '' && secrets.TRUENAS_API_KEY != '' }}
         env:
           TRUENAS_URL: ${{ secrets.TRUENAS_URL }}
           TRUENAS_API_KEY: ${{ secrets.TRUENAS_API_KEY }}
           TRUENAS_APP_NAME: ${{ secrets.TRUENAS_APP_NAME || 'bazos-automat' }}
         run: |
-          echo "Notifying TrueNAS SCALE at ${TRUENAS_URL} to pull latest image and redeploy..."
-          curl -k -s -X POST "${TRUENAS_URL}/api/v2.0/app/upgrade" \
+          echo "🚀 Notifying TrueNAS SCALE at ${TRUENAS_URL} to redeploy app '${TRUENAS_APP_NAME}'..."
+          HTTP_CODE=$(curl -k -s -o /tmp/truenas_response.json -w "%{http_code}" \
+            --retry 3 --retry-delay 3 --retry-connrefused --max-time 15 \
+            -X POST "${TRUENAS_URL}/api/v2.0/app/upgrade" \
             -H "Authorization: Bearer ${TRUENAS_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"app_name\": \"${TRUENAS_APP_NAME}\"}" || echo "TrueNAS webhook skipped."
+            -d "{\"app_name\": \"${TRUENAS_APP_NAME}\"}")
+          
+          echo "TrueNAS API Response (HTTP ${HTTP_CODE}):"
+          cat /tmp/truenas_response.json || true
+          
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ TrueNAS upgrade successfully triggered."
+            echo "- **TrueNAS Deploy:** ✅ Success (HTTP ${HTTP_CODE})" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ TrueNAS upgrade returned unexpected HTTP ${HTTP_CODE} (check API key or network)."
+            echo "- **TrueNAS Deploy:** ⚠️ Warning (HTTP ${HTTP_CODE})" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Trigger Watchtower Webhook
-        if: env.WATCHTOWER_WEBHOOK_URL != ''
+        if: ${{ secrets.WATCHTOWER_WEBHOOK_URL != '' }}
         env:
           WATCHTOWER_WEBHOOK_URL: ${{ secrets.WATCHTOWER_WEBHOOK_URL }}
           WATCHTOWER_TOKEN: ${{ secrets.WATCHTOWER_TOKEN }}
         run: |
-          echo "Triggering Watchtower webhook to update container immediately..."
-          curl -s -X POST -H "Authorization: Bearer ${WATCHTOWER_TOKEN}" "${WATCHTOWER_WEBHOOK_URL}" || echo "Watchtower webhook skipped."
+          echo "🚀 Triggering Watchtower webhook..."
+          AUTH_HEADER=""
+          if [ -n "$WATCHTOWER_TOKEN" ]; then
+            AUTH_HEADER="-H \"Authorization: Bearer ${WATCHTOWER_TOKEN}\""
+          fi
+          
+          curl -s --max-time 10 --retry 3 --retry-delay 2 \
+            -X POST $AUTH_HEADER "${WATCHTOWER_WEBHOOK_URL}" || echo "Watchtower notification finished."
+          echo "- **Watchtower Webhook:** ✅ Triggered" >> $GITHUB_STEP_SUMMARY
