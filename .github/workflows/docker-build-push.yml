@@ -113,25 +113,30 @@ jobs:
   deploy:
     name: Trigger Deployment Webhooks
     needs: [build-and-push]
-    if: ${{ github.event.inputs.skip_deploy != 'true' }}
+    if: ${{ !inputs.skip_deploy }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - name: Trigger TrueNAS SCALE App Upgrade
-        if: ${{ secrets.TRUENAS_URL != '' && secrets.TRUENAS_API_KEY != '' }}
         env:
           TRUENAS_URL: ${{ secrets.TRUENAS_URL }}
           TRUENAS_API_KEY: ${{ secrets.TRUENAS_API_KEY }}
-          TRUENAS_APP_NAME: ${{ secrets.TRUENAS_APP_NAME || 'bazos-automat' }}
+          TRUENAS_APP_NAME: ${{ secrets.TRUENAS_APP_NAME }}
         run: |
-          echo "🚀 Notifying TrueNAS SCALE at ${TRUENAS_URL} to redeploy app '${TRUENAS_APP_NAME}'..."
+          if [ -z "$TRUENAS_URL" ] || [ -z "$TRUENAS_API_KEY" ]; then
+            echo "ℹ️ TrueNAS credentials not configured. Skipping TrueNAS upgrade step."
+            echo "- **TrueNAS Deploy:** ⏩ Skipped (no credentials configured)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          APP_NAME="${TRUENAS_APP_NAME:-bazos-automat}"
+          echo "🚀 Notifying TrueNAS SCALE at ${TRUENAS_URL} to redeploy app '${APP_NAME}'..."
           HTTP_CODE=$(curl -k -s -o /tmp/truenas_response.json -w "%{http_code}" \
             --retry 3 --retry-delay 3 --retry-connrefused --max-time 15 \
             -X POST "${TRUENAS_URL}/api/v2.0/app/upgrade" \
             -H "Authorization: Bearer ${TRUENAS_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"app_name\": \"${TRUENAS_APP_NAME}\"}")
+            -d "{\"app_name\": \"${APP_NAME}\"}")
           
           echo "TrueNAS API Response (HTTP ${HTTP_CODE}):"
           cat /tmp/truenas_response.json || true
@@ -145,11 +150,15 @@ jobs:
           fi
 
       - name: Trigger Watchtower Webhook
-        if: ${{ secrets.WATCHTOWER_WEBHOOK_URL != '' }}
         env:
           WATCHTOWER_WEBHOOK_URL: ${{ secrets.WATCHTOWER_WEBHOOK_URL }}
           WATCHTOWER_TOKEN: ${{ secrets.WATCHTOWER_TOKEN }}
         run: |
+          if [ -z "$WATCHTOWER_WEBHOOK_URL" ]; then
+            echo "ℹ️ Watchtower webhook URL not configured. Skipping Watchtower step."
+            echo "- **Watchtower Webhook:** ⏩ Skipped (no URL configured)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
           echo "🚀 Triggering Watchtower webhook..."
           AUTH_HEADER=""
           if [ -n "$WATCHTOWER_TOKEN" ]; then
