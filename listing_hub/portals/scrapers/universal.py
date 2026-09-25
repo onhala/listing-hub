@@ -2,7 +2,7 @@
 Univerzální modul pro extrakci statistik a počtu zhlédnutí z veřejných inzertních webů.
 
 Implementuje 3úrovňovou detekční pipeline:
-1. Doménově specifické extraktory (Sportovní vozy, Ráj veteránů, Motorkáři atd.)
+1. Doménově specifické extraktory (Bazoš, Sbazar, Aukro, Vinted, Facebook, Sportovní vozy, Ráj veteránů, Motorkáři atd.)
 2. Strukturovaná metadata (Schema.org / JSON-LD / OpenGraph)
 3. Univerzální heuristický regex engine pro české a anglické inzertní weby
 """
@@ -26,12 +26,54 @@ DEFAULT_HEADERS = {
 # --- Úroveň 1: Doménově specifické extraktory ---
 
 def _extract_domain_specific(url: str, html: str) -> Optional[int]:
-    """Zkusí extrahovat zhlédnutí podle známých doménových selektorů."""
+    """Zkusí extrahovat zhlédnutí podle známých doménových selektorů a datových struktur."""
     parsed_url = urllib.parse.urlparse(url.lower())
     netloc = parsed_url.netloc
 
-    # 1.1 Sportovní vozy & Ráj veteránů
-    if "sportovnivozy.cz" in netloc or "rajveteranu.cz" in netloc:
+    # 1.1 Bazoš.cz / Bazoš.sk
+    if "bazos.cz" in netloc or "bazos.sk" in netloc:
+        match = re.search(r"Vidělo:\s*<strong>?(\d+)", html, re.I)
+        if match:
+            return int(match.group(1))
+        match_sk = re.search(r"Videlo:\s*<strong>?(\d+)", html, re.I)
+        if match_sk:
+            return int(match_sk.group(1))
+
+    # 1.2 Sbazar.cz
+    if "sbazar.cz" in netloc:
+        match = re.search(r'"viewsCount":\s*(\d+)', html)
+        if match:
+            return int(match.group(1))
+        match2 = re.search(r'"view_count":\s*(\d+)', html)
+        if match2:
+            return int(match2.group(1))
+        match3 = re.search(r"(?:Zobrazeno|Zhlédnuto|počet zobrazení|Vidělo)[:\s]*<strong>?(\d+)", html, re.I)
+        if match3:
+            return int(match3.group(1))
+
+    # 1.3 Aukro.cz
+    if "aukro.cz" in netloc:
+        match = re.search(r'"viewsCount":\s*(\d+)', html)
+        if match:
+            return int(match.group(1))
+        match2 = re.search(r'"views":\s*(\d+)', html)
+        if match2:
+            return int(match2.group(1))
+        match3 = re.search(r'(\d+)\s*(?:zobrazení|zhlédnutí)', html, re.I)
+        if match3:
+            return int(match3.group(1))
+
+    # 1.4 Vinted.cz / Vinted.com
+    if "vinted.cz" in netloc or "vinted.com" in netloc or "vinted" in netloc:
+        match = re.search(r'"view_count":\s*(\d+)', html)
+        if match:
+            return int(match.group(1))
+        match2 = re.search(r'"views_count":\s*(\d+)', html)
+        if match2:
+            return int(match2.group(1))
+
+    # 1.5 Sportovní vozy & Ráj veteránů
+    if "sportovnivozy.cz" in netloc or "rajveteranu.cz" in netloc or "rajaut.cz" in netloc:
         match = re.search(r"Počet zobrazení detailu:\s*<strong>(\d+)x?</strong>", html, re.I)
         if match:
             return int(match.group(1))
@@ -39,15 +81,9 @@ def _extract_domain_specific(url: str, html: str) -> Optional[int]:
         if fallback_match:
             return int(fallback_match.group(1))
 
-    # 1.2 Motorkáři.cz
+    # 1.6 Motorkáři.cz
     if "motorkari.cz" in netloc:
         match = re.search(r"(?:Zobrazeno|Zhlédnuto)[:\s]*<strong>?(\d+)", html, re.I)
-        if match:
-            return int(match.group(1))
-
-    # 1.3 Bazoš (pro ruční importy nebo externí kontrolu)
-    if "bazos.cz" in netloc:
-        match = re.search(r"Vidělo:\s*<strong>?(\d+)", html, re.I)
         if match:
             return int(match.group(1))
 
@@ -79,7 +115,7 @@ def _extract_json_ld(html: str) -> Optional[int]:
                             if count is not None and str(count).isdigit():
                                 return int(count)
                 # Přímá pole
-                for key in ("viewCount", "viewsCount", "interactionCount"):
+                for key in ("viewCount", "viewsCount", "interactionCount", "views"):
                     val = item.get(key)
                     if val is not None and str(val).isdigit():
                         return int(val)
@@ -94,26 +130,31 @@ _TAG = r"(?:<[^>]+>|\s)*"
 
 HEURISTIC_PATTERNS = [
     # "Počet zobrazení: 123" nebo "Zhlédnuto: 456x" nebo "Zobrazeno: <strong>789</strong>"
-    re.compile(r"(?:počet zobrazení|počet shlédnutí|zobrazeno|zhlédnuto|shlédnuto|vidělo)[:\s]+" + _TAG + r"(\d+)(?:\s*(?:x|krát))?" + _TAG, re.I),
+    re.compile(r"(?:počet zobrazení|počet shlédnutí|zobrazeno|zhlédnuto|shlédnuto|vidělo|videlo)[:\s]+" + _TAG + r"(\d+[\d\s\.,]*)(?:\s*(?:x|krát))?" + _TAG, re.I),
     # "123x zobrazeno" nebo "456 zhlédnutí"
-    re.compile(_TAG + r"(\d+)" + _TAG + r"(?:x|krát)?\s*(?:zobrazení|zobrazeno|zhlédnutí|shlédnutí|viděno)", re.I),
+    re.compile(_TAG + r"(\d+[\d\s\.,]*)" + _TAG + r"(?:x|krát)?\s*(?:zobrazení|zobrazeno|zhlédnutí|shlédnutí|viděno|zobrazeni)", re.I),
     # Anglické varianty: "Views: 567" nebo "1,234 views"
-    re.compile(r"(?:views|impressions)[:\s]+" + _TAG + r"(\d+)(?:\s*x)?" + _TAG, re.I),
-    re.compile(_TAG + r"(\d+)" + _TAG + r"(?:views|impressions)", re.I)
+    re.compile(r"(?:views|impressions|pageviews)[:\s]+" + _TAG + r"(\d+[\d\s\.,]*)(?:\s*x)?" + _TAG, re.I),
+    re.compile(_TAG + r"(\d+[\d\s\.,]*)" + _TAG + r"(?:views|impressions|pageviews)", re.I)
 ]
+
+def _parse_digits_with_separators(raw_str: str) -> Optional[int]:
+    """Převede číslo s možnými oddělovači tisíců (mezera, tečka, čárka) na integer."""
+    if not raw_str:
+        return None
+    cleaned = re.sub(r'[^\d]', '', raw_str)
+    if cleaned and cleaned.isdigit():
+        return int(cleaned)
+    return None
 
 def _extract_heuristic(html: str) -> Optional[int]:
     """Prohledá HTML text pomocí obecných heuristických regexů."""
     for pattern in HEURISTIC_PATTERNS:
         match = pattern.search(html)
         if match:
-            try:
-                val = int(match.group(1))
-                # Rozumný filtr: počet zhlédnutí by neměl být 0 ani astronomické číslo
-                if 0 <= val <= 10_000_000:
-                    return val
-            except (ValueError, TypeError):
-                continue
+            val = _parse_digits_with_separators(match.group(1))
+            if val is not None and 0 <= val <= 10_000_000:
+                return val
     return None
 
 

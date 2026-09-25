@@ -1688,7 +1688,8 @@ def cli_repost_listing(data, user_config):
 
 # --- Hlavní spouštěcí funkce a menu ---
 def main():
-    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Listing Hub & Bazoš Automat v3.8.7{Colors.ENDC}")
+    from listing_hub.core.version import APP_VERSION
+    print(f"\n{Colors.HEADER}{Colors.BOLD}🤖 Listing Hub & Bazoš Automat v{APP_VERSION}{Colors.ENDC}")
     print(f"{Colors.BLUE}Komplexní správa inzerce, historie prodejů a synchronizace.{Colors.ENDC}\n")
 
     while True:

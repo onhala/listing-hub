@@ -27,6 +27,7 @@ from listing_hub.core.version import get_version_status, is_docker
 from listing_hub.core.calendar import generate_ical_feed
 from listing_hub.ai.photo_editor import process_photo_pipeline
 from listing_hub.metrics import generate_prometheus_metrics
+from listing_hub.portals.registry import portal_registry
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -1753,8 +1754,7 @@ def refresh_portal_views(listing_id):
         if not url:
             return jsonify({"status": "error", "message": f"Pro portál {portal_name} není zadána žádná URL."}), 400
 
-        from listing_hub.portals.scrapers.universal import scrape_listing_views
-        scraped_views = scrape_listing_views(url)
+        scraped_views = portal_registry.scrape_views_for_portal(portal_name, url)
         if scraped_views is not None:
             db.update_listing_portal_views(listing_id, portal_name, scraped_views)
             return jsonify({

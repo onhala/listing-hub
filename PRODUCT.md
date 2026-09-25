@@ -1,6 +1,6 @@
 # 📦 Produktová dokumentace: Listing Hub & AI Editor
 
-**Listing Hub** je moderní webové řídicí centrum navržené pro automatizovanou, efektivní a bezpečnou správu inzerce na českých inzertních portálech (primárně **Bazoš.cz** s architekturou připravenou pro **Aukro.cz**).
+**Listing Hub** je moderní webové řídicí centrum navržené pro automatizovanou, efektivní a bezpečnou správu inzerce na klíčových inzertních portálech (**Bazoš.cz**, **Facebook Marketplace**, **Sbazar.cz**, **Vinted** a **Aukro.cz**).
 
 Aplikace radikálně zjednodušuje prodej vybavení z domácnosti, dílny či firmy díky kombinaci multimodální umělé inteligence, živého tržního radaru a asistované automatizace prohlížeče (Human-in-the-Loop).
 

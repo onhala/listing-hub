@@ -208,6 +208,13 @@ class BazosPortal(AbstractPortal):
     def display_name(self) -> str:
         return "Bazoš.cz"
 
+    @property
+    def supported_domains(self) -> List[str]:
+        return ["bazos.cz", "bazos.sk"]
+
+    def extract_item_id_from_url(self, url: str) -> Optional[str]:
+        return extract_ad_id(url)
+
     def post_listing(self, listing: Dict[str, Any], user_config: Dict[str, Any]) -> Dict[str, Any]:
         # Volá stávající Playwright automatizaci
         success = post_to_bazos.run_playwright_action(

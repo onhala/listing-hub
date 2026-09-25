@@ -1,6 +1,6 @@
-# 🤖 Listing Hub & AI Editor v3.12.0
+# 🤖 Listing Hub & AI Editor v3.15.0
 
-Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s integrovaným asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů a automatickou synchronizací do Google Kalendáře.
+Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s modulární multi-portál architekturou (`listing_hub.portals`), integrovaným Stagnation Barometrem pro ležáky, Bazoš Search Rank Trackerem, 1-Click SMS Top Helperem, asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů, Prometheus telemetrií a automatickou synchronizací do Google Kalendáře.
 
 ---
 
@@ -113,7 +113,7 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
     - **Zámek procesu**: Bezpečné sdílení Playwright procesu k zamezení konfliktů mezi pozadím a ručními úpravami.
 
 15. **Nenásilné sledování verzí & Inspektor (GitHub Diff & 1-Click Update)**:
-    - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.8.8 • [hash]`).
+    - Interaktivní widget v zápatí sidebaru zobrazuje verzi a zkrácený git commit hash (`v3.15.0 • [hash]`).
     - Nenásilný plovoucí toast s možností odložení do `localStorage` (žádné rušivé celoobrazovkové bannery).
     - Dialog srovnání nainstalované verze a hashe proti GitHubu s přímým odkazem na diff změn a 1-click upgradem na TrueNAS.
 

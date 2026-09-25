@@ -35,7 +35,7 @@ Listing Hub je postaven na modulární vrstvené architektuře v Pythonu (Flask)
 1. **`listing_hub.core`**:
    - **`db.py`**: SQLite databázová vrstva (`listings.db`). Ukládá inzeráty s dynamickým JSON sloupcem `portal_states`, což umožňuje flexibilní evidenci stavu na Bazoši (URL, zhlédnutí, datum, TOP status) i paralelní evidenci na dalších portálech (**Facebook Marketplace**, **Sbazar.cz**, **Vinted**, **Aukro.cz**, ruční Bazoš a vlastní platformy). Podporuje evidenci prodejů (`sale_price`, `sold_at`, `sold_notes`, `sold_channel`) s automatickými migracemi tabulek při startu (`init_db()`), a funkce `record_manual_publication()`, `update_listing_portal_url()`, `mark_listing_as_sold()`, `restore_sold_listing()` a `get_sold_statistics()`.
    - **`config.py`**: Správa perzistentní konfigurace (`config/config.json`), base64 hesla a automatická verifikace/oprava přístupových práv svazků pro TrueNAS ZFS.
-   - **`version.py`**: Správa verzí (v3.9.0) s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
+   - **`version.py`**: Správa verzí (v3.15.0) s 15minutovou in-memory mezipamětí proti GitHub API rate limitu (60 req/h), multi-tier detekce lokálního commitu (`GIT_COMMIT_SHA` env var, `version.json`, `git rev-parse`) a generátor GitHub compare diff odkazů.
    - **Bezpečnost souborového systému & ochrana soukromí**: Funkce `safe_delete_photos_dir()` v `app.py` ověřuje absolutní cesty vůči `PHOTOS_DIR` pomocí `target.is_relative_to(photos_base)` a blokuje Path Traversal útoky. Funkce `strip_exif_and_normalize()` automaticky narovnává orientaci fotek z mobilů a odstraňuje citlivá EXIF GPS metadata.
 
 2. **`listing_hub.ai`**:
@@ -47,30 +47,20 @@ Listing Hub je postaven na modulární vrstvené architektuře v Pythonu (Flask)
      - **Jazykový asistent & Čistý text (`improve_text_with_gemini`, `clean_bazos_text`)**: Jazykové úpravy inzerátů s přísnou sanitací textu: striktní zákaz nepodporovaných markdownových hvězdiček (`*`, `**`), kódových bloků (```) a převod odrážek na čisté pomlčky (`- `).
    - **`advisor.py`**: Cenový poradce a scraper tržních cen z Bazoše a Sbazaru. Počítá tržní medián, rychlý prodej (-10 %) a prémiovou hladinu (+10 %).
 
-3. **`listing_hub.portals`**:
-   - **`bazos/categories.py`**:
-     - **Katalog 20 rubrik (`BAZOS_ALL_SUBDOMAINS`)**: Kompletní seznam všech 20 specializovaných subdomén Bazoše (`deti.bazos.cz`, `dum.bazos.cz`, `nabytek.bazos.cz`, `elektro.bazos.cz`, `sport.bazos.cz`, `auto.bazos.cz`, `motorky.bazos.cz`, `stroje.bazos.cz`, `pc.bazos.cz`, `mobil.bazos.cz`, `foto.bazos.cz`, `hudba.bazos.cz`, `obleceni.bazos.cz`, `knihy.bazos.cz`, `zvirata.bazos.cz`, `vstupenky.bazos.cz`, `reality.bazos.cz`, `prace.bazos.cz`, `sluzby.bazos.cz`, `ostatni.bazos.cz`) s českými názvy a ikonami.
-     - **Vážený ranking rubrik (`rank_target_domains`)**: Ohodnocuje a řadí všech 20 subdomén podle relevance k inzerátu. Váhy bodování: shoda s existující URL (1000 b), klíčové slovo v titulku (90 b), klíčové slovo v popisu (20 b), shoda kategorie s názvem subdomény (80 b) a specifická regex pravidla (např. motorky vs. elektromotory, 120 b).
-     - **Deterministické určení (`get_target_domain`)**: Vybere nejvýše skórující subdoménu s bezpečným fallbackem na `dum.bazos.cz`.
-     - **Normalizace češtiny (`normalize_cz`)**: NFKD normalizace textu s odstraněním diakritiky, převodem na malá písmena a očištěním o speciální znaky.
-     - **Synonymická mapa (`CATEGORY_SYNONYMS`)**: Rozsáhlý slovník synonym a klíčových slov mapující stovky termínů do podkategorií Bazoše.
-   - **`bazos/session.py` a Dvoufázový protokol proti reloadu formuláře**:
-     - **Podstata problému reloadu (Form Reload Trap)**: Na portálu Bazoš.cz provozuje každá rubrika samostatnou subdoménu. Změna rubriky uvnitř otevřeného formuláře vyvolává tvrdý reload celé stránky, který okamžitě a nevratně vymaže veškerá vyplněná data a nahrané fotografie.
-     - **Architektonické řešení**: Upfront determinace cílové subdomény a otevření formuláře Playwrightem přímo na adrese `https://{target_domain}/pridat-inzerat.php`. Během vyplňování se již rubrika nemění, což 100% eliminuje riziko promazání formuláře.
-     - **Dvoufázový životní cyklus (Two-Phase Posting Lifecycle)**:
-       - **Fáze 1 (Autonomní předvyplnění)**: Worker provede navigaci na správnou subdoménu, vyplní veškeré údaje, heslo (`heslobazar`), zvolí podkategorii a nahraje fotky. Při volání z webu (`is_web=True`) worker uvolní vlákno a přejde do stavu `READY_FOR_REVIEW`.
-       - **Fáze 2 (Uživatelská revize & Potvrzení)**: Uživatel v živém prohlížeči (noVNC / screencast) zkontroluje údaje, případně vyřeší SMS kód, klikne na Bazoši na *Odeslat* a následně v Listing Hubu potvrdí akci přes `POST /api/action/confirm`. Backend ověří dokončení odeslání na Bazoši, extrahuje novou URL a zapíše inzerát jako aktivní do SQLite databáze.
-   - **Dávkové znovuvystavení (Batch Reposting Architecture)**:
-     - **Frontend fronta (`batchQueue`, `batchIndex`)**: Správa stavu výběru více položek v záložkách aktivních i neprodaných inzerátů.
-     - **Dávkový modal (`batch-repost-modal`)**: Umožňuje individuální úpravu prodejní ceny (`batch-row-price`) a cílové rubriky (`batch-row-rubrika`) pro každý vybraný inzerát v dávce před spuštěním.
-     - **Sekvenční bezpečné zpracování**: Průchod položkami jedna po druhé na dedikovaném workeru. Zahrnuje indikátor postupu (`batch-queue-indicator`), podporu přeskočení (`btn-batch-skip`) i okamžitého zrušení (`btn-batch-cancel`).
-     - **Automatické topování**: Pro každou položku se asynchronně provede smazání původního inzerátu na Bazoši přes heslo a vystavení nového s aktualizovanými parametry.
-   - **Správa prodaných inzerátů (Sold Lifecycle Architecture)**:
-     - **Perzistence v SQLite**: Sloupce `sale_price` (`INTEGER`), `sold_at` (`TEXT`) a `sold_notes` (`TEXT`) v tabulce `listings`.
-     - **Metody v `listing_hub.core.db`**: `mark_listing_as_sold()`, `restore_sold_listing()` a `get_sold_statistics()`.
-     - **Asynchronní online výmaz**: Při označení inzerátu za prodaný s volbou `delete_on_bazos=True` spustí backend asynchronní vlákno s Playwright workerem, který na Bazoši inzerát vyhledá, zadá heslo a provede online smazání pro ukončení poptávek.
-     - **Plná reverzibilita**: Endpoint `POST /api/listings/<id>/restore_sold` bezpečně vrátí položku zpět do stavu `unsold` (expirováno/k prodeji) s vynulováním prodejních metrik.
-   - **`aukro/`**: Modulární rozhraní pro budoucí aukční vystavování.
+3. **`listing_hub.portals` (Multi-Portál Architektura & Registr)**:
+   - **`base.py` (`AbstractPortal`)**: Abstraktní bázová třída s unifikovaným rozhraním: `name`, `display_name`, `supported_domains`, `validate_url()`, `normalize_url()`, `extract_item_id_from_url()`, `scrape_views()`, `get_top_info()`, `post_listing()`, `update_price()`, `delete_listing()`, `sync_listings()`.
+   - **`registry.py` (`PortalRegistry`)**: Centrální registr všech portálů (`portal_registry`). Umožňuje dynamické vyhledání adaptéru podle názvu nebo URL adresy (`detect_portal_from_url()`), delegování stahování zhlédnutí a snadnou registraci nových platforem.
+   - **Jednotlivé adaptéry portálů**:
+     - **`bazos/`**: `BazosPortal`, správa 20 subdomén, dvoufázové vystavování, rank tracker (`rank_tracker.py`), parsování HTML a session management.
+     - **`sbazar/`**: `SbazarPortal` (Sbazar.cz / Seznam) – detekce domény, parsování ID inzerátu a scraping statistik.
+     - **`vinted/`**: `VintedPortal` (Vinted.cz / Vinted.com) – detekce šatníku, extrakce item ID a views.
+     - **`facebook/`**: `FacebookMarketplacePortal` – detekce marketplace odkazů a správa stavu.
+     - **`aukro/`**: `AukroPortal` (Aukro.cz) – integrace REST API a katalogu nabídek.
+   - **`scrapers/universal.py`**: Tříúrovňový unifikovaný scraper zhlédnutí inzerátů:
+     1. Doménově specifické extraktory (Bazoš CZ/SK, Sbazar, Aukro, Vinted, Sportovní vozy, Ráj veteránů, Motorkáři).
+     2. Schema.org / JSON-LD strukturovaná metadata (`interactionStatistic`, `viewCount`).
+     3. Univerzální heuristický regex engine s podporou formátování čísel a oddělovačů tisíců.
+
 
 ---
 
@@ -138,12 +128,16 @@ pytest
 pytest -v --tb=short
 
 # Spuštění specifických sad:
-pytest tests/unit/test_categories.py # Testy rezoluce subdomén Bazoše, synonym a normalizace CZ
-pytest tests/unit/test_app.py        # Testy REST API (včetně /api/action/confirm, delete a safe_delete_photos_dir)
-pytest tests/unit/test_vision.py     # Testy AI Vision a práce s fotkami
-pytest tests/unit/test_version.py    # Testy detekce verzí (v3.8.8), GitHub cache a diff linku
-pytest tests/unit/test_advisor.py    # Testy cenového poradce a výpočtu mediánu
-pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
+pytest tests/unit/test_portals_registry.py         # Testy multi-portál registrátoru (Sbazar, Vinted, FB, Aukro, Bazoš)
+pytest tests/unit/test_universal_scraper_extended.py # Testy univerzálního 3úrovňového scraperu zhlédnutí
+pytest tests/unit/test_stagnation_and_actions.py   # Testy Stagnation Barometru, SMS Top Helperu a Rank Trackeru
+pytest tests/unit/test_categories.py               # Testy rezoluce subdomén Bazoše, synonym a normalizace CZ
+pytest tests/unit/test_app.py                      # Testy REST API (včetně /api/action/confirm, delete a safe_delete_photos_dir)
+pytest tests/unit/test_vision.py                   # Testy AI Vision a práce s fotkami
+pytest tests/unit/test_version.py                  # Testy detekce verzí (v3.15.0), GitHub cache a diff linku
+pytest tests/unit/test_advisor.py                  # Testy cenového poradce a výpočtu mediánu
+pytest tests/unit/test_db.py                       # Testy CRUD operací SQLite databáze
+pytest tests/unit/test_agent_api.py                # Testy REST API rozhraní pro AI agenty (Antigravity & MCP)
 ```
 
 ---
@@ -218,6 +212,10 @@ pytest tests/unit/test_db.py         # Testy CRUD operací SQLite databáze
   - Aktualizuje počet zhlédnutí pro zvolený portál v tabulkách `portal_states` i `listing_publications` a okamžitě zapíše snapshot do `listing_views_history` pro Prometheus metriky a Grafanu.
 - `POST /api/listings/<listing_id>/portal-views-refresh` *(JSON payload: `{"portal_name": str}`)*
   - Načte uloženou URL pro daný portál a pomocí univerzálního 3úrovňového scraperu (`listing_hub/portals/scrapers/universal.py`) zkusí automaticky zjistit počet zhlédnutí z veřejného webu (např. Sportovní vozy, Ráj veteránů, Motorkáři, Schema.org).
+- `GET /api/listings/<listing_id>/sms_top_info`
+  - Vrátí data pro 1-klikové SMS topování inzerátu na Bazoši: formátovaný text zprávy (`TOP <id>`), cílové prémiové SMS číslo (`90200`) a přímý odkaz na ceník topování.
+- `POST /api/listings/<listing_id>/check_rank` *(JSON payload: `{"query": str|null}`)*
+  - Zjistí aktuální vyhledávací pozici (Search Rank) a číslo stránky inzerátu na Bazoši pro zadanou nebo automaticky extrahovanou klíčovou frázi a uloží výsledek do DB.
 - `GET /api/photos/<listing_id>/zip`
   - Bleskově vygeneruje a streamuje in-memory ZIP archív (`fotky-<id>.zip`) obsahující všechny fotografie inzerátu přehledně seřazené pro snadné nahrání na externí inzertní servery.
 - `POST /api/sms/relay` *(JSON payload: `{"text": str|null, "code": str|null, "token": str|null}`)*
