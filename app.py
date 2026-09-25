@@ -1773,6 +1773,69 @@ def refresh_portal_views(listing_id):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/listings/<listing_id>/check_rank", methods=["POST"])
+def check_listing_search_rank(listing_id):
+    """Zkontroluje aktuální pozici inzerátu na Bazoši ve vyhledávání."""
+    try:
+        data = request.get_json(silent=True) or {}
+        custom_query = (data.get("query") or "").strip() or None
+        
+        from listing_hub.portals.bazos.bazos_portal import BazosPortal
+        portal = BazosPortal()
+        rank_data = portal.check_listing_rank(listing_id, query=custom_query)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Pozice inzerátu úspěšně zkontrolována.",
+            "data": rank_data
+        })
+    except ValueError as ve:
+        return jsonify({"status": "error", "message": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/listings/<listing_id>/sms_top_info", methods=["GET"])
+def get_sms_top_info(listing_id):
+    """Vrátí instrukce pro 1-Click SMS topování inzerátu na Bazoši."""
+    try:
+        import urllib.parse
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+            
+        portal_states = listing.get("portal_states") or {}
+        bazos_state = portal_states.get("bazos") or {}
+        portal_item_id = bazos_state.get("portal_item_id")
+        
+        if not portal_item_id:
+            url = bazos_state.get("url") or listing.get("url") or ""
+            m = re.search(r"/inzerat/(\d+)/", url)
+            if m:
+                portal_item_id = m.group(1)
+                
+        if not portal_item_id:
+            return jsonify({"status": "error", "message": "Pro tento inzerát není k dispozici ID z Bazoše."}), 400
+
+        sms_body = f"BAZOS {portal_item_id}"
+        phone_number = "90333"
+        sms_uri = f"sms:{phone_number}?body={urllib.parse.quote(sms_body)}"
+        sms_uri_ios = f"sms:{phone_number}&body={urllib.parse.quote(sms_body)}"
+        qr_content = f"SMSTO:{phone_number}:{sms_body}"
+
+        return jsonify({
+            "status": "success",
+            "portal_item_id": portal_item_id,
+            "phone_number": phone_number,
+            "sms_body": sms_body,
+            "sms_uri": sms_uri,
+            "sms_uri_ios": sms_uri_ios,
+            "qr_content": qr_content,
+            "price_czk": 79,
+            "title": listing.get("title", "")
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/listings/<listing_id>/mark_sold", methods=["POST"])
 def mark_listing_sold(listing_id):
     """Označí inzerát jako prodaný, nastaví prodejní cenu a volitelně smaže z Bazoše."""

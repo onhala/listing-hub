@@ -254,6 +254,34 @@ class BazosPortal(AbstractPortal):
             is_web=True
         )
 
+    def check_listing_rank(self, listing_id: str, query: Optional[str] = None) -> Dict[str, Any]:
+        """Zkontroluje aktuální pozici inzerátu na Bazoši a uloží výsledek do DB."""
+        from listing_hub.core.db import get_listing_by_id, update_listing_portal_rank
+        from listing_hub.portals.bazos.rank_tracker import check_bazos_search_rank
+        from listing_hub.portals.bazos.categories import extract_subdomain
+
+        ad = get_listing_by_id(listing_id)
+        if not ad:
+            raise ValueError(f"Inzerát s ID '{listing_id}' nebyl nalezen.")
+
+        bazos_state = ad.get("portal_states", {}).get("bazos", {})
+        portal_item_id = bazos_state.get("portal_item_id")
+        ad_url = bazos_state.get("url") or ""
+        subdomain = extract_subdomain(ad_url) or "auto.bazos.cz"
+
+        if not portal_item_id:
+            raise ValueError("Inzerát nemá vyplněné portal_item_id pro Bazoš.")
+
+        rank_data = check_bazos_search_rank(
+            portal_item_id=portal_item_id,
+            title=ad.get("title", ""),
+            subdomain=subdomain,
+            query=query
+        )
+
+        update_listing_portal_rank(listing_id, "bazos", rank_data)
+        return rank_data
+
     def sync_listings(self, user_config: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Stáhne inzeráty z Bazoše, spáruje je se SQLite databází,
@@ -433,6 +461,11 @@ class BazosPortal(AbstractPortal):
                     "is_top": _top_is,
                     "top_expires_at": _top_exp,
                     "top_info": _top_inf,
+                    "search_rank": bazos_state.get("search_rank"),
+                    "search_rank_page": bazos_state.get("search_rank_page"),
+                    "search_rank_total": bazos_state.get("search_rank_total"),
+                    "search_query": bazos_state.get("search_query"),
+                    "search_rank_checked_at": bazos_state.get("search_rank_checked_at")
                 }
                 save_listing(local_ad, {"bazos": bazos_state_data})
                 if local_ad.get("id") and best_scraped_match.get("views") is not None:

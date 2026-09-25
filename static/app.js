@@ -852,6 +852,11 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
+        // Smart Drop Alert pro aktivní inzeráty (vypršelý TOP nebo propadlá pozice)
+        if (typeof updateSmartDropAlerts === "function") {
+            updateSmartDropAlerts(liveListings);
+        }
+
         // Věci k prodeji (expirované/drafty)
         unsoldListingsContainer.innerHTML = "";
         if (unsoldListings.length === 0) {
@@ -996,6 +1001,71 @@ document.addEventListener("DOMContentLoaded", () => {
                     🔥 TOP <span style="font-size:0.65rem;opacity:0.85;">(do ${formatTopExpiry(ad.top_expires_at)})</span>
                 </span>
             `;
+        } else if (ad.top_expires_at && isTopExpired(ad.top_expires_at)) {
+            badgesHtml += `
+                <span class="portal-badge badge-top-expired btn-open-sms-top" data-ad-id="${ad.id}" style="cursor: pointer; font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35);" title="Placený TOP vypršel ${formatTopExpiry(ad.top_expires_at)}. Klikni pro 1-Click TOPování!">
+                    ⚠️ TOP vypršel <span style="font-size:0.65rem;opacity:0.85;">(${formatTopExpiry(ad.top_expires_at)})</span>
+                </span>
+            `;
+        }
+
+        // 5. Bazoš Search Rank Badge
+        const hasBazosAd = ad.target_bazos || Boolean(ad.url) || Boolean(pStates.bazos);
+        if (hasBazosAd && !ad.is_sold) {
+            const bState = pStates.bazos || {};
+            const rank = (ad.search_rank !== undefined && ad.search_rank !== null) ? ad.search_rank : bState.search_rank;
+            const page = (ad.search_rank_page !== undefined && ad.search_rank_page !== null) ? ad.search_rank_page : bState.search_rank_page;
+            const total = (ad.search_rank_total !== undefined && ad.search_rank_total !== null) ? ad.search_rank_total : bState.search_rank_total;
+            const q = ad.search_query || bState.search_query || "";
+            const checkedAt = ad.search_rank_checked_at || bState.search_rank_checked_at;
+
+            let rankStyle = "";
+            let rankText = "";
+            let rankTip = "";
+
+            if (rank !== null && rank !== undefined) {
+                if (rank <= 5) {
+                    rankStyle = "background: rgba(234, 179, 8, 0.22); color: #fbbf24; border: 1px solid rgba(234, 179, 8, 0.5);";
+                    rankText = `🏆 #${rank} (1. str.)`;
+                    rankTip = `Pozice #${rank} z ${total || '?'} výsledků pro '${q}'. Špičková viditelnost!`;
+                } else if (rank <= 20) {
+                    rankStyle = "background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);";
+                    rankText = `🟢 #${rank} (1. str.)`;
+                    rankTip = `Pozice #${rank} z ${total || '?'} výsledků pro '${q}'. Na 1. straně.`;
+                } else if (rank <= 50) {
+                    rankStyle = "background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4);";
+                    rankText = `🟡 #${rank} (${page}. str.)`;
+                    rankTip = `Pozice #${rank} z ${total || '?'} výsledků pro '${q}'. Zvažte TOPování.`;
+                } else {
+                    rankStyle = "background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);";
+                    rankText = `📉 #${rank} (${page}. str.)`;
+                    rankTip = `Pozice #${rank} z ${total || '?'} výsledků pro '${q}'. Inzerát zapadá!`;
+                }
+            } else if (checkedAt) {
+                rankStyle = "background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5);";
+                rankText = `📉 >100 (zapadlé)`;
+                rankTip = `Nenalezeno v prvních 5 stranách (z ${total || '>100'} výsledků pro '${q}').`;
+            } else {
+                rankStyle = "background: rgba(255, 255, 255, 0.06); color: var(--text-muted); border: 1px solid rgba(255, 255, 255, 0.15);";
+                rankText = `🔍 Pozice: zjistit`;
+                rankTip = `Klikni pro vyhledání aktuální pozice na Bazoši`;
+            }
+
+            badgesHtml += `
+                <span class="portal-badge badge-bazos-rank" data-ad-id="${ad.id}" data-current-query="${escapeHtml(q)}" style="cursor: pointer; font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; ${rankStyle}" title="${escapeHtml(rankTip)} (Klikni pro kontrolu)">
+                    ${rankText} <i class="fa-solid fa-arrows-rotate" style="font-size: 0.6rem; opacity: 0.7;"></i>
+                </span>
+            `;
+
+            // Tlačítko ⚡ Topovat (pokud inzerát nemá aktivní placený TOP nebo je mimo top 20)
+            const hasActiveTop = ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at);
+            if (!hasActiveTop || (rank !== null && rank > 20)) {
+                badgesHtml += `
+                    <span class="portal-badge btn-open-sms-top" data-ad-id="${ad.id}" style="cursor: pointer; font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 153, 0, 0.18); color: #ff9900; border: 1px solid rgba(255, 153, 0, 0.45); box-shadow: 0 0 6px rgba(255,153,0,0.2);" title="Otevřít 1-Click SMS Topování (79 Kč)">
+                        ⚡ Topovat
+                    </span>
+                `;
+            }
         }
 
         return badgesHtml;
@@ -1095,6 +1165,207 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (err) {
             showNotification("Chyba při ukládání zhlédnutí: " + err.message, "error");
         }
+    };
+
+    // --- BAZOŠ SEARCH RANK & SMS TOP HELPER ---
+    let currentSmsTopListingId = null;
+
+    const checkBazosRank = async (listingId, query = null, triggerEl = null) => {
+        try {
+            if (triggerEl) {
+                triggerEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size:0.6rem;"></i> Ověřuji...`;
+                triggerEl.style.opacity = "0.7";
+                triggerEl.style.pointerEvents = "none";
+            }
+            showNotification("Zjišťuji pozici na Bazoši...", "info");
+            const res = await fetch(`/api/listings/${listingId}/check_rank`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: query })
+            });
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                const rd = data.data;
+                if (rd.found) {
+                    showNotification(`Pozice nalezena: #${rd.rank_position} (${rd.rank_page}. strana) pro dotaz '${rd.query}'`, "success");
+                } else {
+                    showNotification(`Inzerát nebyl nalezen v prvních 5 stránkách pro '${rd.query}' (>100. pozice).`, "warning");
+                }
+                await loadListings();
+            } else {
+                showNotification(data.message || "Chyba při zjišťování pozice na Bazoši.", "error");
+                if (triggerEl) {
+                    triggerEl.style.opacity = "1";
+                    triggerEl.style.pointerEvents = "auto";
+                }
+            }
+        } catch (err) {
+            showNotification("Chyba sítě při ověřování pozice: " + err.message, "error");
+            if (triggerEl) {
+                triggerEl.style.opacity = "1";
+                triggerEl.style.pointerEvents = "auto";
+            }
+        }
+    };
+
+    const promptCheckBazosRank = async (listingId, currentQuery, triggerEl) => {
+        const customQuery = prompt(
+            `Zadej hledanou frázi na Bazoši pro ověření pozice:\n(Ponech výchozí nebo uprav, např. 'VW Arteon' či 'VW Arteon SB')`,
+            currentQuery || ""
+        );
+        if (customQuery === null) return;
+        await checkBazosRank(listingId, customQuery.trim() || null, triggerEl);
+    };
+
+    const closeSmsTopModal = () => {
+        const modal = document.getElementById("sms-top-modal");
+        if (modal) modal.style.display = "none";
+        currentSmsTopListingId = null;
+    };
+
+    const openSmsTopModal = async (listingId) => {
+        currentSmsTopListingId = listingId;
+        const modal = document.getElementById("sms-top-modal");
+        if (!modal) return;
+
+        const titleEl = document.getElementById("sms-top-listing-title");
+        const mobileLink = document.getElementById("sms-top-mobile-link");
+        const qrContainer = document.getElementById("sms-top-qr-container");
+        const textCopy = document.getElementById("sms-top-text-copy");
+        const numberCopy = document.getElementById("sms-top-number-copy");
+
+        if (titleEl) titleEl.textContent = "Načítám inzerát...";
+        if (textCopy) textCopy.textContent = "BAZOS ...";
+        if (numberCopy) numberCopy.textContent = "90333";
+        if (qrContainer) qrContainer.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="color: #666; font-size: 1.5rem;"></i>';
+
+        modal.style.display = "flex";
+
+        try {
+            const res = await fetch(`/api/listings/${listingId}/sms_top_info`);
+            const data = await res.json();
+            if (!res.ok || data.status !== "success") {
+                showNotification(data.message || "Nepodařilo se načíst instrukce pro TOPování.", "error");
+                closeSmsTopModal();
+                return;
+            }
+
+            if (titleEl) titleEl.textContent = data.title || "Inzerát";
+            if (textCopy) textCopy.textContent = data.sms_body;
+            if (numberCopy) numberCopy.textContent = data.phone_number;
+
+            // Správný odkaz pro mobil (iOS vyžaduje &body=, Android ?body=)
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            if (mobileLink) {
+                mobileLink.href = isIOS ? data.sms_uri_ios : data.sms_uri;
+            }
+
+            // QR kód
+            if (qrContainer) {
+                qrContainer.innerHTML = "";
+                const qrText = data.qr_content;
+                if (typeof QRCode !== "undefined") {
+                    new QRCode(qrContainer, {
+                        text: qrText,
+                        width: 108,
+                        height: 108,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                } else {
+                    const qrImg = document.createElement("img");
+                    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=108x108&data=${encodeURIComponent(qrText)}`;
+                    qrImg.alt = "SMS QR";
+                    qrImg.style.width = "108px";
+                    qrImg.style.height = "108px";
+                    qrImg.style.display = "block";
+                    qrContainer.appendChild(qrImg);
+                }
+            }
+        } catch (e) {
+            showNotification(`Chyba načítání SMS TOP: ${e.message}`, "error");
+            closeSmsTopModal();
+        }
+    };
+
+    const updateSmartDropAlerts = (activeListings) => {
+        const container = document.getElementById("smart-drop-alert-container");
+        if (!container) return;
+
+        // Inzeráty, které spadly z předních pozic nebo jim vypršel TOP
+        const droppedListings = (activeListings || []).filter(ad => {
+            const bState = (ad.portal_states && ad.portal_states.bazos) || {};
+            const hasBazos = ad.target_bazos || bState.portal_item_id || ad.url;
+            if (!hasBazos) return false;
+
+            const isTop = ad.is_top && !isTopExpired(ad.top_expires_at);
+            const rank = (ad.search_rank !== undefined && ad.search_rank !== null) ? ad.search_rank : bState.search_rank;
+            const checkedAt = ad.search_rank_checked_at || bState.search_rank_checked_at;
+            
+            // 1. Zkontrolovaný rank a je mimo top 20 nebo zapadlý (>100)
+            if (!isTop && checkedAt && (rank === null || rank > 20)) {
+                return true;
+            }
+            // 2. Vypršel placený TOP
+            if (!isTop && ad.top_expires_at && isTopExpired(ad.top_expires_at)) {
+                return true;
+            }
+            return false;
+        });
+
+        if (droppedListings.length === 0) {
+            container.style.display = "none";
+            container.innerHTML = "";
+            return;
+        }
+
+        const firstDropped = droppedListings[0];
+        const bState = (firstDropped.portal_states && firstDropped.portal_states.bazos) || {};
+        const rank = (firstDropped.search_rank !== undefined && firstDropped.search_rank !== null) ? firstDropped.search_rank : bState.search_rank;
+        const rankLabel = rank ? `#${rank}` : `>100 (zapadlý)`;
+
+        container.style.display = "block";
+        container.innerHTML = `
+            <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(245, 158, 11, 0.12)); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 12px; padding: 0.9rem 1.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; box-shadow: 0 4px 20px rgba(0,0,0,0.25);">
+                <div style="display: flex; align-items: center; gap: 0.85rem; flex-grow: 1;">
+                    <div style="background: rgba(245, 158, 11, 0.2); width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fbbf24; font-size: 1.15rem; flex-shrink: 0;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div>
+                        <div style="font-weight: 700; color: #fff; font-size: 0.92rem;">
+                            ⚠️ <strong>${escapeHtml(firstDropped.title)}</strong> je na pozici <span style="color: #fbbf24; font-weight: 800;">${rankLabel}</span> (vypršel TOP)
+                        </div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+                            Před víkendem doporučujeme provést SMS TOP nebo znovuvystavení pro okamžitý návrat na 1. stranu.
+                            ${droppedListings.length > 1 ? `<span style="color: #67e8f9; margin-left: 4px;">(+${droppedListings.length - 1} další inzerát vyžaduje pozornost)</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <button type="button" class="btn btn-primary btn-alert-sms-top" data-ad-id="${firstDropped.id}" style="background: linear-gradient(135deg, #ff9900, #f59e0b); border: none; color: #000; font-weight: 700; font-size: 0.85rem; padding: 0.45rem 0.95rem; border-radius: 8px; display: inline-flex; align-items: center; gap: 0.4rem; box-shadow: 0 2px 10px rgba(255,153,0,0.3); cursor: pointer;">
+                        <i class="fa-solid fa-bolt"></i> Topovat (79 Kč)
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-alert-repost" data-ad-id="${firstDropped.id}" style="font-size: 0.85rem; padding: 0.45rem 0.95rem; border-radius: 8px; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Znovu vystavit zdarma
+                    </button>
+                </div>
+            </div>
+        `;
+
+        container.querySelector(".btn-alert-sms-top")?.addEventListener("click", () => {
+            openSmsTopModal(firstDropped.id);
+        });
+
+        container.querySelector(".btn-alert-repost")?.addEventListener("click", () => {
+            const adCard = document.querySelector(`.listing-card[data-ad-id="${firstDropped.id}"]`);
+            const postBtn = adCard?.querySelector(".btn-post-action");
+            if (postBtn) {
+                postBtn.click();
+            } else {
+                openEditModal(firstDropped);
+            }
+        });
     };
 
     const createAdCard = (ad, isSold) => {
@@ -1314,6 +1585,29 @@ document.addEventListener("DOMContentLoaded", () => {
                 const curViews = parseInt(span.getAttribute("data-views") || "0", 10);
                 const url = span.getAttribute("data-url") || "";
                 promptUpdatePortalViews(listingId, portal, pLabel, curViews, url, span);
+            });
+        });
+
+        // Bazoš Search Rank - kliknutí pro ověření nebo změnu dotazu
+        card.querySelectorAll(".badge-bazos-rank").forEach(badge => {
+            badge.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const listingId = badge.getAttribute("data-ad-id");
+                const curQuery = badge.getAttribute("data-current-query");
+                if (typeof promptCheckBazosRank === "function") {
+                    promptCheckBazosRank(listingId, curQuery, badge);
+                }
+            });
+        });
+
+        // 1-Click SMS Topování Bazoš
+        card.querySelectorAll(".btn-open-sms-top").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const listingId = btn.getAttribute("data-ad-id");
+                if (typeof openSmsTopModal === "function") {
+                    openSmsTopModal(listingId);
+                }
             });
         });
 
@@ -3405,6 +3699,57 @@ document.addEventListener("DOMContentLoaded", () => {
             showNotification("Chyba při komunikaci se serverem: " + err.message, "error");
         }
     };
+
+    // --- 1-CLICK SMS TOP MODAL LISTENERS ---
+    document.querySelectorAll(".btn-close-sms-top-modal").forEach(btn => {
+        btn.addEventListener("click", closeSmsTopModal);
+    });
+
+    const smsTopModalEl = document.getElementById("sms-top-modal");
+    if (smsTopModalEl) {
+        smsTopModalEl.addEventListener("click", (e) => {
+            if (e.target.id === "sms-top-modal") {
+                closeSmsTopModal();
+            }
+        });
+    }
+
+    const textCopyEl = document.getElementById("sms-top-text-copy");
+    if (textCopyEl) {
+        textCopyEl.addEventListener("click", () => {
+            const text = textCopyEl.textContent || "";
+            if (text && text !== "BAZOS ...") {
+                navigator.clipboard.writeText(text);
+                showNotification(`Text SMS '${text}' zkopírován do schránky!`, "success");
+            }
+        });
+    }
+
+    const numberCopyEl = document.getElementById("sms-top-number-copy");
+    if (numberCopyEl) {
+        numberCopyEl.addEventListener("click", () => {
+            const num = numberCopyEl.textContent || "90333";
+            navigator.clipboard.writeText(num);
+            showNotification(`Telefonní číslo '${num}' zkopírováno!`, "success");
+        });
+    }
+
+    const btnRecheckRankAfterTop = document.getElementById("btn-recheck-rank-after-top");
+    if (btnRecheckRankAfterTop) {
+        btnRecheckRankAfterTop.addEventListener("click", async () => {
+            if (!currentSmsTopListingId) return;
+            const origHtml = btnRecheckRankAfterTop.innerHTML;
+            btnRecheckRankAfterTop.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Ověřuji novou pozici...`;
+            btnRecheckRankAfterTop.disabled = true;
+            try {
+                await checkBazosRank(currentSmsTopListingId);
+            } finally {
+                btnRecheckRankAfterTop.innerHTML = origHtml;
+                btnRecheckRankAfterTop.disabled = false;
+                closeSmsTopModal();
+            }
+        });
+    }
 
     // --- MANUAL PUBLISH MODAL LOGIKA ---
     let pendingManualPublishAd = null;

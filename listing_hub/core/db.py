@@ -113,7 +113,12 @@ def init_db() -> None:
             ("top_expires_at", "TEXT"), 
             ("top_info", "TEXT"),
             ("portal_label", "TEXT"),
-            ("published_at", "TEXT")
+            ("published_at", "TEXT"),
+            ("search_rank", "INTEGER"),
+            ("search_rank_page", "INTEGER"),
+            ("search_rank_total", "INTEGER"),
+            ("search_query", "TEXT"),
+            ("search_rank_checked_at", "TEXT")
         ]:
             try:
                 cursor.execute(f"ALTER TABLE portal_states ADD COLUMN {col} {col_type}")
@@ -208,8 +213,9 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                 cursor.execute("""
                     INSERT INTO portal_states (
                         listing_id, portal_name, portal_item_id, url, status, views, last_synced,
-                        is_top, top_expires_at, top_info, portal_label, published_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        is_top, top_expires_at, top_info, portal_label, published_at,
+                        search_rank, search_rank_page, search_rank_total, search_query, search_rank_checked_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(listing_id, portal_name) DO UPDATE SET
                         portal_item_id=excluded.portal_item_id,
                         url=excluded.url,
@@ -220,7 +226,12 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                         top_expires_at=excluded.top_expires_at,
                         top_info=excluded.top_info,
                         portal_label=COALESCE(excluded.portal_label, portal_states.portal_label),
-                        published_at=COALESCE(excluded.published_at, portal_states.published_at)
+                        published_at=COALESCE(excluded.published_at, portal_states.published_at),
+                        search_rank=COALESCE(excluded.search_rank, portal_states.search_rank),
+                        search_rank_page=COALESCE(excluded.search_rank_page, portal_states.search_rank_page),
+                        search_rank_total=COALESCE(excluded.search_rank_total, portal_states.search_rank_total),
+                        search_query=COALESCE(excluded.search_query, portal_states.search_query),
+                        search_rank_checked_at=COALESCE(excluded.search_rank_checked_at, portal_states.search_rank_checked_at)
                 """, (
                     listing_data.get("id"),
                     portal_name,
@@ -233,7 +244,12 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                     state.get("top_expires_at"),
                     state.get("top_info"),
                     state.get("portal_label"),
-                    state.get("published_at")
+                    state.get("published_at"),
+                    state.get("search_rank"),
+                    state.get("search_rank_page"),
+                    state.get("search_rank_total"),
+                    state.get("search_query"),
+                    state.get("search_rank_checked_at")
                 ))
                 
         conn.commit()
@@ -265,6 +281,11 @@ def get_all_listings() -> List[Dict[str, Any]]:
             listing["is_top"] = bool(bazos_state.get("is_top", 0))
             listing["top_expires_at"] = bazos_state.get("top_expires_at")
             listing["top_info"] = bazos_state.get("top_info")
+            listing["search_rank"] = bazos_state.get("search_rank")
+            listing["search_rank_page"] = bazos_state.get("search_rank_page")
+            listing["search_rank_total"] = bazos_state.get("search_rank_total")
+            listing["search_query"] = bazos_state.get("search_query")
+            listing["search_rank_checked_at"] = bazos_state.get("search_rank_checked_at")
 
             # Načtení publikací (historie)
             cursor.execute("SELECT * FROM listing_publications WHERE listing_id = ? ORDER BY id ASC", (listing["id"],))
@@ -299,6 +320,11 @@ def get_listing_by_id(listing_id: str) -> Optional[Dict[str, Any]]:
         listing["is_top"] = bool(bazos_state.get("is_top", 0))
         listing["top_expires_at"] = bazos_state.get("top_expires_at")
         listing["top_info"] = bazos_state.get("top_info")
+        listing["search_rank"] = bazos_state.get("search_rank")
+        listing["search_rank_page"] = bazos_state.get("search_rank_page")
+        listing["search_rank_total"] = bazos_state.get("search_rank_total")
+        listing["search_query"] = bazos_state.get("search_query")
+        listing["search_rank_checked_at"] = bazos_state.get("search_rank_checked_at")
 
         # Načtení publikací (historie)
         cursor.execute("SELECT * FROM listing_publications WHERE listing_id = ? ORDER BY id ASC", (listing_id,))
@@ -603,6 +629,38 @@ def update_listing_portal_views(listing_id: str, portal_name: str, views: int) -
     if updated:
         record_views_snapshot(listing_id, clean_portal_name, int(views))
     return updated
+
+def update_listing_portal_rank(listing_id: str, portal_name: str, rank_data: Dict[str, Any]) -> bool:
+    """Aktualizuje search rank a pozici inzerátu na daném portálu."""
+    if not listing_id:
+        return False
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        clean_portal_name = (portal_name or "bazos").strip().lower()
+        now_iso = rank_data.get("checked_at") or datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE portal_states
+            SET search_rank = ?,
+                search_rank_page = ?,
+                search_rank_total = ?,
+                search_query = ?,
+                search_rank_checked_at = ?
+            WHERE listing_id = ? AND portal_name = ?
+        """, (
+            rank_data.get("rank_position"),
+            rank_data.get("rank_page"),
+            rank_data.get("total_results"),
+            rank_data.get("query"),
+            now_iso,
+            listing_id,
+            clean_portal_name
+        ))
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    finally:
+        conn.close()
 
 def get_active_external_portal_urls() -> List[Dict[str, Any]]:
     """Vrátí všechny aktivní externí portály (mimo Bazoš), které mají vyplněnou platnou URL."""
