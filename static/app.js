@@ -761,8 +761,98 @@ document.addEventListener("DOMContentLoaded", () => {
         return Math.max(0, Math.floor((now - d) / (1000 * 60 * 60 * 24)));
     };
 
+    const getStagnationInfo = (ad) => {
+        if (!ad || ad.status !== "Aktivní") {
+            return { isStagnant: false, severity: "none", daysOld: 0, reason: "", discountPrice: 0, discountDiff: 0 };
+        }
+
+        const bState = (ad.portal_states && ad.portal_states.bazos) || {};
+        const daysOld = getDaysOld(ad.date_created) || 0;
+        const isTop = Boolean(ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at));
+        const topExpired = Boolean(ad.top_expires_at && isTopExpired(ad.top_expires_at));
+        const rank = (ad.search_rank !== undefined && ad.search_rank !== null) ? ad.search_rank : bState.search_rank;
+        const rankChecked = Boolean(ad.search_rank_checked_at || bState.search_rank_checked_at);
+
+        // Výpočet doporučeného zlevnění (-5 %)
+        const currentPrice = ad.price ? parseInt(ad.price, 10) : 0;
+        let discountPrice = 0;
+        let discountDiff = 0;
+        if (currentPrice > 0) {
+            const rawDiscount = currentPrice * 0.95;
+            if (currentPrice >= 100000) {
+                discountPrice = Math.floor(rawDiscount / 1000) * 1000;
+            } else if (currentPrice >= 10000) {
+                discountPrice = Math.floor(rawDiscount / 500) * 500;
+            } else {
+                discountPrice = Math.floor(rawDiscount / 50) * 50;
+            }
+            discountDiff = currentPrice - discountPrice;
+        }
+
+        // 1. Kritické hnití:
+        // - Inzerát visí >= 14 dní A (vypršel TOP nebo rank > 20 nebo nebyl v top 100)
+        // - NEBO inzerát visí >= 25 dní bez ohledu na ostatní faktory
+        const isCriticallyOld = daysOld >= 14;
+        const hasRankIssue = rankChecked && (rank === null || rank > 20);
+        
+        if ((isCriticallyOld && (topExpired || !isTop || hasRankIssue)) || daysOld >= 25) {
+            let reason = `Inzerát visí už ${daysOld} dní`;
+            if (topExpired) {
+                reason += `, placený TOP vypršel ${formatTopExpiry(ad.top_expires_at)}`;
+            } else if (!isTop) {
+                reason += `, je bez placeného TOPu`;
+            }
+            if (rank) {
+                reason += ` a propadl na #${rank} pozici`;
+            } else if (rankChecked) {
+                reason += ` a propadl mimo prvních 100 inzerátů`;
+            }
+            return {
+                isStagnant: true,
+                severity: "critical",
+                daysOld: daysOld,
+                reason: reason,
+                discountPrice: discountPrice,
+                discountDiff: discountDiff
+            };
+        }
+
+        // 2. Začínající stagnace:
+        // - Inzerát visí 7 až 13 dní bez TOPu, nebo rank 21–50
+        if ((daysOld >= 7 && !isTop) || (rankChecked && rank !== null && rank > 20)) {
+            let reason = `Visí ${daysOld} dní`;
+            if (topExpired) reason += ` (TOP vypršel)`;
+            if (rank) reason += `, aktuální pozice #${rank}`;
+            return {
+                isStagnant: true,
+                severity: "warning",
+                daysOld: daysOld,
+                reason: reason,
+                discountPrice: discountPrice,
+                discountDiff: discountDiff
+            };
+        }
+
+        return {
+            isStagnant: false,
+            severity: "fresh",
+            daysOld: daysOld,
+            reason: "",
+            discountPrice: discountPrice,
+            discountDiff: discountDiff
+        };
+    };
+
     const sortListingsArray = (arr, sortType) => {
         return [...arr].sort((a, b) => {
+            if (sortType === "stagnant_desc") {
+                const stagA = getStagnationInfo(a);
+                const stagB = getStagnationInfo(b);
+                const scoreA = (stagA.severity === "critical" ? 300 : stagA.severity === "warning" ? 150 : 0) + (stagA.daysOld || 0);
+                const scoreB = (stagB.severity === "critical" ? 300 : stagB.severity === "warning" ? 150 : 0) + (stagB.daysOld || 0);
+                return scoreB - scoreA;
+            }
+
             const daysA = getDaysOld(a.date_created);
             const daysB = getDaysOld(b.date_created);
             
@@ -1386,6 +1476,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const dateStr = ad.date_created || "Dosud nevystaveno";
         const urlStr = ad.url || "";
         
+        // Výpočet stagnace / hnití inzerátu
+        const stag = getStagnationInfo(ad);
+        if (stag.isStagnant) {
+            if (stag.severity === "critical") {
+                card.classList.add("card-stagnant-critical");
+            } else if (stag.severity === "warning") {
+                card.classList.add("card-stagnant-warning");
+            }
+        }
+
         // Výpočet stáří inzerátu pro indikaci potřeby přetopování
         const daysOld = getDaysOld(ad.date_created);
         let ageBadgeHtml = "";
@@ -1405,6 +1505,44 @@ document.addEventListener("DOMContentLoaded", () => {
             ageBadgeHtml = `<span class="age-badge ${ageClass}" title="Stáří inzerátu od vystavení">${ageLabel}</span>`;
         }
 
+        let stagnantHeaderBadgeHtml = "";
+        if (stag.isStagnant) {
+            if (stag.severity === "critical") {
+                stagnantHeaderBadgeHtml = `<span class="stagnant-pill-critical" title="${escapeHtml(stag.reason)}"><i class="fa-solid fa-skull-crossbones"></i> Hnije (${stag.daysOld} dní)</span>`;
+            } else {
+                stagnantHeaderBadgeHtml = `<span class="stagnant-pill-warning" title="${escapeHtml(stag.reason)}"><i class="fa-solid fa-triangle-exclamation"></i> Stagnuje (${stag.daysOld} dní)</span>`;
+            }
+        }
+
+        let stagnationBoxHtml = "";
+        if (stag.isStagnant && !isSold) {
+            const discountLabel = stag.discountDiff > 0 ? `-${stag.discountDiff.toLocaleString("cs-CZ")} Kč` : `-5 %`;
+            stagnationBoxHtml = `
+                <div class="stagnation-action-box">
+                    <div class="stagnation-status">
+                        <i class="fa-solid ${stag.severity === 'critical' ? 'fa-triangle-exclamation' : 'fa-clock'}"></i>
+                        <div>
+                            <strong>${stag.severity === 'critical' ? '🥀 Inzerát hnije na Bazoši:' : '⚠️ Začínající stagnace:'}</strong>
+                            <span>${escapeHtml(stag.reason)}. Doporučená akce:</span>
+                        </div>
+                    </div>
+                    <div class="stagnation-actions">
+                        <button type="button" class="btn-stagnant-action btn-stagnant-top btn-quick-top-action" data-ad-id="${ad.id}" title="Otevřít 1-Click SMS TOP">
+                            <i class="fa-solid fa-bolt"></i> 1-Click TOP (79 Kč)
+                        </button>
+                        <button type="button" class="btn-stagnant-action btn-stagnant-repost btn-quick-repost-action" data-ad-id="${ad.id}" title="Smazat a vystavit znovu na 1. pozici zdarma">
+                            <i class="fa-solid fa-arrows-rotate"></i> Znovuvystavit zdarma
+                        </button>
+                        ${stag.discountPrice > 0 ? `
+                        <button type="button" class="btn-stagnant-action btn-stagnant-discount btn-quick-discount-action" data-ad-id="${ad.id}" data-new-price="${stag.discountPrice}" data-diff="${stag.discountDiff}" title="Znovuvystavit se slevou 5 % na ${stag.discountPrice.toLocaleString('cs-CZ')} Kč">
+                            <i class="fa-solid fa-arrow-trend-down"></i> Zlevnit o 5 % (${discountLabel})
+                        </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
         card.innerHTML = `
             ${!isSold ? `
                 <input type="checkbox" class="card-select-checkbox" data-ad-id="${ad.id}" ${selectedBatchAdIds.has(ad.id) ? 'checked' : ''} style="${isBatchModeActive ? 'display: block;' : 'display: none;'}" title="Vybrat do dávky">
@@ -1412,7 +1550,8 @@ document.addEventListener("DOMContentLoaded", () => {
             <div>
                 <div class="listing-header">
                     <h4 class="listing-title" title="Klikni pro editaci">${escapeHtml(titleText)}</h4>
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                        ${stagnantHeaderBadgeHtml}
                         <span class="price-badge">${priceVal}</span>
                         <button type="button" class="btn-card-delete" title="Smazat inzerát" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; font-size: 0.85rem; border-radius: 4px; transition: color 0.2s;">
                             <i class="fa-solid fa-trash-can"></i>
@@ -1423,6 +1562,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${renderPortalBadgesHtml(ad)}
                 </div>
                 <p class="listing-desc">${escapeHtml(descText)}</p>
+                ${stagnationBoxHtml}
                 ${!isSold && ad.price ? `
                 <div class="price-chip chip-loading" data-ad-id="${ad.id}" data-ad-price="${ad.price || 0}" data-loaded="false" title="Klikni pro detail cenového srovnání">
                     <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 0.7rem;"></i>
@@ -1608,6 +1748,32 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (typeof openSmsTopModal === "function") {
                     openSmsTopModal(listingId);
                 }
+            });
+        });
+
+        // Stagnation Action Box tlačítka
+        card.querySelectorAll(".btn-quick-top-action").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const listingId = btn.getAttribute("data-ad-id");
+                if (typeof openSmsTopModal === "function") {
+                    openSmsTopModal(listingId);
+                }
+            });
+        });
+
+        card.querySelectorAll(".btn-quick-repost-action").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openRepostModal(ad);
+            });
+        });
+
+        card.querySelectorAll(".btn-quick-discount-action").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const newPrice = parseInt(btn.getAttribute("data-new-price"), 10);
+                openRepostModal(ad, newPrice);
             });
         });
 
@@ -3379,7 +3545,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // --- REPOST CONFIRM MODAL (Rubrika) LOGIKA ---
-    const openRepostModal = (ad) => {
+    const openRepostModal = (ad, prefillPrice = null) => {
         pendingActionAd = ad;
         const rubrikaSelect = document.getElementById("repost-rubrika-select");
         const badgeEl = document.getElementById("repost-rubrika-badge");
@@ -3389,7 +3555,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const priceInput = document.getElementById("repost-price-input");
         if (priceInput) {
-            priceInput.value = ad.price || "";
+            priceInput.value = prefillPrice !== null ? prefillPrice : (ad.price || "");
         }
         const autoDeleteCheckbox = document.getElementById("repost-autodelete-checkbox");
         // TOP safety: if active paid TOP, uncheck auto-delete by default and show warning

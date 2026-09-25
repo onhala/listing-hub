@@ -1617,6 +1617,142 @@ input:focus, textarea:focus, select:focus {
     50% { opacity: 0.75; }
 }
 
+/* Stagnant & Rotten Listing Card Emphasis */
+.listing-card.card-stagnant-critical {
+    border: 1px solid rgba(239, 68, 68, 0.45) !important;
+    border-left: 5px solid #ef4444 !important;
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.18), inset 0 0 15px rgba(239, 68, 68, 0.05);
+    animation: stagnantPulse 3s infinite ease-in-out;
+}
+
+.listing-card.card-stagnant-warning {
+    border: 1px solid rgba(245, 158, 11, 0.4) !important;
+    border-left: 5px solid #f59e0b !important;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.12);
+}
+
+@keyframes stagnantPulse {
+    0%, 100% {
+        border-color: rgba(239, 68, 68, 0.45);
+        box-shadow: 0 0 25px rgba(239, 68, 68, 0.18);
+    }
+    50% {
+        border-color: rgba(239, 68, 68, 0.75);
+        box-shadow: 0 0 35px rgba(239, 68, 68, 0.32);
+    }
+}
+
+/* Stagnant header badges in listing card header */
+.stagnant-pill-critical {
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.22);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.55);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    animation: subtlePulse 2s infinite;
+}
+
+.stagnant-pill-warning {
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.2);
+    color: #fde68a;
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+/* Stagnation Action Box inside card */
+.stagnation-action-box {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(245, 158, 11, 0.08));
+    border: 1px solid rgba(239, 68, 68, 0.28);
+    border-radius: 10px;
+    padding: 0.75rem 0.9rem;
+    margin-top: 0.6rem;
+    margin-bottom: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.stagnation-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: #fca5a5;
+}
+
+.stagnation-status i {
+    font-size: 0.95rem;
+    color: #ef4444;
+    margin-top: 1px;
+}
+
+.stagnation-status strong {
+    color: #fff;
+    margin-right: 3px;
+}
+
+.stagnation-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.2rem;
+}
+
+.btn-stagnant-action {
+    font-size: 0.76rem !important;
+    padding: 4px 10px !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.btn-stagnant-top {
+    background: linear-gradient(135deg, #ff9900, #f59e0b) !important;
+    color: #000 !important;
+    border-color: #f59e0b !important;
+}
+.btn-stagnant-top:hover {
+    box-shadow: 0 0 10px rgba(255, 153, 0, 0.5);
+    transform: translateY(-1px);
+}
+
+.btn-stagnant-repost {
+    background: rgba(59, 130, 246, 0.18) !important;
+    color: #93c5fd !important;
+    border-color: rgba(59, 130, 246, 0.4) !important;
+}
+.btn-stagnant-repost:hover {
+    background: rgba(59, 130, 246, 0.3) !important;
+    transform: translateY(-1px);
+}
+
+.btn-stagnant-discount {
+    background: rgba(239, 68, 68, 0.18) !important;
+    color: #fca5a5 !important;
+    border-color: rgba(239, 68, 68, 0.4) !important;
+}
+.btn-stagnant-discount:hover {
+    background: rgba(239, 68, 68, 0.3) !important;
+    transform: translateY(-1px);
+}
+
 /* ==========================================
    Batch Selection & Action Bar
    ========================================== */
