@@ -1,0 +1,27 @@
+name: 💡 Návrh vylepšení (Feature request)
+description: Navrhněte novou funkci, nový inzertní portál nebo vylepšení pro Listing Hub
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Máte nápad na novou funkci nebo integraci dalšího inzertního portálu? Popište svůj návrh níže.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Jaký problém nebo potřebu tento návrh řeší?
+      description: Popište současné omezení nebo scénář použití.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Navrhované řešení
+      description: Jak by měla nová funkce fungovat a jak by mělo vypadat uživatelské rozhraní či API.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Zvažované alternativy
+      description: Popište případná alternativní řešení.

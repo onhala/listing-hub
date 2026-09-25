@@ -7,6 +7,7 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
 ### 📚 Dokumentace projektu
 - 📦 **[Produktová dokumentace (PRODUCT.md)](PRODUCT.md)**: Uživatelská příručka, koncept „Drop & Sell“, workflow a hodnota pro prodejce.
 - 🛠️ **[Vývojářská příručka (DEVELOPMENT.md)](DEVELOPMENT.md)**: Architektura aplikace, REST API specifikace, lokální setup a unit testování.
+- 🤝 **[Příručka pro přispěvatele (CONTRIBUTING.md)](CONTRIBUTING.md)**: Git workflow, konvence větví a commitů, šablony a pravidla pro nové vývojáře.
 - 🐳 **[Produkční nasazení (DEPLOYMENT.md)](DEPLOYMENT.md)**: Provoz v Dockeru, TrueNAS SCALE, ZFS oprávnění a Nginx reverzní proxy.
 
 ---

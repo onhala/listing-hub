@@ -1,0 +1,51 @@
+name: 🐛 Hlášení chyby (Bug report)
+description: Nahlaste chybu nebo neočekávané chování v aplikaci Listing Hub
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Děkujeme za nahlášení chyby! Před odesláním se prosím ujistěte, že stejný problém již není nahlášen v existujících issues.
+  - type: input
+    id: version
+    attributes:
+      label: Verze aplikace
+      description: Jakou verzi aplikace Listing Hub provozujete (např. v3.15.0)?
+      placeholder: v3.15.0
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Prostředí
+      options:
+        - Docker (TrueNAS SCALE)
+        - Docker Compose (Lokální Linux/Mac)
+        - Lokální Python (.venv)
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Popis chyby
+      description: Jasný a stručný popis toho, co nefunguje.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Kroky k reprodukci
+      description: Postup, jak chybu vyvolat.
+      placeholder: |
+        1. Otevřít záložku 'Aktivní inzeráty'
+        2. Kliknout na 'Upravit cenu' u inzerátu ID 12345
+        3. Zadat novou cenu 1 500 Kč
+        4. Dojde k chybě...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevantní logy / Chybová hlášení
+      description: Výpis z logs/app.log nebo konzole prohlížeče.
+      render: shell
