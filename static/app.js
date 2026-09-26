@@ -819,21 +819,32 @@ document.addEventListener("DOMContentLoaded", () => {
             discountDiff = currentPrice - discountPrice;
         }
 
-        // 1. Kritické hnití:
-        // - Inzerát visí >= 14 dní A (vypršel TOP nebo rank > 20 nebo nebyl v top 100)
-        // - NEBO inzerát visí >= 25 dní bez ohledu na ostatní faktory
+        // Pokud má inzerát aktivní platné placené TOPování, NEHNIJE a nestagnuje
+        if (isTop) {
+            return {
+                isStagnant: false,
+                severity: "fresh",
+                daysOld: daysOld,
+                reason: "",
+                discountPrice: discountPrice,
+                discountDiff: discountDiff
+            };
+        }
+
+        // 1. Kritické hnití (bez aktivního TOPu):
+        // - TOP vypršel NEBO inzerát visí >= 14 dní a má špatný rank NEBO visí >= 25 dní bez TOPu
         const isCriticallyOld = daysOld >= 14;
         const hasRankIssue = rankChecked && (rank === null || rank > 20);
         
-        if ((isCriticallyOld && (topExpired || !isTop || hasRankIssue)) || daysOld >= 25) {
+        if (topExpired || (isCriticallyOld && (hasRankIssue || daysOld >= 25))) {
             let reason = `Inzerát visí už ${daysOld} dní`;
             if (topExpired) {
                 reason += `, placený TOP vypršel ${formatTopExpiry(ad.top_expires_at)}`;
-            } else if (!isTop) {
+            } else {
                 reason += `, je bez placeného TOPu`;
             }
             if (rank) {
-                reason += ` a propadl na #${rank} pozici`;
+                reason += ` a propadl na #${rank}. pozici`;
             } else if (rankChecked) {
                 reason += ` a propadl mimo prvních 100 inzerátů`;
             }
@@ -847,11 +858,10 @@ document.addEventListener("DOMContentLoaded", () => {
             };
         }
 
-        // 2. Začínající stagnace:
+        // 2. Začínající stagnace (bez aktivního TOPu):
         // - Inzerát visí 7 až 13 dní bez TOPu, nebo rank 21–50
-        if ((daysOld >= 7 && !isTop) || (rankChecked && rank !== null && rank > 20)) {
-            let reason = `Visí ${daysOld} dní`;
-            if (topExpired) reason += ` (TOP vypršel)`;
+        if (daysOld >= 7 || (rankChecked && rank !== null && rank > 20)) {
+            let reason = `Visí ${daysOld} dní bez TOPu`;
             if (rank) reason += `, aktuální pozice #${rank}`;
             return {
                 isStagnant: true,
