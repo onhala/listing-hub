@@ -1151,8 +1151,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const hasActiveTop = ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at);
             if (!hasActiveTop || (rank !== null && rank > 20)) {
                 badgesHtml += `
-                    <span class="portal-badge btn-open-sms-top" data-ad-id="${ad.id}" style="cursor: pointer; font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 153, 0, 0.18); color: #ff9900; border: 1px solid rgba(255, 153, 0, 0.45); box-shadow: 0 0 6px rgba(255,153,0,0.2);" title="Otevřít 1-Click SMS Topování (79 Kč)">
-                        ⚡ Topovat
+                    <span class="portal-badge btn-open-sms-top" data-ad-id="${ad.id}" style="cursor: pointer; font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 153, 0, 0.18); color: #ff9900; border: 1px solid rgba(255, 153, 0, 0.45); box-shadow: 0 0 6px rgba(255,153,0,0.2);" title="Otevřít 1-Click TOPování (49 Kč)">
+                        ⚡ Topovat (49 Kč)
                     </span>
                 `;
             }
@@ -1434,7 +1434,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.6rem;">
                     <button type="button" class="btn btn-primary btn-alert-sms-top" data-ad-id="${firstDropped.id}" style="background: linear-gradient(135deg, #ff9900, #f59e0b); border: none; color: #000; font-weight: 700; font-size: 0.85rem; padding: 0.45rem 0.95rem; border-radius: 8px; display: inline-flex; align-items: center; gap: 0.4rem; box-shadow: 0 2px 10px rgba(255,153,0,0.3); cursor: pointer;">
-                        <i class="fa-solid fa-bolt"></i> Topovat (79 Kč)
+                        <i class="fa-solid fa-bolt"></i> Topovat (49 Kč)
                     </button>
                     <button type="button" class="btn btn-secondary btn-alert-repost" data-ad-id="${firstDropped.id}" style="font-size: 0.85rem; padding: 0.45rem 0.95rem; border-radius: 8px; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;">
                         <i class="fa-solid fa-arrows-rotate"></i> Znovu vystavit zdarma
@@ -1527,8 +1527,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         </div>
                     </div>
                     <div class="stagnation-actions">
-                        <button type="button" class="btn-stagnant-action btn-stagnant-top btn-quick-top-action" data-ad-id="${ad.id}" title="Otevřít 1-Click SMS TOP">
-                            <i class="fa-solid fa-bolt"></i> 1-Click TOP (79 Kč)
+                        <button type="button" class="btn-stagnant-action btn-stagnant-top btn-quick-top-action" data-ad-id="${ad.id}" title="Otevřít 1-Click TOP">
+                            <i class="fa-solid fa-bolt"></i> 1-Click TOP (49 Kč)
                         </button>
                         <button type="button" class="btn-stagnant-action btn-stagnant-repost btn-quick-repost-action" data-ad-id="${ad.id}" title="Smazat a vystavit znovu na 1. pozici zdarma">
                             <i class="fa-solid fa-arrows-rotate"></i> Znovuvystavit zdarma
