@@ -1800,26 +1800,37 @@ def get_sms_top_info(listing_id):
     try:
         import urllib.parse
         listing = db.get_listing_by_id(listing_id)
-        if not listing:
-            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
-            
-        portal_states = listing.get("portal_states") or {}
-        bazos_state = portal_states.get("bazos") or {}
-        portal_item_id = bazos_state.get("portal_item_id")
         
+        portal_item_id = None
+        title = ""
+        
+        if listing:
+            title = listing.get("title", "")
+            portal_states = listing.get("portal_states") or {}
+            bazos_state = portal_states.get("bazos") or {}
+            portal_item_id = bazos_state.get("portal_item_id")
+            
+            if not portal_item_id:
+                url = bazos_state.get("url") or listing.get("url") or ""
+                m = re.search(r"/inzerat/(\d+)", url)
+                if m:
+                    portal_item_id = m.group(1)
+
         if not portal_item_id:
-            url = bazos_state.get("url") or listing.get("url") or ""
-            m = re.search(r"/inzerat/(\d+)/", url)
-            if m:
-                portal_item_id = m.group(1)
+            # Fallback pokud byl jako listing_id předán přímo číselný kód inzerátu
+            clean_id = str(listing_id).strip()
+            if clean_id.isdigit() and len(clean_id) >= 6:
+                portal_item_id = clean_id
                 
         if not portal_item_id:
             return jsonify({"status": "error", "message": "Pro tento inzerát není k dispozici ID z Bazoše."}), 400
 
         sms_body = f"BAZOS {portal_item_id}"
         phone_number = "90333"
-        sms_uri = f"sms:{phone_number}?body={urllib.parse.quote(sms_body)}"
-        sms_uri_ios = f"sms:{phone_number}&body={urllib.parse.quote(sms_body)}"
+        encoded_body = urllib.parse.quote(sms_body)
+        sms_uri = f"sms:{phone_number}?body={encoded_body}"
+        sms_uri_ios = f"sms:{phone_number}&body={encoded_body}"
+        sms_uri_universal = f"sms:{phone_number}?&body={encoded_body}"
         qr_content = f"SMSTO:{phone_number}:{sms_body}"
 
         return jsonify({
@@ -1829,9 +1840,10 @@ def get_sms_top_info(listing_id):
             "sms_body": sms_body,
             "sms_uri": sms_uri,
             "sms_uri_ios": sms_uri_ios,
+            "sms_uri_universal": sms_uri_universal,
             "qr_content": qr_content,
-            "price_czk": 79,
-            "title": listing.get("title", "")
+            "price_czk": 49,
+            "title": title or f"Inzerát #{portal_item_id}"
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

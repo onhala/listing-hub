@@ -40,6 +40,36 @@
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Bezpečný pomocník pro kopírování do schránky (podporuje HTTPS, HTTP na LAN i fallback)
+    const safeCopyToClipboard = async (text) => {
+        if (!text) return false;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (e) {
+            console.warn("navigator.clipboard failed, fallback to textarea:", e);
+        }
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-999999px";
+            textArea.style.top = "-999999px";
+            textArea.setAttribute("readonly", "");
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const success = document.execCommand("copy");
+            document.body.removeChild(textArea);
+            return success;
+        } catch (err) {
+            console.error("Fallback clipboard copy failed:", err);
+            return false;
+        }
+    };
+
     // State state management
     let activeListings = [];
     let soldListings = [];
@@ -630,8 +660,8 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
         if (btnCopyDockerCmd) {
-            btnCopyDockerCmd.addEventListener("click", () => {
-                navigator.clipboard.writeText("docker compose pull && docker compose up -d");
+            btnCopyDockerCmd.addEventListener("click", async () => {
+                await safeCopyToClipboard("docker compose pull && docker compose up -d");
                 showNotification("Příkaz zkopírován do schránky.", "success");
             });
         }
@@ -1345,25 +1375,29 @@ document.addEventListener("DOMContentLoaded", () => {
             if (numberCopy) numberCopy.textContent = data.phone_number;
 
             // Správný odkaz pro mobil (iOS vyžaduje &body=, Android ?body=)
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             if (mobileLink) {
-                mobileLink.href = isIOS ? data.sms_uri_ios : data.sms_uri;
+                mobileLink.href = isIOS ? (data.sms_uri_ios || data.sms_uri) : data.sms_uri;
             }
 
             // QR kód
             if (qrContainer) {
                 qrContainer.innerHTML = "";
-                const qrText = data.qr_content;
-                if (typeof QRCode !== "undefined") {
-                    new QRCode(qrContainer, {
-                        text: qrText,
-                        width: 108,
-                        height: 108,
-                        colorDark: "#000000",
-                        colorLight: "#ffffff",
-                        correctLevel: QRCode.CorrectLevel.M
-                    });
-                } else {
+                const qrText = data.qr_content || `SMSTO:${data.phone_number}:${data.sms_body}`;
+                try {
+                    if (typeof QRCode !== "undefined") {
+                        new QRCode(qrContainer, {
+                            text: qrText,
+                            width: 108,
+                            height: 108,
+                            colorDark: "#000000",
+                            colorLight: "#ffffff",
+                            correctLevel: QRCode.CorrectLevel.M
+                        });
+                    } else {
+                        throw new Error("QRCode library not loaded");
+                    }
+                } catch (qrErr) {
                     const qrImg = document.createElement("img");
                     qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=108x108&data=${encodeURIComponent(qrText)}`;
                     qrImg.alt = "SMS QR";
@@ -3882,10 +3916,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const textCopyEl = document.getElementById("sms-top-text-copy");
     if (textCopyEl) {
-        textCopyEl.addEventListener("click", () => {
+        textCopyEl.addEventListener("click", async () => {
             const text = textCopyEl.textContent || "";
             if (text && text !== "BAZOS ...") {
-                navigator.clipboard.writeText(text);
+                await safeCopyToClipboard(text);
                 showNotification(`Text SMS '${text}' zkopírován do schránky!`, "success");
             }
         });
@@ -3893,9 +3927,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const numberCopyEl = document.getElementById("sms-top-number-copy");
     if (numberCopyEl) {
-        numberCopyEl.addEventListener("click", () => {
+        numberCopyEl.addEventListener("click", async () => {
             const num = numberCopyEl.textContent || "90333";
-            navigator.clipboard.writeText(num);
+            await safeCopyToClipboard(num);
             showNotification(`Telefonní číslo '${num}' zkopírováno!`, "success");
         });
     }
@@ -4015,14 +4049,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         btn.addEventListener("click", async () => {
             try {
-                await navigator.clipboard.writeText(input.value);
-                const origHtml = btn.innerHTML;
-                btn.innerHTML = `<i class="fa-solid fa-check"></i> Zkopírováno!`;
-                btn.classList.add("copied");
-                setTimeout(() => {
-                    btn.innerHTML = origHtml;
-                    btn.classList.remove("copied");
-                }, 1500);
+                const ok = await safeCopyToClipboard(input.value);
+                if (ok !== false) {
+                    const origHtml = btn.innerHTML;
+                    btn.innerHTML = `<i class="fa-solid fa-check"></i> Zkopírováno!`;
+                    btn.classList.add("copied");
+                    setTimeout(() => {
+                        btn.innerHTML = origHtml;
+                        btn.classList.remove("copied");
+                    }, 1500);
+                } else {
+                    showNotification("Nepodařilo se zkopírovat text do schránky.", "error");
+                }
             } catch (err) {
                 showNotification("Nepodařilo se zkopírovat text do schránky.", "error");
             }

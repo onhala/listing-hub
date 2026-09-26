@@ -309,9 +309,19 @@ def get_listing_by_id(listing_id: str) -> Optional[Dict[str, Any]]:
         cursor.execute("SELECT * FROM listings WHERE id = ?", (listing_id,))
         row = cursor.fetchone()
         if not row:
+            # Fallback podle portal_item_id v portal_states, složky fotek nebo přesného názvu
+            cursor.execute("""
+                SELECT l.* FROM listings l
+                LEFT JOIN portal_states ps ON l.id = ps.listing_id
+                WHERE ps.portal_item_id = ? OR l.local_photos_dir = ? OR l.title = ?
+                LIMIT 1
+            """, (listing_id, listing_id, listing_id))
+            row = cursor.fetchone()
+        if not row:
             return None
         listing = dict(row)
-        cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (listing_id,))
+        actual_id = listing["id"]
+        cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (actual_id,))
         states_rows = cursor.fetchall()
         listing["portal_states"] = {state["portal_name"]: dict(state) for state in states_rows}
 
@@ -327,7 +337,7 @@ def get_listing_by_id(listing_id: str) -> Optional[Dict[str, Any]]:
         listing["search_rank_checked_at"] = bazos_state.get("search_rank_checked_at")
 
         # Načtení publikací (historie)
-        cursor.execute("SELECT * FROM listing_publications WHERE listing_id = ? ORDER BY id ASC", (listing_id,))
+        cursor.execute("SELECT * FROM listing_publications WHERE listing_id = ? ORDER BY id ASC", (actual_id,))
         pubs = [dict(p) for p in cursor.fetchall()]
         listing["publications"] = pubs
         listing["publication_count"] = len(pubs) if pubs else 1

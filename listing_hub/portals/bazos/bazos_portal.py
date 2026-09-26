@@ -12,8 +12,9 @@ from bs4 import BeautifulSoup
 
 from listing_hub.portals.base import AbstractPortal
 from listing_hub.portals.bazos.session import session_manager
-from listing_hub.portals.bazos.categories import extract_ad_id, get_target_domain
+from listing_hub.portals.bazos.categories import extract_ad_id, get_target_domain, extract_subdomain
 from listing_hub.portals.bazos.scraper import scrape_listings_from_html
+from listing_hub.portals.bazos.rank_tracker import check_bazos_search_rank
 from listing_hub.core.db import save_listing, get_all_listings, get_publication_by_url_or_item_id, record_views_snapshot
 from listing_hub.core.config import PHOTOS_DIR, PROJECT_ROOT, SESSION_STATE_PATH
 
@@ -265,7 +266,7 @@ class BazosPortal(AbstractPortal):
         """Zkontroluje aktuální pozici inzerátu na Bazoši a uloží výsledek do DB."""
         from listing_hub.core.db import get_listing_by_id, update_listing_portal_rank
         from listing_hub.portals.bazos.rank_tracker import check_bazos_search_rank
-        from listing_hub.portals.bazos.categories import extract_subdomain
+        from listing_hub.portals.bazos.categories import extract_subdomain, get_target_domain
 
         ad = get_listing_by_id(listing_id)
         if not ad:
@@ -273,20 +274,28 @@ class BazosPortal(AbstractPortal):
 
         bazos_state = ad.get("portal_states", {}).get("bazos", {})
         portal_item_id = bazos_state.get("portal_item_id")
-        ad_url = bazos_state.get("url") or ""
-        subdomain = extract_subdomain(ad_url) or "auto.bazos.cz"
+        ad_url = bazos_state.get("url") or ad.get("url") or ""
+        
+        if not portal_item_id and ad_url:
+            portal_item_id = extract_ad_id(ad_url)
+
+        subdomain = extract_subdomain(ad_url)
+        if subdomain == "www.bazos.cz" or not subdomain:
+            subdomain = get_target_domain(ad.get("title", ""), ad_url)
 
         if not portal_item_id:
-            raise ValueError("Inzerát nemá vyplněné portal_item_id pro Bazoš.")
+            raise ValueError("Inzerát nemá vyplněné ID pro Bazoš.")
 
+        effective_query = query or bazos_state.get("search_query")
         rank_data = check_bazos_search_rank(
             portal_item_id=portal_item_id,
             title=ad.get("title", ""),
             subdomain=subdomain,
-            query=query
+            query=effective_query
         )
 
-        update_listing_portal_rank(listing_id, "bazos", rank_data)
+        actual_id = ad.get("id") or listing_id
+        update_listing_portal_rank(actual_id, "bazos", rank_data)
         return rank_data
 
     def sync_listings(self, user_config: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -459,6 +468,38 @@ class BazosPortal(AbstractPortal):
                 _top_is = _details.get("is_top") or best_scraped_match.get("is_top", False)
                 _top_exp = _details.get("top_expires_at") or best_scraped_match.get("top_expires_at")
                 _top_inf = _details.get("top_info") or best_scraped_match.get("top_info")
+
+                # Zjistíme živou pozici na Bazoši ve vyhledávání (Search Rank)
+                rank_res = None
+                subdomain = extract_subdomain(best_scraped_match["url"])
+                if subdomain == "www.bazos.cz" or not subdomain:
+                    subdomain = get_target_domain(local_ad.get("title", ""), best_scraped_match["url"])
+
+                try:
+                    rank_res = check_bazos_search_rank(
+                        portal_item_id=portal_item_id,
+                        title=local_ad.get("title", ""),
+                        subdomain=subdomain,
+                        query=bazos_state.get("search_query")
+                    )
+                except Exception as rank_err:
+                    print(f"  [Bazos Sync] Chyba při zjišťování pozice pro {portal_item_id}: {rank_err}")
+
+                if rank_res:
+                    _search_rank = rank_res.get("rank_position")
+                    _search_page = rank_res.get("rank_page")
+                    _search_total = rank_res.get("total_results")
+                    _search_query = rank_res.get("query")
+                    _search_checked = rank_res.get("checked_at")
+                    if rank_res.get("is_top"):
+                        _top_is = True
+                else:
+                    _search_rank = bazos_state.get("search_rank")
+                    _search_page = bazos_state.get("search_rank_page")
+                    _search_total = bazos_state.get("search_rank_total")
+                    _search_query = bazos_state.get("search_query")
+                    _search_checked = bazos_state.get("search_rank_checked_at")
+
                 bazos_state_data = {
                     "portal_item_id": portal_item_id,
                     "url": best_scraped_match["url"],
@@ -468,11 +509,11 @@ class BazosPortal(AbstractPortal):
                     "is_top": _top_is,
                     "top_expires_at": _top_exp,
                     "top_info": _top_inf,
-                    "search_rank": bazos_state.get("search_rank"),
-                    "search_rank_page": bazos_state.get("search_rank_page"),
-                    "search_rank_total": bazos_state.get("search_rank_total"),
-                    "search_query": bazos_state.get("search_query"),
-                    "search_rank_checked_at": bazos_state.get("search_rank_checked_at")
+                    "search_rank": _search_rank,
+                    "search_rank_page": _search_page,
+                    "search_rank_total": _search_total,
+                    "search_query": _search_query,
+                    "search_rank_checked_at": _search_checked
                 }
                 save_listing(local_ad, {"bazos": bazos_state_data})
                 if local_ad.get("id") and best_scraped_match.get("views") is not None:
@@ -486,7 +527,13 @@ class BazosPortal(AbstractPortal):
                     "title": local_ad["title"],
                     "url": best_scraped_match["url"],
                     "views": best_scraped_match["views"],
-                    "status": "Aktivní"
+                    "status": "Aktivní",
+                    "search_rank": _search_rank,
+                    "search_rank_page": _search_page,
+                    "search_rank_total": _search_total,
+                    "search_query": _search_query,
+                    "search_rank_checked_at": _search_checked,
+                    "is_top": _top_is
                 })
             else:
                 # Inzerát na Bazoši chybí -> Expiroval (pokud byl označen jako aktivní na Bazoši)
@@ -553,15 +600,43 @@ class BazosPortal(AbstractPortal):
             }
             
             portal_item_id = extract_ad_id(scraped_ad["url"])
+
+            # Zjistíme živou pozici na Bazoši pro nově importovaný inzerát
+            rank_res = None
+            subdomain = extract_subdomain(scraped_ad["url"])
+            if subdomain == "www.bazos.cz" or not subdomain:
+                subdomain = get_target_domain(scraped_ad["title"], scraped_ad["url"])
+
+            try:
+                rank_res = check_bazos_search_rank(
+                    portal_item_id=portal_item_id,
+                    title=scraped_ad["title"],
+                    subdomain=subdomain
+                )
+            except Exception as rank_err:
+                print(f"  [Bazos Sync] Chyba při zjišťování pozice pro nový inzerát {portal_item_id}: {rank_err}")
+
+            _search_rank = rank_res.get("rank_position") if rank_res else None
+            _search_page = rank_res.get("rank_page") if rank_res else None
+            _search_total = rank_res.get("total_results") if rank_res else None
+            _search_query = rank_res.get("query") if rank_res else None
+            _search_checked = rank_res.get("checked_at") if rank_res else None
+            _is_top = bool((rank_res and rank_res.get("is_top")) or ad_details.get("is_top", scraped_ad.get("is_top", False)))
+
             bazos_state_data = {
                 "portal_item_id": portal_item_id,
                 "url": scraped_ad["url"],
                 "status": "Aktivní",
                 "views": scraped_ad["views"],
                 "last_synced": datetime.now().isoformat(),
-                "is_top": ad_details.get("is_top", scraped_ad.get("is_top", False)),
+                "is_top": _is_top,
                 "top_expires_at": ad_details.get("top_expires_at") or scraped_ad.get("top_expires_at"),
                 "top_info": ad_details.get("top_info") or scraped_ad.get("top_info"),
+                "search_rank": _search_rank,
+                "search_rank_page": _search_page,
+                "search_rank_total": _search_total,
+                "search_query": _search_query,
+                "search_rank_checked_at": _search_checked
             }
             
             save_listing(new_listing, {"bazos": bazos_state_data})
@@ -574,7 +649,13 @@ class BazosPortal(AbstractPortal):
                 "title": scraped_ad["title"],
                 "url": scraped_ad["url"],
                 "views": scraped_ad["views"],
-                "status": "Aktivní"
+                "status": "Aktivní",
+                "search_rank": _search_rank,
+                "search_rank_page": _search_page,
+                "search_rank_total": _search_total,
+                "search_query": _search_query,
+                "search_rank_checked_at": _search_checked,
+                "is_top": _is_top
             })
             
         return result

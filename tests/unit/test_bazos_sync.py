@@ -365,4 +365,146 @@ def test_post_to_bazos_edit_price_uses_smazat_endpoint():
         assert not any("/delete.php" in url for url in goto_urls)
 
 
+def test_bazos_sync_checks_and_stores_search_rank(mock_db):
+    """
+    Ověří, že během synchronizace z Bazoše se automaticky ověří živá pozice (search rank)
+    inzerátu a uloží do SQLite.
+    """
+    portal = BazosPortal()
+
+    # Existující inzerát v DB
+    local_ad = {
+        "id": "ad_rank_sync_1",
+        "title": "VW Arteon Shooting Brake 2.0 TSI",
+        "description": "Krásný stav",
+        "price": 750000,
+        "category": "auto.bazos.cz",
+        "condition": "Aktivní",
+        "local_photos_dir": "photos/arteon",
+        "location": "Praha",
+        "notes": "",
+        "ad_password_b64": "MTIzNDU2",
+        "bookmarklet_uri": "",
+        "days_old": 5,
+        "created_at": "2026-09-20",
+        "target_bazos": 1,
+        "target_aukro": 0
+    }
+    portal_states = {
+        "bazos": {
+            "portal_item_id": "223514742",
+            "url": "https://auto.bazos.cz/inzerat/223514742/vw-arteon.php",
+            "status": "Aktivní",
+            "views": 150,
+            "last_synced": "2026-09-21T10:00:00"
+        }
+    }
+    save_listing(local_ad, portal_states)
+
+    scraped_mock = [
+        {
+            "title": "VW Arteon Shooting Brake 2.0 TSI",
+            "price": 750000,
+            "views": 180,
+            "url": "https://auto.bazos.cz/inzerat/223514742/vw-arteon.php",
+            "date_created": "2026-09-20"
+        }
+    ]
+
+    mock_rank_data = {
+        "found": True,
+        "rank_position": 3,
+        "rank_page": 1,
+        "query": "VW Arteon Shooting",
+        "is_top": True,
+        "total_results": 45,
+        "checked_at": "2026-09-26T12:00:00"
+    }
+
+    mock_page = MagicMock()
+    mock_page.locator.return_value.is_visible.return_value = False
+    mock_page.content.return_value = "<html></html>"
+
+    with patch("listing_hub.portals.bazos.session.session_manager.run_on_worker", side_effect=lambda func, *args, **kwargs: func(mock_page, *args, **kwargs)), \
+         patch("listing_hub.portals.bazos.session.session_manager.get_session", return_value=(None, None, None, mock_page)), \
+         patch("listing_hub.portals.bazos.bazos_portal.scrape_listings_from_html", return_value=scraped_mock), \
+         patch("listing_hub.portals.bazos.bazos_portal.fetch_bazos_ad_details", return_value={"description": "Krásný stav", "location": "Praha", "is_top": True, "top_expires_at": "2026-09-30", "top_info": "TOP 1x"}), \
+         patch("listing_hub.portals.bazos.bazos_portal.check_bazos_search_rank", return_value=mock_rank_data):
+
+        result = portal.sync_listings({"email": "test@example.com", "phone": "777123456"})
+
+        assert len(result) == 1
+        assert result[0]["search_rank"] == 3
+        assert result[0]["search_rank_page"] == 1
+        assert result[0]["search_query"] == "VW Arteon Shooting"
+        assert result[0]["is_top"] is True
+
+        # Ověříme uložení v DB
+        listings = get_all_listings()
+        assert len(listings) == 1
+        ad_db = listings[0]
+        assert ad_db["search_rank"] == 3
+        assert ad_db["search_rank_page"] == 1
+        assert ad_db["search_query"] == "VW Arteon Shooting"
+        assert ad_db["is_top"] is True
+
+
+def test_sms_top_info_endpoint_returns_accurate_details(mock_db):
+    """
+    Ověří, že endpoint /api/listings/<listing_id>/sms_top_info vrací správný formát SMS
+    a QR kód i při různých formátech zadání ID.
+    """
+    from app import app
+
+    local_ad = {
+        "id": "ad_sms_top_test",
+        "title": "Škoda Superb III Combi",
+        "description": "Top stav",
+        "price": 420000,
+        "category": "auto.bazos.cz",
+        "condition": "Aktivní",
+        "local_photos_dir": "photos/superb",
+        "location": "České Budějovice",
+        "notes": "",
+        "ad_password_b64": "MTIzNDU2",
+        "bookmarklet_uri": "",
+        "days_old": 10,
+        "created_at": "2026-09-15",
+        "target_bazos": 1,
+        "target_aukro": 0
+    }
+    portal_states = {
+        "bazos": {
+            "portal_item_id": "199887766",
+            "url": "https://auto.bazos.cz/inzerat/199887766/skoda-superb.php",
+            "status": "Aktivní",
+            "views": 320,
+            "last_synced": "2026-09-25T10:00:00"
+        }
+    }
+    save_listing(local_ad, portal_states)
+
+    client = app.test_client()
+
+    # 1. Dotaz podle UUID inzerátu
+    resp = client.get("/api/listings/ad_sms_top_test/sms_top_info")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "success"
+    assert data["portal_item_id"] == "199887766"
+    assert data["phone_number"] == "90333"
+    assert data["sms_body"] == "BAZOS 199887766"
+    assert "sms:90333" in data["sms_uri"]
+    assert "SMSTO:90333:BAZOS 199887766" == data["qr_content"]
+    assert data["title"] == "Škoda Superb III Combi"
+
+    # 2. Dotaz přímo podle čísla inzerátu (čistý číselný identifikátor)
+    resp_numeric = client.get("/api/listings/199887766/sms_top_info")
+    assert resp_numeric.status_code == 200
+    data_num = resp_numeric.get_json()
+    assert data_num["status"] == "success"
+    assert data_num["portal_item_id"] == "199887766"
+
+
+
 
