@@ -424,6 +424,80 @@ def test_submit_sms_code_unfound(client):
         data = json.loads(res.data)
         assert data["status"] == "error"
         assert data["submitted"] is False
+
+def test_fill_sms_or_phone_on_page_closed_page():
+    from app import fill_sms_or_phone_on_page
+    res = fill_sms_or_phone_on_page(None, "123456")
+    assert res["submitted"] is False
+
+    mock_closed_page = MagicMock(is_closed=lambda: True)
+    res_closed = fill_sms_or_phone_on_page(mock_closed_page, "123456")
+    assert res_closed["submitted"] is False
+
+def test_fill_sms_or_phone_on_page_phone_step():
+    from app import fill_sms_or_phone_on_page
+    mock_page = MagicMock(is_closed=lambda: False, url="https://www.bazos.cz/moje-inzeraty.php")
+    
+    # Phone input is present and visible, SMS inputs are not
+    phone_locator = MagicMock()
+    phone_locator.count.return_value = 1
+    phone_locator.first.is_visible.return_value = True
+    
+    empty_locator = MagicMock()
+    empty_locator.count.return_value = 0
+    empty_locator.first.is_visible.return_value = False
+
+    def locator_side_effect(sel):
+        if "teloverit" in sel or "telefon" in sel:
+            return phone_locator
+        return empty_locator
+
+    mock_page.locator.side_effect = locator_side_effect
+    mock_page.evaluate.return_value = {"success": True, "method": "button_click", "btn": "Vypsat inzeráty"}
+
+    with patch("app.session_manager.save_state"):
+        res = fill_sms_or_phone_on_page(mock_page, "123456", user_config={"phone": "+420 777 123 456"})
+        assert res["submitted"] is True
+        assert res["action"] == "phone_submitted"
+        assert "777123456" in res["phone"]
+
+def test_fill_sms_or_phone_on_page_code_step():
+    from app import fill_sms_or_phone_on_page
+    mock_page = MagicMock(is_closed=lambda: False, url="https://www.bazos.cz/moje-inzeraty.php")
+    
+    code_locator = MagicMock()
+    code_locator.count.return_value = 1
+    code_locator.first.is_visible.return_value = True
+    code_locator.first.get_attribute.return_value = "kodd"
+    
+    empty_locator = MagicMock()
+    empty_locator.count.return_value = 0
+    empty_locator.first.is_visible.return_value = False
+
+    def locator_side_effect(sel):
+        if "kodd" in sel or "klic" in sel:
+            return code_locator
+        return empty_locator
+
+    mock_page.locator.side_effect = locator_side_effect
+    mock_page.evaluate.return_value = {"success": True, "method": "button_click", "btnValue": "Vypsat inzeráty"}
+
+    with patch("app.session_manager.save_state"):
+        res = fill_sms_or_phone_on_page(mock_page, "456789", user_config={})
+        assert res["submitted"] is True
+        assert res["target_field"] == "kodd"
+        assert res["button_clicked"] == "Vypsat inzeráty"
+
+def test_relay_sms_code_endpoint(client):
+    with patch("app.session_manager.run_on_worker", return_value={"submitted": True, "target_field": "klic", "button_clicked": "Odeslat"}), \
+         patch("app.session_manager.running", True), \
+         patch("app.session_manager.page", MagicMock(is_closed=lambda: False)):
+        res = client.post("/api/sms/relay", json={"message": "Vas overovaci kod pro Bazos je: 582914"})
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "ok"
+        assert data["code"] == "582914"
+        assert data["submitted"] is True
 def test_safe_delete_photos_dir(tmp_path):
     from app import safe_delete_photos_dir
     with patch("app.PHOTOS_DIR", str(tmp_path)):

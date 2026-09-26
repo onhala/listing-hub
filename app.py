@@ -364,6 +364,227 @@ def screencast_input():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
         
+def fill_sms_or_phone_on_page(page, sms_code, user_config=None):
+    """
+    Vyplní buď ověřovací telefon (pokud je stránka ve fázi 'teloverit') nebo SMS kód
+    a spolehlivě odešle formulář kliknutím na příslušné tlačítko uvnitř formuláře.
+    """
+    if not page or page.is_closed():
+        return {"submitted": False, "message": "Prohlížeč není otevřen."}
+
+    if user_config is None:
+        _, user_config = load_data()
+
+    # 1. Nejprve zkontrolujeme, zda na stránce není zobrazen krok ověření telefonu ('teloverit')
+    # Bazoš při znovuvystavení nebo přihlášení nejprve vyžaduje telefon, a až po jeho odeslání zobrazí pole pro SMS kód.
+    phone_input = page.locator("input[name='teloverit'], input[id='teloverit'], input[name='telefoni'], input[name='telefon']")
+    has_phone_input = False
+    try:
+        has_phone_input = bool(phone_input.count() > 0 and phone_input.first.is_visible())
+    except Exception:
+        has_phone_input = False
+
+    # Zkontrolujeme také přítomnost specifických SMS polí
+    sms_selectors = [
+        "input[name='klic']",
+        "input[id='klic']",
+        "input[name='kodd']",
+        "input[id='kodd']",
+        "input[name='cr']",
+        "input[name='kod']",
+        "input[name='overkod']",
+        "input[placeholder*='klíč']",
+        "input[placeholder*='klic']",
+        "input[placeholder*='kód']",
+        "input[placeholder*='kod']",
+        "input[placeholder*='SMS']",
+        "input[placeholder*='sms']",
+        "input[name*='kod']",
+        "input[name*='sms']",
+        "input[maxlength='6']"
+    ]
+    code_input = None
+    matched_sel = None
+    for sel in sms_selectors:
+        loc = page.locator(sel)
+        if loc.count() > 0 and loc.first.is_visible():
+            code_input = loc.first
+            matched_sel = sel
+            break
+
+    # Pokud máme pouze pole pro telefon a ŽÁDNÉ pole pro SMS kód
+    if has_phone_input and not code_input:
+        digits_in_code = "".join(ch for ch in str(sms_code) if ch.isdigit())
+        phone_to_use = ""
+        if len(digits_in_code) >= 9:
+            phone_to_use = digits_in_code[-9:]
+        else:
+            config_phone = str((user_config or {}).get("phone", "")).strip()
+            config_digits = "".join(ch for ch in config_phone if ch.isdigit())
+            if len(config_digits) >= 9:
+                phone_to_use = config_digits[-9:]
+            elif config_phone:
+                phone_to_use = config_phone
+
+        if phone_to_use:
+            try:
+                submit_res = page.evaluate('''(targetPhone) => {
+                    const telInput = document.querySelector("input[name='teloverit'], input[id='teloverit'], input[name='telefoni'], input[name='telefon']");
+                    if (!telInput) return { success: false, error: "telInput not found" };
+                    telInput.focus();
+                    telInput.value = targetPhone;
+                    telInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    telInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+                    const form = telInput.closest('form') || document.querySelector('form');
+                    if (form) {
+                        const podminky = form.querySelector("input[name='podminky']");
+                        if (podminky && !podminky.checked) {
+                            podminky.checked = true;
+                            podminky.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                        const submitBtn = form.querySelector("input[type='submit'], button[type='submit'], input[name='Submit'], input[name='submit']");
+                        if (submitBtn) {
+                            submitBtn.click();
+                            return { success: true, method: "button_click", btn: submitBtn.value || submitBtn.name || "submit" };
+                        } else if (typeof form.requestSubmit === 'function') {
+                            form.requestSubmit();
+                            return { success: true, method: "requestSubmit" };
+                        } else {
+                            form.submit();
+                            return { success: true, method: "submit" };
+                        }
+                    }
+                    return { success: false, error: "form not found" };
+                }''', phone_to_use)
+
+                import time
+                time.sleep(1.2)
+                session_manager.save_state()
+                return {
+                    "submitted": True,
+                    "action": "phone_submitted",
+                    "phone": phone_to_use,
+                    "url": page.url,
+                    "message": f"Telefon {phone_to_use} byl automaticky odeslán do ověření. Nyní zadejte doručený SMS kód."
+                }
+            except Exception as ex:
+                print(f"Error auto-submitting phone: {ex}")
+
+        return {
+            "submitted": False,
+            "url": page.url,
+            "message": "Na stránce je pole pro telefonní číslo ('teloverit'). Nastavte prosím telefon v Nastavení nebo zadejte 9místné číslo."
+        }
+
+    # 2. Pokud jsme nenašli SMS pole specifickým selektorem, zkontrolujeme aktivní element
+    if not code_input:
+        try:
+            active_info = page.evaluate('''() => {
+                const el = document.activeElement;
+                if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.type !== 'hidden') {
+                    return { name: el.name || '', id: el.id || '', placeholder: el.placeholder || '', type: el.type };
+                }
+                return null;
+            }''')
+            if active_info:
+                act_name = (active_info.get("name") or "").lower()
+                if act_name not in ("hledat", "hlokalita", "mail", "email", "cena", "nadpis"):
+                    code_input = page.locator("*:focus")
+                    matched_sel = f":focus ({act_name or active_info.get('type')})"
+        except Exception:
+            pass
+
+    if not code_input:
+        page_info = page.evaluate('''() => {
+            const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), select, textarea'))
+                .filter(el => {
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                })
+                .map(el => el.name || el.id || el.placeholder || el.tagName.toLowerCase());
+            return { inputs: inputs, url: window.location.href };
+        }''')
+        vis_inputs = page_info.get("inputs", [])
+        return {
+            "submitted": False,
+            "visible_inputs": vis_inputs,
+            "url": page_info.get("url", ""),
+            "message": f"Pole pro SMS kód (klic/kodd) nebylo nalezeno. Viditelná pole na stránce: [{', '.join(vis_inputs) if vis_inputs else 'žádná'}]."
+        }
+
+    # Zjistíme název pole pro hlášku
+    field_name = "SMS pole"
+    try:
+        field_name = code_input.get_attribute("name") or code_input.get_attribute("id") or matched_sel or "SMS pole"
+    except Exception:
+        pass
+
+    try:
+        code_input.click()
+    except Exception:
+        pass
+
+    dom_result = page.evaluate('''(args) => {
+        const { sel, code } = args;
+        let el = null;
+        if (sel && !sel.startsWith(':focus')) {
+            el = document.querySelector(sel);
+        }
+        if (!el) {
+            el = document.querySelector("input[name='klic'], input[id='klic'], input[name='kodd'], input[id='kodd'], input[name='cr'], input[name='kod'], input[name='overkod']");
+        }
+        if (!el && document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+            el = document.activeElement;
+        }
+        if (!el) return { success: false, error: "Input element not found" };
+
+        el.focus();
+        el.value = code;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+
+        const form = el.closest('form') || document.querySelector('form');
+        if (form) {
+            const podminky = form.querySelector("input[name='podminky']");
+            if (podminky && !podminky.checked) {
+                podminky.checked = true;
+                podminky.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            const submitBtn = form.querySelector("input[type='submit'], button[type='submit'], input[name='Submit'], input[name='submit']");
+            if (submitBtn) {
+                submitBtn.click();
+                return { success: true, method: "button_click", btnValue: submitBtn.value || submitBtn.name || "submit" };
+            } else if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+                return { success: true, method: "requestSubmit" };
+            } else {
+                form.submit();
+                return { success: true, method: "form_submit" };
+            }
+        } else {
+            const event = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
+            el.dispatchEvent(event);
+            return { success: true, method: "keydown_enter" };
+        }
+    }''', {"sel": matched_sel if matched_sel and not matched_sel.startswith(":focus") else None, "code": sms_code})
+
+    btn_clicked = "Odeslat"
+    if isinstance(dom_result, dict) and dom_result.get("btnValue"):
+        btn_clicked = dom_result.get("btnValue")
+
+    import time
+    time.sleep(1.2)
+    session_manager.save_state()
+    return {
+        "submitted": True,
+        "target_field": field_name,
+        "button_clicked": btn_clicked,
+        "url": page.url,
+        "message": f"SMS kód byl úspěšně vepsán do pole '{field_name}' a odeslán ({btn_clicked})."
+    }
+
 @app.route("/api/sms_code", methods=["POST"])
 def submit_sms_code():
     data = request.json or {}
@@ -381,122 +602,9 @@ def submit_sms_code():
             session_manager.get_session()
         except Exception as e:
             return jsonify({"status": "error", "message": f"Nelze inicializovat prohlížeč: {e}"}), 500
-        
-    def _fill_sms_internal(page, sms_code):
-        if not page or page.is_closed():
-            return {"submitted": False, "message": "Prohlížeč není otevřen."}
-
-        # 1. SMS specifické selektory (klic = Mobilní klíč pro nový inzerát, kodd = SMS kód pro přihlášení)
-        # POZOR: teloverit je telefonní číslo, NIKOLIV kód z SMS!
-        selectors = [
-            "input[name='klic']",
-            "input[id='klic']",
-            "input[name='kodd']",
-            "input[id='kodd']",
-            "input[name='cr']",
-            "input[name='kod']",
-            "input[name='overkod']",
-            "input[placeholder*='klíč']",
-            "input[placeholder*='klic']",
-            "input[placeholder*='kód']",
-            "input[placeholder*='kod']",
-            "input[placeholder*='SMS']",
-            "input[placeholder*='sms']",
-            "input[name*='kod']",
-            "input[name*='sms']",
-            "input[maxlength='6']"
-        ]
-        code_input = None
-        matched_sel = None
-        for sel in selectors:
-            loc = page.locator(sel)
-            if loc.count() > 0 and loc.first.is_visible():
-                code_input = loc.first
-                matched_sel = sel
-                break
-                
-        # 2. Pokud jsme nenašli SMS pole specifickým selektorem, zkontrolujeme aktivní element
-        if not code_input:
-            try:
-                active_info = page.evaluate('''() => {
-                    const el = document.activeElement;
-                    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.type !== 'hidden') {
-                        return { name: el.name || '', id: el.id || '', placeholder: el.placeholder || '', type: el.type };
-                    }
-                    return null;
-                }''')
-                if active_info:
-                    act_name = (active_info.get("name") or "").lower()
-                    if act_name not in ("teloverit", "telefon", "telefoni", "hledat", "hlokalita", "mail", "email", "cena", "nadpis"):
-                        code_input = page.locator("*:focus")
-                        matched_sel = f":focus ({act_name or active_info.get('type')})"
-            except Exception:
-                pass
-
-        if not code_input:
-            # Poskytneme uživateli detailní diagnostiku viditelných prvků
-            page_info = page.evaluate('''() => {
-                const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), select, textarea'))
-                    .filter(el => {
-                        const r = el.getBoundingClientRect();
-                        return r.width > 0 && r.height > 0;
-                    })
-                    .map(el => el.name || el.id || el.placeholder || el.tagName.toLowerCase());
-                return { inputs: inputs, url: window.location.href };
-            }''')
-            vis_inputs = page_info.get("inputs", [])
-            if "teloverit" in vis_inputs:
-                return {
-                    "submitted": False,
-                    "visible_inputs": vis_inputs,
-                    "url": page_info.get("url", ""),
-                    "message": "Na stránce je pole pro telefonní číslo ('teloverit'), nikoliv pro SMS kód. Odesílá se nejprve telefon."
-                }
-            return {
-                "submitted": False,
-                "visible_inputs": vis_inputs,
-                "url": page_info.get("url", ""),
-                "message": f"Pole pro SMS kód (klic/kodd) nebylo nalezeno. Viditelná pole na stránce: [{', '.join(vis_inputs) if vis_inputs else 'žádná'}]."
-            }
-
-        try:
-            code_input.click()
-        except Exception:
-            pass
-        code_input.fill(sms_code)
-        import time
-        time.sleep(0.3)
-        
-        submit_btn = page.locator(
-            "form:has(input[name='klic']) input[type='submit'], "
-            "form:has(input[name='kodd']) input[type='submit'], "
-            "input[type='submit'][value*='Vypsat inzeráty'], "
-            "input[type='submit'][value*='Vypsat'], "
-            "input[type='submit'][value*='Odeslat'], "
-            "input[type='submit'][value*='Ověřit'], "
-            "input[type='submit'][value*='Potvrdit'], "
-            "button[type='submit']"
-        )
-        btn_clicked = "Enter keypress"
-        if submit_btn.count() > 0 and submit_btn.first.is_visible():
-            btn_clicked = submit_btn.first.get_attribute("value") or "Odeslat"
-            submit_btn.first.click()
-        else:
-            code_input.press("Enter")
-            
-        time.sleep(1.0)
-        session_manager.save_state()
-        field_name = code_input.get_attribute("name") or code_input.get_attribute("id") or matched_sel or "SMS pole"
-        return {
-            "submitted": True,
-            "target_field": field_name,
-            "button_clicked": btn_clicked,
-            "url": page.url,
-            "message": f"SMS kód byl úspěšně vepsán do pole '{field_name}' a odeslán ({btn_clicked})."
-        }
 
     def _fill_sms(page, *args):
-        return _fill_sms_internal(page, code)
+        return fill_sms_or_phone_on_page(page, code)
         
     try:
         result = session_manager.run_on_worker(_fill_sms)
@@ -560,69 +668,7 @@ def relay_sms_code():
             }), 200
 
         def _relay_fill(page, *args):
-            # Použijeme stejnou logiku jako submit_sms_code
-            # Selektory
-            selectors = [
-                "input[name='klic']",
-                "input[id='klic']",
-                "input[name='kodd']",
-                "input[id='kodd']",
-                "input[name='cr']",
-                "input[name='kod']",
-                "input[name='overkod']",
-                "input[placeholder*='klíč']",
-                "input[placeholder*='klic']",
-                "input[placeholder*='kód']",
-                "input[placeholder*='kod']",
-                "input[placeholder*='SMS']",
-                "input[placeholder*='sms']",
-                "input[name*='kod']",
-                "input[name*='sms']",
-                "input[maxlength='6']"
-            ]
-            code_input = None
-            matched_sel = None
-            for sel in selectors:
-                loc = page.locator(sel)
-                if loc.count() > 0 and loc.first.is_visible():
-                    code_input = loc.first
-                    matched_sel = sel
-                    break
-            if not code_input:
-                return {"submitted": False, "message": "Pole pro SMS kód nebylo na stránce nalezeno."}
-
-            try:
-                code_input.click()
-            except Exception:
-                pass
-            code_input.fill(extracted_code)
-            import time
-            time.sleep(0.3)
-            submit_btn = page.locator(
-                "form:has(input[name='klic']) input[type='submit'], "
-                "form:has(input[name='kodd']) input[type='submit'], "
-                "input[type='submit'][value*='Vypsat inzeráty'], "
-                "input[type='submit'][value*='Vypsat'], "
-                "input[type='submit'][value*='Odeslat'], "
-                "input[type='submit'][value*='Ověřit'], "
-                "input[type='submit'][value*='Potvrdit'], "
-                "button[type='submit']"
-            )
-            btn_clicked = "Enter keypress"
-            if submit_btn.count() > 0 and submit_btn.first.is_visible():
-                btn_clicked = submit_btn.first.get_attribute("value") or "Odeslat"
-                submit_btn.first.click()
-            else:
-                code_input.press("Enter")
-            time.sleep(1.0)
-            session_manager.save_state()
-            return {
-                "submitted": True,
-                "target_field": matched_sel,
-                "button_clicked": btn_clicked,
-                "url": page.url,
-                "message": f"SMS kód {extracted_code} byl automaticky vepsán a odeslán přes SMS Relay."
-            }
+            return fill_sms_or_phone_on_page(page, extracted_code, user_config)
 
         result = session_manager.run_on_worker(_relay_fill)
         if isinstance(result, dict):

@@ -112,12 +112,15 @@ class PlaywrightSessionManager:
         act = evt.get("action")
         if act == "click":
             cx, cy = evt["x"], evt["y"]
+            clicked = False
             if self.page and not self.page.is_closed():
                 try:
                     self.page.mouse.click(cx, cy)
+                    clicked = True
                 except Exception as ex:
                     print(f"page.mouse.click error: {ex}")
-            if self.cdp_session:
+            # CDP použijeme jako fallback pouze pokud Playwright selhal nebo není k dispozici
+            if not clicked and self.cdp_session:
                 try:
                     self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
                     self.cdp_session.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "buttons": 1, "clickCount": 1})
@@ -128,31 +131,36 @@ class PlaywrightSessionManager:
             text_val = evt.get("text", "")
             if self.page and not self.page.is_closed():
                 try:
-                    # Automaticky zaměříme pole pro SMS kód – klic (nový inzerát) nebo kodd/kod/cr (přihlášení)
-                    code_input = self.page.locator(
-                        "input[name='klic'], input[id='klic'], "
-                        "input[name='kodd'], input[id='kodd'], "
-                        "input[name='cr'], input[name='kod'], input[name='overkod']"
-                    )
-                    if code_input.count() > 0 and code_input.first.is_visible():
-                        curr_val = code_input.first.input_value() or ""
-                        new_val = curr_val + text_val if len(text_val) == 1 else text_val
-                        code_input.first.fill(new_val)
+                    # Pokud je aktivní jakýkoliv input/textarea, vepíšeme text přímo do něj
+                    focused = self.page.evaluate('''() => {
+                        const el = document.activeElement;
+                        return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.type !== 'hidden');
+                    }''')
+                    if focused:
+                        self.page.keyboard.type(text_val)
                     else:
+                        # Automaticky zaměříme nejpravděpodobnější pole (SMS kód / telefon)
                         self.page.evaluate('''() => {
-                            let el = document.activeElement;
-                            if (!el || el.tagName === "BODY" || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) {
-                                let input = document.querySelector("input[name='klic']") ||
-                                            document.querySelector("input[id='klic']") ||
-                                            document.querySelector("input[name='kodd']") ||
-                                            document.querySelector("input[id='kodd']") ||
-                                            document.querySelector("input[name='cr']") ||
-                                            document.querySelector("input[name='kod']") ||
-                                            document.querySelector("input[type='text']") || 
-                                            document.querySelector("input[type='number']") ||
-                                            document.querySelector("input:not([type='hidden'])");
-                                if (input) input.focus();
+                            const SMS_NAMES = ['klic','kodd','cr','kod','overkod','sms','code','pin','teloverit','telefoni','telefon'];
+                            const all = [...document.querySelectorAll("input:not([type='hidden']), textarea")].filter(el => {
+                                const s = window.getComputedStyle(el);
+                                const r = el.getBoundingClientRect();
+                                return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && !el.disabled && !el.readOnly;
+                            });
+                            const scored = all.map(el => {
+                                const n = (el.name || '').toLowerCase();
+                                const i = (el.id || '').toLowerCase();
+                                const p = (el.placeholder || '').toLowerCase();
+                                let score = 0;
+                                if (SMS_NAMES.some(k => n.includes(k) || i.includes(k) || p.includes(k))) score += 100;
+                                if (['hledat','search','email','mail','cena','nadpis'].some(k => n.includes(k) || i.includes(k))) score -= 100;
+                                return { el, score };
+                            }).sort((a, b) => b.score - a.score);
+                            if (scored.length > 0) {
+                                scored[0].el.focus();
+                                return true;
                             }
+                            return false;
                         }''')
                         self.page.keyboard.type(text_val)
                 except Exception as ex:
@@ -166,27 +174,43 @@ class PlaywrightSessionManager:
             key_name = evt.get("key", "")
             if self.page and not self.page.is_closed():
                 try:
-                    code_input = self.page.locator(
-                        "input[name='klic'], input[id='klic'], "
-                        "input[name='kodd'], input[id='kodd'], "
-                        "input[name='cr'], input[name='kod'], input[name='overkod']"
-                    )
-                    if key_name == "Backspace" and code_input.count() > 0 and code_input.first.is_visible():
-                        curr_val = code_input.first.input_value() or ""
-                        code_input.first.fill(curr_val[:-1])
-                    elif key_name == "Enter" and code_input.count() > 0 and code_input.first.is_visible():
-                        submit_btn = self.page.locator(
-                            "form:has(input[name='klic']) input[type='submit'], "
-                            "form:has(input[name='kodd']) input[type='submit'], "
-                            "input[type='submit'][value*='Vypsat'], "
-                            "input[type='submit'][value*='Ověř'], "
-                            "input[type='submit'][value*='Potvrd'], "
-                            "input[type='submit'][value*='Odeslat'], "
-                            "button[type='submit']"
-                        )
-                        if submit_btn.count() > 0 and submit_btn.first.is_visible():
-                            submit_btn.first.click()
-                        else:
+                    if key_name == "Backspace":
+                        self.page.keyboard.press("Backspace")
+                    elif key_name == "Enter":
+                        # Při stisku Enter zkusíme odeslat formulář aktivního nebo validačního elementu
+                        submitted = self.page.evaluate('''() => {
+                            const active = document.activeElement;
+                            let target = null;
+                            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'BUTTON') && active.type !== 'hidden') {
+                                target = active;
+                            } else {
+                                target = document.querySelector("input[name='klic'], input[name='kodd'], input[name='cr'], input[name='kod'], input[name='teloverit'], input[name='overkod']");
+                            }
+                            if (target) {
+                                const form = target.closest('form') || document.querySelector('form');
+                                if (form) {
+                                    // Zaškrtneme podmínky, pokud jsou přítomny a nezaškrtnuty
+                                    const podminky = form.querySelector("input[name='podminky']");
+                                    if (podminky && !podminky.checked) {
+                                        podminky.checked = true;
+                                        podminky.dispatchEvent(new Event('change', { bubbles: true }));
+                                    }
+                                    const submitBtn = form.querySelector("input[type='submit'], button[type='submit'], input[name='Submit'], input[name='submit']");
+                                    if (submitBtn) {
+                                        submitBtn.click();
+                                        return true;
+                                    } else if (typeof form.requestSubmit === 'function') {
+                                        form.requestSubmit();
+                                        return true;
+                                    } else {
+                                        form.submit();
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        }''')
+                        if not submitted:
                             self.page.keyboard.press("Enter")
                     else:
                         self.page.keyboard.press(key_name)
