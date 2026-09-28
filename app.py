@@ -1050,7 +1050,15 @@ def get_listings():
             "views": bazos_state.get("views", 0),
             "status": status,
             "date_created": ad.get("created_at") or "",
-            "portal_states": portal_states
+            "portal_states": portal_states,
+            "is_top": ad.get("is_top", False),
+            "top_expires_at": ad.get("top_expires_at") or bazos_state.get("top_expires_at"),
+            "top_info": ad.get("top_info") or bazos_state.get("top_info"),
+            "search_rank": ad.get("search_rank") if ad.get("search_rank") is not None else bazos_state.get("search_rank"),
+            "search_rank_page": ad.get("search_rank_page") if ad.get("search_rank_page") is not None else bazos_state.get("search_rank_page"),
+            "search_rank_total": ad.get("search_rank_total") if ad.get("search_rank_total") is not None else bazos_state.get("search_rank_total"),
+            "search_query": ad.get("search_query") or bazos_state.get("search_query"),
+            "search_rank_checked_at": ad.get("search_rank_checked_at") or bazos_state.get("search_rank_checked_at")
         }
         
         if status in ["Prodané", "Sold", "prodané"]:

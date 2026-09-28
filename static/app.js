@@ -799,7 +799,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const bState = (ad.portal_states && ad.portal_states.bazos) || {};
         const daysOld = getDaysOld(ad.date_created) || 0;
-        const isTop = Boolean(ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at));
+        const isTop = Boolean(ad.is_top && !isTopExpired(ad.top_expires_at));
         const topExpired = Boolean(ad.top_expires_at && isTopExpired(ad.top_expires_at));
         const rank = (ad.search_rank !== undefined && ad.search_rank !== null) ? ad.search_rank : bState.search_rank;
         const rankChecked = Boolean(ad.search_rank_checked_at || bState.search_rank_checked_at);
@@ -957,7 +957,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const isTopExpired = (top_expires_at) => {
-        if (!top_expires_at) return true;
+        if (!top_expires_at) return false;
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const expDate = new Date(top_expires_at);
@@ -1205,10 +1205,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // 4. Bazoš TOP odznak
         const bazosDirectUrl = getBazosAdUrl(ad);
-        if (ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at)) {
+        if (ad.is_top && !isTopExpired(ad.top_expires_at)) {
+            const expiryText = ad.top_expires_at ? ` (do ${formatTopExpiry(ad.top_expires_at)})` : '';
             badgesHtml += `
-                <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 165, 0, 0.2); color: #ff9900; border: 1px solid rgba(255, 165, 0, 0.5); box-shadow: 0 0 6px rgba(255,140,0,0.3);" title="${escapeHtml(ad.top_info || 'Aktivní placené TOPování na Bazoši do ' + formatTopExpiry(ad.top_expires_at))}">
-                    🔥 TOP <span style="font-size:0.65rem;opacity:0.85;">(do ${formatTopExpiry(ad.top_expires_at)})</span>
+                <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 165, 0, 0.2); color: #ff9900; border: 1px solid rgba(255, 165, 0, 0.5); box-shadow: 0 0 6px rgba(255,140,0,0.3);" title="${escapeHtml(ad.top_info || 'Aktivní placené TOPování na Bazoši' + (ad.top_expires_at ? ' do ' + formatTopExpiry(ad.top_expires_at) : ''))}">
+                    🔥 TOP <span style="font-size:0.65rem;opacity:0.85;">${expiryText}</span>
                 </span>
             `;
         } else if (ad.top_expires_at && isTopExpired(ad.top_expires_at)) {
