@@ -1062,6 +1062,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!channel) return "";
         const ch = channel.toLowerCase();
         if (ch === "bazos") return "Bazoš.cz";
+        if (ch === "sauto") return "Sauto.cz";
         if (ch === "facebook" || ch === "fb") return "FB Marketplace";
         if (ch === "sbazar") return "Sbazar.cz";
         if (ch === "vinted") return "Vinted";
@@ -1076,6 +1077,8 @@ document.addEventListener("DOMContentLoaded", () => {
         switch (key) {
             case "bazos":
                 return { icon: "fa-solid fa-cube", color: "var(--accent, #835cdf)", bg: "rgba(131, 92, 223, 0.18)", border: "rgba(131, 92, 223, 0.4)", name: "Bazoš" };
+            case "sauto":
+                return { icon: "fa-solid fa-car", color: "#f87171", bg: "rgba(239, 68, 68, 0.18)", border: "rgba(239, 68, 68, 0.45)", name: "Sauto.cz" };
             case "facebook":
             case "fb":
                 return { icon: "fa-brands fa-facebook", color: "#38bdf8", bg: "rgba(56, 189, 248, 0.18)", border: "rgba(56, 189, 248, 0.4)", name: "FB Marketplace" };
@@ -1116,9 +1119,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 actionHtml = `<span class="badge-add-url" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" data-portal-label="${label}" style="cursor: pointer; opacity: 0.7; font-size: 0.65rem; margin-left: 2px; text-decoration: underline;" title="Klikni pro doplnění odkazu">+URL</span>`;
             }
 
+            let statusWarningHtml = "";
+            if (state.status === "Expirováno" || state.status === "Smazáno") {
+                statusWarningHtml = `<span class="badge-portal-expired" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" style="color: #ef4444; font-weight: 700; font-size: 0.65rem; background: rgba(239,68,68,0.25); padding: 1px 4px; border-radius: 4px; margin-left: 2px;" title="Inzerát na ${label} expiroval! Klikni na ikonu obnovení pro ověření stavu.">⚠️ Expirováno</span>`;
+            }
+
+            const refreshBtnHtml = url ? `<span class="btn-refresh-portal-status" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" data-portal-label="${label}" style="cursor: pointer; opacity: 0.7; margin-left: 3px; font-size: 0.65rem;" title="Zkontrolovat stav inzerátu a zhlédnutí na ${label}"><i class="fa-solid fa-arrows-rotate"></i></span>` : "";
+
             badgesHtml += `
                 <span class="portal-badge badge-${escapeHtml(normKey)}" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: ${cfg.bg}; color: ${cfg.color}; border: 1px solid ${cfg.border};">
-                    <i class="${cfg.icon}"></i> ${label} ${viewsHtml} ${actionHtml}
+                    <i class="${cfg.icon}"></i> ${label} ${statusWarningHtml} ${viewsHtml} ${actionHtml} ${refreshBtnHtml}
                 </span>
             `;
         });
@@ -1711,6 +1721,41 @@ document.addEventListener("DOMContentLoaded", () => {
                 const curViews = parseInt(span.getAttribute("data-views") || "0", 10);
                 const url = span.getAttribute("data-url") || "";
                 promptUpdatePortalViews(listingId, portal, pLabel, curViews, url, span);
+            });
+        });
+
+        // Kontrola stavu a expirace inzerátu na portálu (např. Sauto.cz)
+        card.querySelectorAll(".btn-refresh-portal-status, .badge-portal-expired").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                const listingId = btn.getAttribute("data-ad-id");
+                const portal = btn.getAttribute("data-portal");
+                const pLabel = btn.getAttribute("data-portal-label") || formatChannelName(portal);
+                const icon = btn.querySelector("i");
+                if (icon) icon.classList.add("fa-spin");
+
+                try {
+                    const res = await fetch(`/api/listings/${listingId}/portal-status-refresh`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ portal_name: portal })
+                    });
+                    const data = await res.json();
+                    if (data.status === "success") {
+                        if (data.is_active) {
+                            showNotification(`${pLabel}: Inzerát je AKTIVNÍ (${data.views || 0} zhlédnutí).`, "success");
+                        } else {
+                            showNotification(`⚠️ ${pLabel}: Inzerát je '${data.portal_status}' (expiroval / byl smazán)!`, "warning");
+                        }
+                        await loadListings();
+                    } else {
+                        showNotification(data.message || `Nepodařilo se ověřit stav na ${pLabel}.`, "warning");
+                    }
+                } catch (err) {
+                    showNotification(`Chyba při komunikaci: ${err}`, "error");
+                } finally {
+                    if (icon) icon.classList.remove("fa-spin");
+                }
             });
         });
 

@@ -1819,6 +1819,46 @@ def refresh_portal_views(listing_id):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/listings/<listing_id>/portal-status-refresh", methods=["POST"])
+def refresh_portal_status(listing_id):
+    """Zkontroluje stav inzerátu na portálu (např. Sauto.cz - Aktivní vs Expirováno) a aktualizuje databázi."""
+    try:
+        data = request.get_json(silent=True) or {}
+        portal_name = (data.get("portal_name") or "sauto").strip().lower()
+
+        listing = db.get_listing_by_id(listing_id)
+        if not listing:
+            return jsonify({"status": "error", "message": "Inzerát nebyl nalezen."}), 404
+
+        portal_states = listing.get("portal_states") or {}
+        portal_info = portal_states.get(portal_name) or {}
+        url = portal_info.get("url")
+        if not url:
+            return jsonify({"status": "error", "message": f"Pro portál {portal_name} není zadána žádná URL."}), 400
+
+        portal = portal_registry.get_portal_or_none(portal_name)
+        if not portal:
+            return jsonify({"status": "error", "message": f"Portál {portal_name} není podporován."}), 400
+
+        if hasattr(portal, "fetch_ad_details"):
+            details = portal.fetch_ad_details(url)
+            status = details.get("status", "Aktivní")
+            views = details.get("views")
+            db.update_listing_portal_status(listing_id, portal_name, status, views)
+            return jsonify({
+                "status": "success",
+                "portal_status": status,
+                "is_active": details.get("is_active", True),
+                "views": views,
+                "title": details.get("title"),
+                "price": details.get("price"),
+                "message": f"Stav na portálu {portal.display_name}: {status}"
+            })
+        else:
+            return jsonify({"status": "warning", "message": f"Portál {portal_name} nepodporuje přímou kontrolu stavu."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/listings/<listing_id>/check_rank", methods=["POST"])
 def check_listing_search_rank(listing_id):
     """Zkontroluje aktuální pozici inzerátu na Bazoši ve vyhledávání."""

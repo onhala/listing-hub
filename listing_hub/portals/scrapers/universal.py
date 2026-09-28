@@ -87,6 +87,15 @@ def _extract_domain_specific(url: str, html: str) -> Optional[int]:
         if match:
             return int(match.group(1))
 
+    # 1.7 Sauto.cz
+    if "sauto.cz" in netloc:
+        match = re.search(r'"viewsCount":\s*(\d+)', html) or re.search(r'"viewCount":\s*(\d+)', html)
+        if match:
+            return int(match.group(1))
+        match2 = re.search(r'(?:Zobrazeno|Zhlédnuto|počet zobrazení)[:\s]*<strong>?(\d+)', html, re.I)
+        if match2:
+            return int(match2.group(1))
+
     return None
 
 

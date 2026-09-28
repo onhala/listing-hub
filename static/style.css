@@ -2095,3 +2095,28 @@ input:focus, textarea:focus, select:focus {
     color: #38bdf8 !important;
     text-decoration: underline;
 }
+
+.portal-badge.badge-sauto {
+    background: rgba(239, 68, 68, 0.16) !important;
+    color: #f87171 !important;
+    border: 1px solid rgba(239, 68, 68, 0.45) !important;
+}
+
+.portal-badge.badge-sauto:hover {
+    background: rgba(239, 68, 68, 0.28) !important;
+    border-color: rgba(239, 68, 68, 0.7) !important;
+}
+
+.badge-portal-expired {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    animation: subtlePulse 2s infinite;
+}
+
+.btn-refresh-portal-status:hover {
+    opacity: 1 !important;
+    color: #38bdf8 !important;
+    transform: scale(1.15);
+}
+

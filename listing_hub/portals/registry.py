@@ -13,6 +13,7 @@ from listing_hub.portals.aukro.aukro_portal import AukroPortal
 from listing_hub.portals.sbazar.sbazar_portal import SbazarPortal
 from listing_hub.portals.vinted.vinted_portal import VintedPortal
 from listing_hub.portals.facebook.facebook_portal import FacebookMarketplacePortal
+from listing_hub.portals.sauto.sauto_portal import SautoPortal
 
 
 class PortalRegistry:
@@ -29,6 +30,7 @@ class PortalRegistry:
         self.register(SbazarPortal())
         self.register(VintedPortal())
         self.register(FacebookMarketplacePortal())
+        self.register(SautoPortal())
 
     def register(self, portal: AbstractPortal) -> None:
         """Zaregistruje instanci portálu do systému."""

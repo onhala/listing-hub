@@ -672,6 +672,32 @@ def update_listing_portal_rank(listing_id: str, portal_name: str, rank_data: Dic
     finally:
         conn.close()
 
+def update_listing_portal_status(listing_id: str, portal_name: str, status: str, views: Optional[int] = None) -> bool:
+    """Aktualizuje stav inzerátu (např. 'Aktivní', 'Expirováno', 'Smazáno') pro konkrétní portál."""
+    if not listing_id:
+        return False
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        clean_portal_name = (portal_name or "custom").strip().lower()
+        now_iso = datetime.now().isoformat()
+        if views is not None and views >= 0:
+            cursor.execute("""
+                UPDATE portal_states
+                SET status = ?, views = ?, last_synced = ?
+                WHERE listing_id = ? AND portal_name = ?
+            """, (status, int(views), now_iso, listing_id, clean_portal_name))
+        else:
+            cursor.execute("""
+                UPDATE portal_states
+                SET status = ?, last_synced = ?
+                WHERE listing_id = ? AND portal_name = ?
+            """, (status, now_iso, listing_id, clean_portal_name))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
 def get_active_external_portal_urls() -> List[Dict[str, Any]]:
     """Vrátí všechny aktivní externí portály (mimo Bazoš), které mají vyplněnou platnou URL."""
     conn = get_db_connection()
