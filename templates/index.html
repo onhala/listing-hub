@@ -171,6 +171,24 @@
                             <i class="fa-solid fa-magnifying-glass"></i>
                             <input type="text" id="active-search-input" placeholder="Hledat v aktivních inzerátech..." class="toolbar-input">
                         </div>
+                        <div class="quick-filter-chips" id="active-quick-filter-chips">
+                            <button type="button" class="filter-chip active" data-filter="all" title="Zobrazit všechny aktivní inzeráty">
+                                <span>Vše</span>
+                                <span class="filter-chip-count" id="count-chip-all">0</span>
+                            </button>
+                            <button type="button" class="filter-chip chip-stagnant" data-filter="stagnant" title="Pouze inzeráty vyžadující akci (hnijící, expirovaný TOP/Sauto)">
+                                <span>🥀 Vyžaduje akci</span>
+                                <span class="filter-chip-count" id="count-chip-stagnant">0</span>
+                            </button>
+                            <button type="button" class="filter-chip chip-top" data-filter="top" title="Pouze aktivně topované inzeráty na Bazoši">
+                                <span>🔥 TOPované</span>
+                                <span class="filter-chip-count" id="count-chip-top">0</span>
+                            </button>
+                            <button type="button" class="filter-chip" data-filter="multi" title="Pouze inzeráty evidované na více portálech (Sauto, FB, Sbazar...)">
+                                <span>🌐 Multi-portál</span>
+                                <span class="filter-chip-count" id="count-chip-multi">0</span>
+                            </button>
+                        </div>
                         <div class="sort-select-wrapper">
                             <span class="toolbar-label"><i class="fa-solid fa-arrow-down-wide-short"></i> Řadit:</span>
                             <select id="active-sort-select" class="toolbar-select">
@@ -1711,7 +1729,7 @@
     </div>
 
     <!-- Client application logic -->
-    <script src="/static/app.js?v=3.15.0"></script>
+    <script src="/static/app.js?v=3.16.0"></script>
 </body>
 </html>
 

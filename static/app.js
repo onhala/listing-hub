@@ -84,6 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Sorting & Filtering state
     let activeSort = "days_old_desc";
     let activeFilterQuery = "";
+    let activeQuickFilter = "all";
     let unsoldSort = "days_old_desc";
     let unsoldFilterQuery = "";
     let soldSort = "sold_at_desc";
@@ -955,11 +956,67 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const isTopExpired = (top_expires_at) => {
+        if (!top_expires_at) return true;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const expDate = new Date(top_expires_at);
+        return expDate < today;
+    };
+
+    const formatTopExpiry = (top_expires_at) => {
+        if (!top_expires_at) return '';
+        const [year, month, day] = top_expires_at.split('-');
+        return `${parseInt(day)}. ${parseInt(month)}.`;
+    };
+
+    const updateQuickFilterCounts = (allActiveListings) => {
+        const countAll = allActiveListings.length;
+        const countStagnant = allActiveListings.filter(ad => {
+            const stag = getStagnationInfo(ad);
+            const hasExpiredPortal = ad.portal_states && Object.values(ad.portal_states).some(p => 
+                p.status === "Expirováno" || p.status === "expired" || p.status === "inactive" || p.is_active === false
+            );
+            return stag.isStagnant || hasExpiredPortal;
+        }).length;
+        const countTop = allActiveListings.filter(ad => ad.is_top && !isTopExpired(ad.top_expires_at)).length;
+        const countMulti = allActiveListings.filter(ad => ad.portal_states && Object.keys(ad.portal_states).length > 0).length;
+
+        const elAll = document.getElementById("count-chip-all");
+        const elStagnant = document.getElementById("count-chip-stagnant");
+        const elTop = document.getElementById("count-chip-top");
+        const elMulti = document.getElementById("count-chip-multi");
+
+        if (elAll) elAll.textContent = countAll;
+        if (elStagnant) elStagnant.textContent = countStagnant;
+        if (elTop) elTop.textContent = countTop;
+        if (elMulti) elMulti.textContent = countMulti;
+    };
+
     const renderListings = () => {
         // Filtrování aktivních a neaktivních (expirovaných/draftů)
-        let liveListings = activeListings.filter(ad => ad.status === "Aktivní");
+        let baseLiveListings = activeListings.filter(ad => ad.status === "Aktivní");
         let unsoldListings = activeListings.filter(ad => ad.status !== "Aktivní");
         let displayedSoldListings = [...soldListings];
+
+        // Aktualizujeme počty v rychlých filtrech
+        updateQuickFilterCounts(baseLiveListings);
+
+        // Aplikace rychlého filtru
+        let liveListings = baseLiveListings;
+        if (activeQuickFilter === "stagnant") {
+            liveListings = liveListings.filter(ad => {
+                const stag = getStagnationInfo(ad);
+                const hasExpiredPortal = ad.portal_states && Object.values(ad.portal_states).some(p => 
+                    p.status === "Expirováno" || p.status === "expired" || p.status === "inactive" || p.is_active === false
+                );
+                return stag.isStagnant || hasExpiredPortal;
+            });
+        } else if (activeQuickFilter === "top") {
+            liveListings = liveListings.filter(ad => ad.is_top && !isTopExpired(ad.top_expires_at));
+        } else if (activeQuickFilter === "multi") {
+            liveListings = liveListings.filter(ad => ad.portal_states && Object.keys(ad.portal_states).length > 0);
+        }
 
         // Aplikace vyhledávání a řazení
         liveListings = filterListingsArray(liveListings, activeFilterQuery);
@@ -1016,20 +1073,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof initPriceChipObserver === "function") {
             initPriceChipObserver();
         }
-    };
-
-    const isTopExpired = (top_expires_at) => {
-        if (!top_expires_at) return true;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const expDate = new Date(top_expires_at);
-        return expDate < today;
-    };
-
-    const formatTopExpiry = (top_expires_at) => {
-        if (!top_expires_at) return '';
-        const [year, month, day] = top_expires_at.split('-');
-        return `${parseInt(day)}. ${parseInt(month)}.`;
     };
 
     const getBazosAdUrl = (ad) => {
@@ -1588,16 +1631,51 @@ document.addEventListener("DOMContentLoaded", () => {
                     ` : ''}
                 </div>
                 <div class="listing-actions">
-                    <button class="btn btn-secondary btn-edit"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
                     ${!isSold ? `
-                        <button class="btn btn-secondary btn-manual-publish-action" title="Zveřejnit ručně na FB Marketplace, Sbazar, Vinted..."><i class="fa-solid fa-share-nodes"></i> Zveřejnit jinde...</button>
-                        <button class="btn btn-secondary btn-mark-sold" title="Zaznamenat prodej položky"><i class="fa-solid fa-handshake"></i> Prodáno</button>
-                        <button class="btn btn-secondary btn-advisor" style="background: rgba(255,193,7,0.1); color: #ffc107; border: 1px solid rgba(255,193,7,0.3);"><i class="fa-solid fa-lightbulb"></i> Poradce</button>
-                        <button class="btn btn-primary btn-post-action">
+                        <div class="listing-actions-secondary">
+                            <button class="btn btn-secondary btn-edit" style="flex: 1;"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
+                            <button class="btn btn-secondary btn-mark-sold" title="Zaznamenat prodej položky" style="flex: 1;"><i class="fa-solid fa-handshake"></i> Prodáno</button>
+                            <div class="card-more-menu-wrapper">
+                                <button type="button" class="btn btn-secondary btn-card-more" title="Další možnosti a nástroje">
+                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                </button>
+                                <div class="card-more-dropdown">
+                                    <button type="button" class="card-more-item btn-action-manual-publish">
+                                        <i class="fa-solid fa-share-nodes"></i> Zveřejnit jinde...
+                                    </button>
+                                    <button type="button" class="card-more-item btn-action-advisor">
+                                        <i class="fa-solid fa-lightbulb" style="color: #ffc107;"></i> Cenový poradce
+                                    </button>
+                                    <button type="button" class="card-more-item btn-action-history">
+                                        <i class="fa-solid fa-clock-rotate-left"></i> Historie & statistiky
+                                    </button>
+                                    <button type="button" class="card-more-item danger btn-action-delete">
+                                        <i class="fa-solid fa-trash-can"></i> Smazat inzerát
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary btn-post-action" style="width: 100%;">
                             <i class="fa-solid ${urlStr ? 'fa-arrows-rotate' : 'fa-cloud-arrow-up'}"></i> ${urlStr ? 'Znovu vystavit' : 'Vystavit'}
                         </button>
                     ` : `
-                        <button class="btn btn-secondary btn-restore-sold" title="Vrátit položku zpět do věcí k prodeji"><i class="fa-solid fa-rotate-left"></i> Vrátit k prodeji</button>
+                        <div class="listing-actions-secondary">
+                            <button class="btn btn-secondary btn-edit" style="flex: 1;"><i class="fa-solid fa-pen-to-square"></i> Upravit</button>
+                            <button class="btn btn-secondary btn-restore-sold" title="Vrátit položku zpět do věcí k prodeji" style="flex: 1;"><i class="fa-solid fa-rotate-left"></i> Vrátit k prodeji</button>
+                            <div class="card-more-menu-wrapper">
+                                <button type="button" class="btn btn-secondary btn-card-more" title="Další možnosti">
+                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                </button>
+                                <div class="card-more-dropdown">
+                                    <button type="button" class="card-more-item btn-action-history">
+                                        <i class="fa-solid fa-clock-rotate-left"></i> Historie & statistiky
+                                    </button>
+                                    <button type="button" class="card-more-item danger btn-action-delete">
+                                        <i class="fa-solid fa-trash-can"></i> Smazat inzerát
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     `}
                 </div>
             </div>
@@ -1687,16 +1765,57 @@ document.addEventListener("DOMContentLoaded", () => {
         const cardDeleteBtn = card.querySelector(".btn-card-delete");
         const markSoldBtn = card.querySelector(".btn-mark-sold");
         const restoreSoldBtn = card.querySelector(".btn-restore-sold");
-        const manualPublishBtn = card.querySelector(".btn-manual-publish-action");
 
         const openEditor = () => openEditModal(ad);
-        editBtn.addEventListener("click", openEditor);
-        titleEl.addEventListener("click", openEditor);
+        if (editBtn) editBtn.addEventListener("click", openEditor);
+        if (titleEl) titleEl.addEventListener("click", openEditor);
 
-        if (manualPublishBtn) {
-            manualPublishBtn.addEventListener("click", (e) => {
+        // Dropdown menu "Další akce"
+        const moreBtn = card.querySelector(".btn-card-more");
+        const moreDropdown = card.querySelector(".card-more-dropdown");
+        if (moreBtn && moreDropdown) {
+            moreBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
+                document.querySelectorAll(".card-more-dropdown.show").forEach(d => {
+                    if (d !== moreDropdown) d.classList.remove("show");
+                });
+                moreDropdown.classList.toggle("show");
+            });
+        }
+
+        const actionManualPublish = card.querySelector(".btn-action-manual-publish");
+        if (actionManualPublish) {
+            actionManualPublish.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (moreDropdown) moreDropdown.classList.remove("show");
                 openManualPublishModal(ad);
+            });
+        }
+
+        const actionAdvisor = card.querySelector(".btn-action-advisor");
+        if (actionAdvisor) {
+            actionAdvisor.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (moreDropdown) moreDropdown.classList.remove("show");
+                if (typeof openAdvisor === "function") openAdvisor(ad);
+            });
+        }
+
+        const actionHistory = card.querySelector(".btn-action-history");
+        if (actionHistory) {
+            actionHistory.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (moreDropdown) moreDropdown.classList.remove("show");
+                openEditModal(ad);
+            });
+        }
+
+        const actionDelete = card.querySelector(".btn-action-delete");
+        if (actionDelete) {
+            actionDelete.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (moreDropdown) moreDropdown.classList.remove("show");
+                openDeleteModal(ad);
             });
         }
 
@@ -1828,6 +1947,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
         return card;
     };
+
+    // Globální listener pro zavření dropdown menu při kliknutí mimo
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest(".card-more-menu-wrapper")) {
+            document.querySelectorAll(".card-more-dropdown.show").forEach(d => d.classList.remove("show"));
+        }
+    });
+
+    // Quick filter chips event listeners
+    const quickFilterChips = document.querySelectorAll("#active-quick-filter-chips .filter-chip");
+    if (quickFilterChips.length > 0) {
+        quickFilterChips.forEach(chip => {
+            chip.addEventListener("click", () => {
+                quickFilterChips.forEach(c => c.classList.remove("active"));
+                chip.classList.add("active");
+                activeQuickFilter = chip.getAttribute("data-filter") || "all";
+                renderListings();
+            });
+        });
+    }
 
     // Toolbar Event Listeners (Vyhledávání, řazení, hromadný režim)
     const activeSearchInput = document.getElementById("active-search-input");
