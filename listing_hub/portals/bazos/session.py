@@ -27,11 +27,17 @@ class PlaywrightSessionManager:
         self.input_queue = queue.Queue()
         self.thread = None
         self.running = False
+        self.cancel_requested = False
         self._lock = threading.Lock()
+
+    def reset_cancel_flag(self):
+        """Explicitly reset the cancel_requested flag when starting a new action."""
+        self.cancel_requested = False
 
     def start_worker(self):
         """Start permanent background worker thread bound to Playwright."""
         with self._lock:
+            self.cancel_requested = False
             if not self.running or not self.thread or not self.thread.is_alive():
                 self.running = True
                 self.thread = threading.Thread(target=self._worker_loop, daemon=True, name="PlaywrightWorker")
@@ -293,6 +299,7 @@ class PlaywrightSessionManager:
 
     def run_on_worker(self, func, *args, timeout=30.0, **kwargs):
         """Dispatches `func(self.page, *args, **kwargs)` to execute on the Playwright worker thread."""
+        self.cancel_requested = False
         self.start_worker()
         # Čekáme až 15s na inicializaci page na worker vlákně
         start_wait = time.time()

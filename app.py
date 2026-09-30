@@ -153,6 +153,7 @@ def log_debug(msg):
 
 def process_target(ad, user_config, action_type, extra_val, meta=None):
     log_debug("1. Background thread started")
+    session_manager.cancel_requested = False
     ad_id = (ad.get("id") or ad.get("local_photos_dir")) if ad else None
     action_state_mgr.start_action(action_type, listing_id=ad_id, ad_data=ad, meta=meta)
     
@@ -919,7 +920,7 @@ def browser_fill_field():
         if not page or page.is_closed():
             return {"status": "error", "message": "Prohlížeč je zavřen"}
 
-        loc = page.locator(f"input[name='{field_name}'], input[id='{field_name}'], textarea[name='{field_name}']")
+        loc = page.locator(f"input[name='{field_name}'], input[id='{field_name}'], textarea[name='{field_name}'], select[name='{field_name}'], select[id='{field_name}']")
         if loc.count() == 0:
             loc = page.locator(f"[placeholder*='{field_name}']")
         if loc.count() > 0 and loc.first.is_visible():
@@ -931,7 +932,16 @@ def browser_fill_field():
             except Exception:
                 pass
             if value:
-                target.fill(value)
+                tag_name = (target.evaluate("el => el.tagName") or "").lower()
+                if tag_name == "select":
+                    try:
+                        target.select_option(value=str(value))
+                    except Exception:
+                        target.select_option(label=str(value))
+                    target.dispatch_event("input")
+                    target.dispatch_event("change")
+                else:
+                    target.fill(value)
             if submit:
                 submit_btn = target.locator("xpath=ancestor::form//input[@type='submit'] | xpath=ancestor::form//button[@type='submit']")
                 if submit_btn.count() > 0 and submit_btn.first.is_visible():
@@ -2105,6 +2115,7 @@ def run_action(action_type):
             except Exception:
                 pass
 
+        session_manager.cancel_requested = False
         payload = request.json or {}
         ad_id = payload.get("local_photos_dir") or payload.get("id")
         target_domain = payload.get("target_domain")
@@ -3025,6 +3036,7 @@ def api_repost_with_new_price():
         if not listing_id or new_price is None:
             return jsonify({"status": "error", "message": "Chybí listing_id nebo new_price."}), 400
 
+        session_manager.cancel_requested = False
         listings_data, user_config = load_data()
         target_domain = payload.get("target_domain")
         auto_delete_old = payload.get("auto_delete_old", True)

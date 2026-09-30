@@ -1026,6 +1026,7 @@ def cli_change_price(data, user_config, page_runner):
 
 # --- Poloautomatická správa inzerátu přes Playwright (Vystavení, Smazání, Editace ceny) ---
 def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, is_web=False):
+    session_manager.cancel_requested = False
     email_val = user_config.get("email", "").strip()
     phone_val = user_config.get("phone", "").strip()
     if not email_val or not phone_val or len(phone_val) != 9 or not phone_val.isdigit():
@@ -1361,15 +1362,14 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
             def select_kategorie_second():
                 try:
                     category_selectors = [
-                        "form:has(input[name='nadpis']) select",
-                        "//div[contains(@class,'maincontent')]//form//select",
                         "select[name='category']", "select#category",
                         "select[name='kategorie']", "select#kategorie",
-                        "select[name='rubrika']", "select#rubrika",
                         "select[name='podkategorie']", "select#podkategorie",
                         "select[name='idkateg']", "select#idkateg",
+                        "select[name='rubrika']", "select#rubrika",
                         "select[name='cat']", "select#cat",
-                        "select:not([name='rubriky']):not([title*='Vyber'])"
+                        "form:has(input[name='nadpis']) select",
+                        "//div[contains(@class,'maincontent')]//form//select"
                     ]
                     for sel_str in category_selectors:
                         try:
@@ -1382,9 +1382,9 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
                                 try:
                                     if not select_loc.is_visible(timeout=800):
                                         continue
-                                    attr_name = select_loc.get_attribute("name") or ""
-                                    attr_title = select_loc.get_attribute("title") or ""
-                                    if attr_name == "rubriky" or "Vyber rubriku" in attr_title:
+                                    attr_name = (select_loc.get_attribute("name") or "").lower()
+                                    attr_title = (select_loc.get_attribute("title") or "").lower()
+                                    if attr_name in ("rubriky", "rubrikyvybrat", "cenavyber", "cenavyber2", "vkm") or "vyber rubriku" in attr_title:
                                         continue
                                     
                                     select_loc.scroll_into_view_if_needed(timeout=1000)
@@ -1618,8 +1618,10 @@ def _run_playwright_action_impl(ad, user_config, action="post", extra_val=None, 
 
 def run_playwright_action(*args, **kwargs):
     try:
+        session_manager.cancel_requested = False
         timeout = kwargs.pop("timeout", 180.0)
         def _worker_wrapper(page, *w_args, **w_kwargs):
+            session_manager.cancel_requested = False
             return _run_playwright_action_impl(*w_args, **w_kwargs)
         return session_manager.run_on_worker(_worker_wrapper, *args, timeout=timeout, **kwargs)
     except Exception as e:

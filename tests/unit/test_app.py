@@ -870,6 +870,40 @@ def test_browser_inspect_recovers_from_navigation_destroy(client):
         assert data["status"] == "running"
         assert data["detected_step"] == "navigating"
 
+def test_cancel_requested_reset_on_new_action(client):
+    from app import session_manager
+    session_manager.cancel_requested = True
+
+    with patch("threading.Thread") as mock_thread, \
+         patch("app.load_data", return_value=([], {})):
+        mock_thread.return_value.start = MagicMock()
+        client.post("/api/action/repost", json={"id": "test_123"})
+        assert session_manager.cancel_requested is False
+
+def test_browser_fill_field_select(client):
+    mock_page = MagicMock()
+    mock_page.is_closed.return_value = False
+
+    mock_target = MagicMock()
+    mock_target.evaluate.return_value = "select"
+
+    mock_loc = MagicMock()
+    mock_loc.count.return_value = 1
+    mock_loc.first.is_visible.return_value = True
+    mock_loc.first = mock_target
+
+    mock_page.locator.return_value = mock_loc
+
+    with patch("app.session_manager.running", True), \
+         patch("app.session_manager.page", mock_page), \
+         patch("app.session_manager.run_on_worker", side_effect=lambda fn: fn(mock_page)):
+        res = client.post("/api/browser/fill-field", json={"field": "category", "value": "15"})
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "success"
+        mock_target.select_option.assert_called_with(value="15")
+
+
 
 
 
