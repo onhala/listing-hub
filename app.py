@@ -2403,24 +2403,35 @@ def confirm_action():
             if "/inzerat/" in cur_url:
                 new_ad_url = cur_url
             else:
-                has_success_msg = ("byl úspěšně" in page_content or "byl uspesne" in page_content or 
-                                   "byl přidán" in page_content or "byl pridan" in page_content or 
-                                   "inzerát byl vložen" in page_content)
-                if has_success_msg:
-                    ad_link_loc = page.locator(".maincontent a[href*='/inzerat/'], a[href*='/inzerat/']")
-                    if ad_link_loc.count() > 0:
-                        try:
-                            first_link = ad_link_loc.first
-                            href = first_link.get_attribute("href") or ""
-                            if href:
-                                if href.startswith("http"):
-                                    new_ad_url = href
-                                else:
-                                    from urllib.parse import urlparse
-                                    parsed = urlparse(cur_url)
-                                    new_ad_url = f"{parsed.scheme}://{parsed.netloc}{href}"
-                        except Exception:
-                            pass
+                idad_loc = page.locator("input[name='idad']")
+                if idad_loc.count() > 0:
+                    try:
+                        val = idad_loc.first.get_attribute("value")
+                        if val and val.isdigit():
+                            from urllib.parse import urlparse
+                            parsed = urlparse(cur_url)
+                            new_ad_url = f"{parsed.scheme}://{parsed.netloc}/inzerat/{val}/"
+                    except Exception:
+                        pass
+                if not new_ad_url:
+                    has_success_msg = ("byl úspěšně" in page_content or "byl uspesne" in page_content or 
+                                       "byl přidán" in page_content or "byl pridan" in page_content or 
+                                       "inzerát byl vložen" in page_content)
+                    if has_success_msg:
+                        ad_link_loc = page.locator(".maincontent a[href*='/inzerat/'], a[href*='/inzerat/']")
+                        if ad_link_loc.count() > 0:
+                            try:
+                                first_link = ad_link_loc.first
+                                href = first_link.get_attribute("href") or ""
+                                if href:
+                                    if href.startswith("http"):
+                                        new_ad_url = href
+                                    else:
+                                        from urllib.parse import urlparse
+                                        parsed = urlparse(cur_url)
+                                        new_ad_url = f"{parsed.scheme}://{parsed.netloc}{href}"
+                            except Exception:
+                                pass
 
             still_on_form = ("pridat-inzerat.php" in cur_url and 
                              page.locator("input[name='nadpis']").count() > 0 and 
