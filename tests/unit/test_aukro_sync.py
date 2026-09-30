@@ -238,3 +238,32 @@ def test_api_sync_aukro_endpoint(monkeypatch):
         data = res2.get_json()
         assert data["status"] == "success"
         assert len(data["data"]) == 1
+
+
+def test_fetch_ad_details(monkeypatch):
+    aukro_portal = AukroPortal()
+
+    # Invalid URL
+    res_invalid = aukro_portal.fetch_ad_details("https://example.com/item")
+    assert res_invalid["is_active"] is False
+    assert "Neplatná" in res_invalid["error"]
+
+    # Valid URL with mocked detail
+    mock_detail = {
+        "views": 42,
+        "watchers": 3,
+        "bidders": 0,
+        "description": "Popis",
+        "ending_time": "2026-10-01T10:00:00+02:00",
+        "state": "ACTIVE",
+        "price": 990,
+        "images": []
+    }
+    monkeypatch.setattr(aukro_portal, "fetch_offer_detail", lambda item_id: mock_detail)
+    res_valid = aukro_portal.fetch_ad_details("https://aukro.cz/polozka-7082098064")
+    assert res_valid["is_active"] is True
+    assert res_valid["status"] == "Aktivní"
+    assert res_valid["views"] == 42
+    assert res_valid["price"] == 990
+    assert res_valid["watchers"] == 3
+

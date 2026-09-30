@@ -225,6 +225,35 @@ class AukroPortal(AbstractPortal):
 
         return result
 
+    def fetch_ad_details(self, url: str) -> Dict[str, Any]:
+        """
+        Ověří dostupnost a stav konkrétního inzerátu na Aukru z jeho URL.
+        Využívá se při obnovení stavu z karty inzerátu (btn-refresh-portal-status).
+        """
+        result: Dict[str, Any] = {
+            "status": "Nenalezeno",
+            "is_active": False,
+            "title": None,
+            "price": None,
+            "views": None,
+            "error": None
+        }
+        item_id = self.extract_item_id_from_url(url)
+        if not item_id:
+            result["error"] = "Neplatná Aukro URL"
+            return result
+
+        detail = self.fetch_offer_detail(item_id)
+        if detail and (detail.get("views") is not None or detail.get("description")):
+            is_active = (detail.get("state") == "ACTIVE")
+            result["is_active"] = is_active
+            result["status"] = "Aktivní" if is_active else "Ukončeno"
+            result["views"] = detail.get("views")
+            result["price"] = detail.get("price")
+            result["watchers"] = detail.get("watchers")
+            result["ending_time"] = detail.get("ending_time")
+        return result
+
     def download_photos_if_missing(self, image_urls: List[str], local_photos_dir_str: str) -> None:
         """Stáhne fotografie nabídky z Aukro CDN do lokální složky, pokud je prázdná."""
         if not local_photos_dir_str or not image_urls:

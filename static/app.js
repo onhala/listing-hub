@@ -3612,7 +3612,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const statusDesc = document.getElementById("playwright-status-desc");
         if (statusDesc) {
             if (actionType === "sync_views") {
-                statusDesc.textContent = "Probíhá synchronizace inzerátů s Bazošem...";
+                statusDesc.textContent = "Probíhá synchronizace inzerátů (Bazoš, Aukro, portály)...";
             } else if (actionType === "post" || actionType === "repost") {
                 statusDesc.textContent = "Probíhá předvyplňování nového inzerátu na Bazoši...";
             } else if (actionType === "delete") {
