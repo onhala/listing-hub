@@ -1,4 +1,4 @@
-# 🤖 Listing Hub & AI Editor v3.15.0
+# 🤖 Listing Hub & AI Editor v3.17.0
 
 Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s modulární multi-portál architekturou (`listing_hub.portals`), integrovaným Stagnation Barometrem pro ležáky, Bazoš Search Rank Trackerem, 1-Click SMS Top Helperem, asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů, Prometheus telemetrií a automatickou synchronizací do Google Kalendáře.
 
@@ -151,6 +151,13 @@ Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerc
     - **Historické snapshoty zhlédnutí**: Automatické ukládání historie zhlédnutí při synchronizaci inzerátů pro sledování rychlosti růstu popularity (`listing_views_history`).
     - **Metriky úspěšnosti a fotografií**: Korelace počtu fotografií s rychlostí prodeje (`days_to_sell`, `photos_count`), hlídání expiračních lhůt (countdown do smazání Bazošem) a SMS guard monitoring.
 
+23. **Aukro.cz Automatická Synchronizace & Monitoring (Aukro Sync)**:
+    - **Import a monitoring nabídek**: Obousměrný import a tracking aktivních nabídek z Aukra přes veřejné SSR rozhraní (`aukCache`) a REST API `backend-web/api/offers/{id}/offerDetail` bez nutnosti zadávání hesel či SMS tokenů.
+    - **Zhlédnutí & Sledující (⭐️)**: Průběžné sledování přesného počtu zhlédnutí (`displayedCount`) i sledujících zájemců (`watchingUserCount`) s vizualizací přímo na kartě inzerátu u žlutého Aukro odznaku.
+    - **Stahování originálních fotografií**: Automatické stažení fotografií v plném rozlišení z Aukro CDN do lokálního úložiště inzerátu (`photos/`).
+    - **1-Click Sync tlačítko**: Tlačítko `Sync Aukro` v záhlaví pro okamžité načtení bez čekání + paralelní běh na pozadí v rámci pravidelného refreshe.
+    - **Konfigurace v profilu**: Nastavení uživatelského jména prodejce v souboru `config.json` i přímo v GUI modalu *Nastavení*.
+
 
 
 ---
@@ -177,6 +184,7 @@ Kompletní specifikace a parametry jsou detailně popsány ve [Vývojářské p�
 - `POST /api/listings/delete` – Bezpečné smazání inzerátu s volitelným úklidem fotek na disku.
 
 ### Multi-portál Evidence & Asistence
+- `POST /api/sync/aukro` – Spustí okamžité stažení aktivních nabídek zadaného Aukro prodejce, spárování s SQLite databází, stažení chybějících fotografií v plném rozlišení a aktualizaci zhlédnutí a sledujících.
 - `POST /api/listings/<listing_id>/publish-manual` – Zaznamená ruční publikaci inzerátu na externím portálu (`portal_name`, `portal_label`, `url`, `notes`).
 - `POST /api/listings/<listing_id>/portal-url` – Rychlé doplnění nebo aktualizace URL odkazu na živý inzerát pro daný portál.
 - `POST /api/listings/<listing_id>/portal-views` – Nastavení aktuálního počtu zhlédnutí pro zvolený portál (`portal_name`, `views`) s okamžitým Prometheus snapshotem.

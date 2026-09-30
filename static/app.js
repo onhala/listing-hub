@@ -141,6 +141,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const configTruenasApiKey = document.getElementById("config-truenas-api-key");
     const toggleTruenasKeyBtn = document.getElementById("toggle-truenas-key");
     const btnTriggerTruenasUpgrade = document.getElementById("btn-trigger-truenas-upgrade");
+    const configAukroUsername = document.getElementById("config-aukro-username");
+    const btnSyncAukro = document.getElementById("btn-sync-aukro");
 
     // Auto refresh elements
     const configAutoRefresh = document.getElementById("config-auto-refresh");
@@ -708,6 +710,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     configTruenasApiKey.placeholder = "••••••••••••••••••••••••••••••••";
                 }
 
+                // Aukro nastavení
+                if (configAukroUsername) configAukroUsername.value = config.aukro_username || "";
+
                 // Google Kalendář & iCal feed
                 if (calendarFeedUrl && config.calendar_token) {
                     const feedUrl = `${window.location.origin}/api/calendar/feed.ics?token=${config.calendar_token}`;
@@ -1167,11 +1172,21 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusWarningHtml = `<span class="badge-portal-expired" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" style="color: #ef4444; font-weight: 700; font-size: 0.65rem; background: rgba(239,68,68,0.25); padding: 1px 4px; border-radius: 4px; margin-left: 2px;" title="Inzerát na ${label} expiroval! Klikni na ikonu obnovení pro ověření stavu.">⚠️ Expirováno</span>`;
             }
 
+            let extraInfoHtml = "";
+            if (state.top_info) {
+                const cleanInfo = escapeHtml(state.top_info);
+                extraInfoHtml = `
+                    <span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(0, 0, 0, 0.32); border-radius: 4px; margin-left: 2px; font-size: 0.65rem;" title="${cleanInfo}">
+                        <i class="fa-solid fa-star" style="font-size: 0.6rem; color: #facc15;"></i> ${cleanInfo.replace('Sleduje: ', '')}
+                    </span>
+                `;
+            }
+
             const refreshBtnHtml = url ? `<span class="btn-refresh-portal-status" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" data-portal-label="${label}" style="cursor: pointer; opacity: 0.7; margin-left: 3px; font-size: 0.65rem;" title="Zkontrolovat stav inzerátu a zhlédnutí na ${label}"><i class="fa-solid fa-arrows-rotate"></i></span>` : "";
 
             badgesHtml += `
                 <span class="portal-badge badge-${escapeHtml(normKey)}" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: ${cfg.bg}; color: ${cfg.color}; border: 1px solid ${cfg.border};">
-                    <i class="${cfg.icon}"></i> ${label} ${statusWarningHtml} ${viewsHtml} ${actionHtml} ${refreshBtnHtml}
+                    <i class="${cfg.icon}"></i> ${label} ${statusWarningHtml} ${viewsHtml} ${extraInfoHtml} ${actionHtml} ${refreshBtnHtml}
                 </span>
             `;
         });
@@ -4530,10 +4545,35 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Globální synchronizace views
+    // Globální synchronizace views (Bazoš + ostatní portály)
     document.getElementById("btn-sync-views").addEventListener("click", () => {
         triggerPlaywrightAction({ local_photos_dir: "all" }, "sync_views");
     });
+
+    // Přímá blesková synchronizace Aukro.cz
+    if (btnSyncAukro) {
+        btnSyncAukro.addEventListener("click", async () => {
+            const origHtml = btnSyncAukro.innerHTML;
+            btnSyncAukro.disabled = true;
+            btnSyncAukro.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin" style="color: #facc15;"></i> Synchronizuji...`;
+            showNotification("Stahuji a synchronizuji nabídky z Aukro.cz...", "info");
+            try {
+                const res = await fetch("/api/sync/aukro", { method: "POST" });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showNotification(data.message || "Aukro synchronizace dokončena.", "success");
+                    await loadListings();
+                } else {
+                    showNotification(data.message || "Aukro synchronizace vrátila upozornění.", "warning");
+                }
+            } catch (err) {
+                showNotification(`Chyba spojení při synchronizaci Aukra: ${err.message}`, "error");
+            } finally {
+                btnSyncAukro.disabled = false;
+                btnSyncAukro.innerHTML = origHtml;
+            }
+        });
+    }
 
     // Přerušení běžící akce
     const cancelBtn = document.getElementById("btn-cancel-action");
@@ -4805,6 +4845,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (configLocation) updatedConfig.location = configLocation.value.trim();
         if (configAiDelivery) updatedConfig.ai_delivery_options = configAiDelivery.value.trim();
         if (configAiSeller) updatedConfig.ai_seller_context = configAiSeller.value.trim();
+        if (configAukroUsername) updatedConfig.aukro_username = configAukroUsername.value.trim();
 
         try {
             const res = await fetch(API.config, {

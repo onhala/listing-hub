@@ -63,7 +63,8 @@ def load_user_config() -> dict:
             "default_ad_password_b64": "aGVzbG8xMjM=",
             "gemini_api_key": "",
             "gemini_model": "gemini-2.5-flash",
-            "calendar_token": secrets.token_hex(16)
+            "calendar_token": secrets.token_hex(16),
+            "aukro_username": ""
         }
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:

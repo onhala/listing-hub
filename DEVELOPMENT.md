@@ -55,7 +55,7 @@ Listing Hub je postaven na modulární vrstvené architektuře v Pythonu (Flask)
      - **`sbazar/`**: `SbazarPortal` (Sbazar.cz / Seznam) – detekce domény, parsování ID inzerátu a scraping statistik.
      - **`vinted/`**: `VintedPortal` (Vinted.cz / Vinted.com) – detekce šatníku, extrakce item ID a views.
      - **`facebook/`**: `FacebookMarketplacePortal` – detekce marketplace odkazů a správa stavu.
-     - **`aukro/`**: `AukroPortal` (Aukro.cz) – integrace REST API a katalogu nabídek.
+     - **`aukro/`**: `AukroPortal` (Aukro.cz) – integrace veřejného SSR rozhraní (`aukCache`) a REST API (`backend-web/api/offers`). Zajišťuje automatický import aktivních nabídek, stahování fotografií ve vysokém rozlišení, párování inzerátů, sledování zhlédnutí (`displayedCount`), počtu sledujících a termínů vypršení.
    - **`scrapers/universal.py`**: Tříúrovňový unifikovaný scraper zhlédnutí inzerátů:
      1. Doménově specifické extraktory (Bazoš CZ/SK, Sbazar, Aukro, Vinted, Sportovní vozy, Ráj veteránů, Motorkáři).
      2. Schema.org / JSON-LD strukturovaná metadata (`interactionStatistic`, `viewCount`).

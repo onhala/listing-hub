@@ -230,6 +230,10 @@ Při mazání inzerátu nabízí Listing Hub inteligentní kontextové možnosti
   - Každý inzerát zobrazuje barevné odznaky všech portálů, na kterých je aktuálně evidován.
   - Odznak obsahuje přímý odkaz na živý inzerát (otevře se v nové záložce).
   - Pokud odkaz dosud nebyl vložen, odznak nabízí odkaz `+URL`, který otevře prompt pro okamžité doplnění odkazu přímo z hlavní obrazovky.
+- **🟡 Automatická synchronizace Aukro.cz (Aukro Sync & Monitoring):**
+  - Plnohodnotná integrace prodejců na Aukru bez nutnosti hesla či CAPTCHA.
+  - Z veřejného SSR profilu prodejce systém automaticky stahuje aktivní nabídky, páruje je se stávajícími inzeráty, stahuje originální fotografie ve vysokém rozlišení do lokálního úložiště a sleduje reálný zájem (zhlédnutí `displayedCount` i počet sledujících ⭐️).
+  - Tlačítko **Sync Aukro** v horní liště pro okamžitou synchronizaci na 1 kliknutí a paralelní běh v rámci pravidelné automatické aktualizace na pozadí.
 
 ---
 

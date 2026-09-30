@@ -53,6 +53,9 @@ def _extract_domain_specific(url: str, html: str) -> Optional[int]:
 
     # 1.3 Aukro.cz
     if "aukro.cz" in netloc:
+        match0 = re.search(r'"displayedCount":\s*(\d+)', html)
+        if match0:
+            return int(match0.group(1))
         match = re.search(r'"viewsCount":\s*(\d+)', html)
         if match:
             return int(match.group(1))
