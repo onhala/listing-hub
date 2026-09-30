@@ -903,6 +903,26 @@ def test_browser_fill_field_select(client):
         assert data["status"] == "success"
         mock_target.select_option.assert_called_with(value="15")
 
+def test_browser_click_submit(client):
+    mock_page = MagicMock()
+    mock_page.is_closed.return_value = False
+
+    mock_btn = MagicMock()
+    mock_btn.count.return_value = 1
+    mock_btn.first.is_visible.return_value = True
+
+    mock_page.locator.return_value = mock_btn
+
+    with patch("app.session_manager.running", True), \
+         patch("app.session_manager.page", mock_page), \
+         patch("app.session_manager.run_on_worker", side_effect=lambda fn: fn(mock_page)):
+        res = client.post("/api/browser/click-submit")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["status"] == "ok"
+        mock_btn.first.click.assert_called_once()
+
+
 
 
 

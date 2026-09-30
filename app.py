@@ -222,6 +222,14 @@ def process_target(ad, user_config, action_type, extra_val, meta=None):
                 BazosPortal().sync_listings(load_user_config())
                 log_debug("5. Done BazosPortal().sync_listings")
 
+                # 5a. Auto-sync Aukro nabídek
+                try:
+                    from listing_hub.portals.aukro.aukro_portal import AukroPortal
+                    AukroPortal().sync_listings(load_user_config())
+                    log_debug("5a. Done AukroPortal().sync_listings")
+                except Exception as aukro_sync_err:
+                    log_debug(f"Non-fatal error during Aukro sync: {aukro_sync_err}")
+
                 # 5b. Auto-scrape externích portálů (Sportovní vozy, Ráj veteránů, apod.)
                 try:
                     from listing_hub.portals.scrapers.universal import scrape_listing_views
@@ -943,10 +951,14 @@ def browser_fill_field():
                 else:
                     target.fill(value)
             if submit:
-                submit_btn = target.locator("xpath=ancestor::form//input[@type='submit'] | xpath=ancestor::form//button[@type='submit']")
-                if submit_btn.count() > 0 and submit_btn.first.is_visible():
-                    submit_btn.first.click()
-                else:
+                try:
+                    form = target.locator("xpath=ancestor::form")
+                    submit_btn = form.locator("input[type='submit'], button[type='submit']")
+                    if submit_btn.count() > 0 and submit_btn.first.is_visible():
+                        submit_btn.first.click()
+                    else:
+                        target.press("Enter")
+                except Exception:
                     target.press("Enter")
             return {
                 "status": "ok",
@@ -960,6 +972,28 @@ def browser_fill_field():
 
     try:
         res = session_manager.run_on_worker(_fill_target)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/browser/click-submit", methods=["POST"])
+def browser_click_submit():
+    """Klikne na tlačítko 'Odeslat' ve formuláři inzerátu."""
+    if not session_manager.running or not session_manager.page or session_manager.page.is_closed():
+        return jsonify({"status": "error", "message": "Prohlížeč není aktivní"}), 400
+
+    def _click_submit(page, *args):
+        if not page or page.is_closed():
+            return {"status": "error", "message": "Prohlížeč je zavřen"}
+        btn = page.locator("form input[type='submit'][value*='Odeslat'], form input[type='submit'][name='Submit'], form input[type='submit'], form button[type='submit']")
+        if btn.count() > 0 and btn.first.is_visible():
+            btn.first.click()
+            return {"status": "ok", "message": "Odesláno kliknutím na tlačítko"}
+        page.keyboard.press("Enter")
+        return {"status": "ok", "message": "Odesláno stisknutím klávesy Enter"}
+
+    try:
+        res = session_manager.run_on_worker(_click_submit)
         return jsonify(res)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1394,6 +1428,32 @@ def api_photo_edit_save():
 def get_config():
     _, user_config = load_data()
     return jsonify(user_config)
+
+
+@app.route("/api/sync/aukro", methods=["POST"])
+def sync_aukro_endpoint():
+    """Okamžitá synchronizace aktivních nabídek a zhlédnutí z Aukro.cz."""
+    try:
+        from listing_hub.portals.aukro.aukro_portal import AukroPortal
+        from listing_hub.core.config import load_user_config
+        cfg = load_user_config()
+        username = cfg.get("aukro_username", "").strip()
+        if not username:
+            return jsonify({
+                "status": "warning",
+                "message": "Není nakonfigurováno Aukro uživatelské jméno v Nastavení."
+            }), 400
+
+        portal = AukroPortal()
+        synced = portal.sync_listings(cfg)
+        return jsonify({
+            "status": "success",
+            "message": f"Aukro synchronizace úspěšně dokončena ({len(synced)} nabídek).",
+            "data": synced
+        })
+    except Exception as e:
+        app.logger.error(f"Error during Aukro sync: {e}")
+        return jsonify({"status": "error", "message": f"Chyba při synchronizaci Aukra: {e}"}), 500
 
 @app.route("/api/refresh/status", methods=["GET"])
 def get_refresh_status():
