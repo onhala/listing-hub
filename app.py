@@ -985,10 +985,10 @@ def browser_click_submit():
     def _click_submit(page, *args):
         if not page or page.is_closed():
             return {"status": "error", "message": "Prohlížeč je zavřen"}
-        btn = page.locator("form input[type='submit'][value*='Odeslat'], form input[type='submit'][name='Submit'], form input[type='submit'], form button[type='submit']")
+        btn = page.locator("form:has(input[name='nadpis']) input[type='submit'][value*='Odeslat'], form:has(textarea[name='popis']) input[type='submit'][value*='Odeslat'], form:has(input[name='nadpis']) input[type='submit'], input[type='submit'][value='Odeslat']")
         if btn.count() > 0 and btn.first.is_visible():
             btn.first.click()
-            return {"status": "ok", "message": "Odesláno kliknutím na tlačítko"}
+            return {"status": "ok", "message": "Odesláno kliknutím na tlačítko formuláře inzerátu"}
         page.keyboard.press("Enter")
         return {"status": "ok", "message": "Odesláno stisknutím klávesy Enter"}
 
@@ -2398,25 +2398,29 @@ def confirm_action():
 
             is_gateway_error = ("502 bad gateway" in page_content or "500 internal server" in page_content or "504 gateway time-out" in page_content)
 
-            # Bazoš po odeslání zůstává na /pridat-inzerat.php s potvrzovacím textem nebo přesměruje na /inzerat/<id>/
-            ad_link_loc = page.locator("a[href*='/inzerat/']")
+            # Bazoš po odeslání buď přesměruje na /inzerat/<id>/ nebo zůstane na stránce s potvrzovací zprávou
             new_ad_url = ""
-            if ad_link_loc.count() > 0:
-                try:
-                    first_link = ad_link_loc.first
-                    href = first_link.get_attribute("href") or ""
-                    if href:
-                        if href.startswith("http"):
-                            new_ad_url = href
-                        else:
-                            from urllib.parse import urlparse
-                            parsed = urlparse(cur_url)
-                            new_ad_url = f"{parsed.scheme}://{parsed.netloc}{href}"
-                except Exception:
-                    pass
-
             if "/inzerat/" in cur_url:
                 new_ad_url = cur_url
+            else:
+                has_success_msg = ("byl úspěšně" in page_content or "byl uspesne" in page_content or 
+                                   "byl přidán" in page_content or "byl pridan" in page_content or 
+                                   "inzerát byl vložen" in page_content)
+                if has_success_msg:
+                    ad_link_loc = page.locator(".maincontent a[href*='/inzerat/'], a[href*='/inzerat/']")
+                    if ad_link_loc.count() > 0:
+                        try:
+                            first_link = ad_link_loc.first
+                            href = first_link.get_attribute("href") or ""
+                            if href:
+                                if href.startswith("http"):
+                                    new_ad_url = href
+                                else:
+                                    from urllib.parse import urlparse
+                                    parsed = urlparse(cur_url)
+                                    new_ad_url = f"{parsed.scheme}://{parsed.netloc}{href}"
+                        except Exception:
+                            pass
 
             still_on_form = ("pridat-inzerat.php" in cur_url and 
                              page.locator("input[name='nadpis']").count() > 0 and 
