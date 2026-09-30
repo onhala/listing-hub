@@ -166,15 +166,18 @@ def fetch_bazos_ad_details(ad_url: str) -> dict:
                 break
 
         # --- TOP status z detailu inzerátu ---
-        ztop_el = soup.find(class_="ztop")
-        if ztop_el:
-            result["is_top"] = True
-            title_attr = ztop_el.get("title", "")
-            result["top_info"] = title_attr or ztop_el.get_text(strip=True)
-            exp_match = re.search(r"Plat\u00ed do (\d{1,2})\.(\d{1,2})\.\s*(\d{4})", title_attr)
-            if exp_match:
-                day, month, year = exp_match.groups()
-                result["top_expires_at"] = f"{year}-{int(month):02d}-{int(day):02d}"
+        for cand in soup.find_all(class_="ztop"):
+            txt = cand.get_text(strip=True).upper()
+            title_attr = cand.get("title", "")
+            # Hvězdička '*' v kontaktním formuláři není TOP badge!
+            if txt == "TOP" or "TOP" in title_attr.upper() or "PLATÍ DO" in title_attr.upper() or "PLATI DO" in title_attr.upper():
+                result["is_top"] = True
+                result["top_info"] = title_attr or cand.get_text(strip=True)
+                exp_match = re.search(r"Plat\u00ed do (\d{1,2})\.(\d{1,2})\.\s*(\d{4})", title_attr)
+                if exp_match:
+                    day, month, year = exp_match.groups()
+                    result["top_expires_at"] = f"{year}-{int(month):02d}-{int(day):02d}"
+                break
 
     except Exception:
         pass
@@ -465,9 +468,13 @@ class BazosPortal(AbstractPortal):
                     local_ad["location"] = _details["location"]
                 
                 # TOP status: preferuj data z detailu (is_top z fetch_bazos_ad_details), fallback na scraped list
-                _top_is = _details.get("is_top") or best_scraped_match.get("is_top", False)
-                _top_exp = _details.get("top_expires_at") or best_scraped_match.get("top_expires_at")
                 _top_inf = _details.get("top_info") or best_scraped_match.get("top_info")
+                if _top_inf == "*":
+                    _top_inf = None
+                _top_exp = _details.get("top_expires_at") or best_scraped_match.get("top_expires_at")
+                _top_is = bool(_details.get("is_top") or best_scraped_match.get("is_top", False))
+                if not _top_inf and not _top_exp:
+                    _top_is = False
 
                 # Zjistíme živou pozici na Bazoši ve vyhledávání (Search Rank)
                 rank_res = None

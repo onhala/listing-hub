@@ -283,3 +283,36 @@ def test_fetch_bazos_ad_details_top_parsing(monkeypatch):
     assert result["top_expires_at"] == "2026-09-20"
     assert "Platí do 20.9. 2026" in result["top_info"]
     assert result["is_deleted"] is False
+
+def test_fetch_bazos_ad_details_ignores_contact_form_asterisk_ztop(monkeypatch):
+    from listing_hub.portals.bazos import bazos_portal
+    import urllib.request
+
+    mock_html = """
+    <html><body>
+    <h1>Sekačka Hecht</h1>
+    <div class="popisdetail">Funkční sekačka.</div>
+    <table>
+      <tr><td>Lokalita:</td><td>České Budějovice</td></tr>
+      <tr><td>Cena:</td><td>2&nbsp;500 Kč</td></tr>
+    </table>
+    <div class="kontaktniformular">
+      Vaše telefonní číslo <span class="ztop">*</span><br>
+      <input type="text" name="teloverit2">
+    </div>
+    </body></html>
+    """
+
+    class _FakeResponse:
+        def geturl(self): return "https://dum.bazos.cz/inzerat/123/sekacka.htm"
+        def read(self): return mock_html.encode("utf-8")
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=10: _FakeResponse())
+
+    result = bazos_portal.fetch_bazos_ad_details("https://dum.bazos.cz/inzerat/123/sekacka.htm")
+    assert result["is_top"] is False
+    assert result["top_info"] is None
+    assert result["top_expires_at"] is None
+

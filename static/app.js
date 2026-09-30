@@ -804,7 +804,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const bState = (ad.portal_states && ad.portal_states.bazos) || {};
         const daysOld = getDaysOld(ad.date_created) || 0;
-        const isTop = Boolean(ad.is_top && !isTopExpired(ad.top_expires_at));
+        const isTop = Boolean(ad.is_top && ad.top_info !== '*' && !isTopExpired(ad.top_expires_at));
         const topExpired = Boolean(ad.top_expires_at && isTopExpired(ad.top_expires_at));
         const rank = (ad.search_rank !== undefined && ad.search_rank !== null) ? ad.search_rank : bState.search_rank;
         const rankChecked = Boolean(ad.search_rank_checked_at || bState.search_rank_checked_at);
@@ -969,6 +969,13 @@ document.addEventListener("DOMContentLoaded", () => {
         return expDate < today;
     };
 
+    const isAdTop = (ad) => {
+        if (!ad || !ad.is_top) return false;
+        if (ad.top_info === "*") return false;
+        if (ad.top_expires_at && isTopExpired(ad.top_expires_at)) return false;
+        return true;
+    };
+
     const formatTopExpiry = (top_expires_at) => {
         if (!top_expires_at) return '';
         const [year, month, day] = top_expires_at.split('-');
@@ -984,7 +991,7 @@ document.addEventListener("DOMContentLoaded", () => {
             );
             return stag.isStagnant || hasExpiredPortal;
         }).length;
-        const countTop = allActiveListings.filter(ad => ad.is_top && !isTopExpired(ad.top_expires_at)).length;
+        const countTop = allActiveListings.filter(isAdTop).length;
         const countMulti = allActiveListings.filter(ad => ad.portal_states && Object.keys(ad.portal_states).length > 0).length;
 
         const elAll = document.getElementById("count-chip-all");
@@ -1018,7 +1025,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return stag.isStagnant || hasExpiredPortal;
             });
         } else if (activeQuickFilter === "top") {
-            liveListings = liveListings.filter(ad => ad.is_top && !isTopExpired(ad.top_expires_at));
+            liveListings = liveListings.filter(isAdTop);
         } else if (activeQuickFilter === "multi") {
             liveListings = liveListings.filter(ad => ad.portal_states && Object.keys(ad.portal_states).length > 0);
         }
@@ -1220,7 +1227,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // 4. Bazoš TOP odznak
         const bazosDirectUrl = getBazosAdUrl(ad);
-        if (ad.is_top && !isTopExpired(ad.top_expires_at)) {
+        if (isAdTop(ad)) {
             const expiryText = ad.top_expires_at ? ` (do ${formatTopExpiry(ad.top_expires_at)})` : '';
             badgesHtml += `
                 <span class="portal-badge" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 0.25rem; background: rgba(255, 165, 0, 0.2); color: #ff9900; border: 1px solid rgba(255, 165, 0, 0.5); box-shadow: 0 0 6px rgba(255,140,0,0.3);" title="${escapeHtml(ad.top_info || 'Aktivní placené TOPování na Bazoši' + (ad.top_expires_at ? ' do ' + formatTopExpiry(ad.top_expires_at) : ''))}">
@@ -1441,7 +1448,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const hasBazos = ad.target_bazos || bState.portal_item_id || ad.url;
             if (!hasBazos) return false;
 
-            const isTop = ad.is_top && !isTopExpired(ad.top_expires_at);
+            const isTop = isAdTop(ad);
             const rank = (ad.search_rank !== undefined && ad.search_rank !== null) ? ad.search_rank : bState.search_rank;
             const checkedAt = ad.search_rank_checked_at || bState.search_rank_checked_at;
             
@@ -3733,7 +3740,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const autoDeleteCheckbox = document.getElementById("repost-autodelete-checkbox");
         // TOP safety: if active paid TOP, uncheck auto-delete by default and show warning
-        const hasActivePaidTop = ad.is_top && ad.top_expires_at && !isTopExpired(ad.top_expires_at);
+        const hasActivePaidTop = isAdTop(ad) && Boolean(ad.top_expires_at);
         if (autoDeleteCheckbox) {
             autoDeleteCheckbox.checked = !hasActivePaidTop;
         }

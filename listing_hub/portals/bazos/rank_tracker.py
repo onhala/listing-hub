@@ -129,7 +129,12 @@ def check_bazos_search_rank(
                 item_id_str in ad_html):
                 
                 overall_rank = page_idx + idx_on_page + 1
-                is_top = bool(ad_el.find(class_="ztop"))
+                ztop_badge = ad_el.find(class_="ztop")
+                is_top = False
+                if ztop_badge:
+                    btxt = ztop_badge.get_text(strip=True).upper()
+                    btitle = ztop_badge.get("title", "")
+                    is_top = (btxt == "TOP" or "TOP" in btitle.upper() or "PLATÍ DO" in btitle.upper() or "PLATI DO" in btitle.upper())
 
                 result["found"] = True
                 result["rank_position"] = overall_rank

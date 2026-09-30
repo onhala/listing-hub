@@ -125,6 +125,13 @@ def init_db() -> None:
             except sqlite3.OperationalError:
                 pass
 
+        # Sanitizace falešných TOP statusů (např. hvězdička '*' z formuláře Bazoše)
+        cursor.execute("""
+            UPDATE portal_states 
+            SET is_top = 0, top_info = NULL 
+            WHERE top_info = '*' OR (is_top = 1 AND (top_info IS NULL OR top_info = '') AND top_expires_at IS NULL)
+        """)
+
         # Backfill do listing_publications ze stávajících portal_states, pokud je tabulka prázdná
         cursor.execute("SELECT COUNT(*) FROM listing_publications")
         if cursor.fetchone()[0] == 0:
@@ -278,9 +285,14 @@ def get_all_listings() -> List[Dict[str, Any]]:
 
             # Propagace TOP statusu z Bazoš portal_state
             bazos_state = listing["portal_states"].get("bazos", {})
-            listing["is_top"] = bool(bazos_state.get("is_top", 0))
+            top_inf = bazos_state.get("top_info")
+            is_top_val = bool(bazos_state.get("is_top", 0))
+            if top_inf == "*" or (is_top_val and not top_inf and not bazos_state.get("top_expires_at")):
+                is_top_val = False
+                top_inf = None
+            listing["is_top"] = is_top_val
             listing["top_expires_at"] = bazos_state.get("top_expires_at")
-            listing["top_info"] = bazos_state.get("top_info")
+            listing["top_info"] = top_inf
             listing["search_rank"] = bazos_state.get("search_rank")
             listing["search_rank_page"] = bazos_state.get("search_rank_page")
             listing["search_rank_total"] = bazos_state.get("search_rank_total")
@@ -327,9 +339,14 @@ def get_listing_by_id(listing_id: str) -> Optional[Dict[str, Any]]:
 
         # Propagace TOP statusu z Bazoš portal_state
         bazos_state = listing["portal_states"].get("bazos", {})
-        listing["is_top"] = bool(bazos_state.get("is_top", 0))
+        top_inf = bazos_state.get("top_info")
+        is_top_val = bool(bazos_state.get("is_top", 0))
+        if top_inf == "*" or (is_top_val and not top_inf and not bazos_state.get("top_expires_at")):
+            is_top_val = False
+            top_inf = None
+        listing["is_top"] = is_top_val
         listing["top_expires_at"] = bazos_state.get("top_expires_at")
-        listing["top_info"] = bazos_state.get("top_info")
+        listing["top_info"] = top_inf
         listing["search_rank"] = bazos_state.get("search_rank")
         listing["search_rank_page"] = bazos_state.get("search_rank_page")
         listing["search_rank_total"] = bazos_state.get("search_rank_total")
