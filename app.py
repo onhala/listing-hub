@@ -216,37 +216,44 @@ def process_target(ad, user_config, action_type, extra_val, meta=None):
         listings_data, _ = load_data()
         log_debug(f"3. Data loaded, action_type={action_type}")
         if action_type in ("sync_views", "auto_refresh"):
+            from listing_hub.core.config import load_user_config
+            user_cfg = load_user_config()
+
+            # 5a. Bleskový auto-sync Aukro nabídek (HTTP REST, nezávislý na Bazoši/Playwrightu)
+            try:
+                from listing_hub.portals.aukro.aukro_portal import AukroPortal
+                AukroPortal().sync_listings(user_cfg)
+                log_debug("5a. Done AukroPortal().sync_listings")
+            except Exception as aukro_sync_err:
+                log_debug(f"Non-fatal error during Aukro sync: {aukro_sync_err}")
+
+            # 5b. Bazoš sync (Playwright, může vyžadovat SMS nebo interakci)
             try:
                 from listing_hub.portals.bazos.bazos_portal import BazosPortal
-                from listing_hub.core.config import load_user_config
-                BazosPortal().sync_listings(load_user_config())
-                log_debug("5. Done BazosPortal().sync_listings")
+                BazosPortal().sync_listings(user_cfg)
+                log_debug("5b. Done BazosPortal().sync_listings")
+            except Exception as bazos_sync_err:
+                log_debug(f"Error during Bazos sync: {bazos_sync_err}")
+                if action_type != "auto_refresh":
+                    raise bazos_sync_err
 
-                # 5a. Auto-sync Aukro nabídek
-                try:
-                    from listing_hub.portals.aukro.aukro_portal import AukroPortal
-                    AukroPortal().sync_listings(load_user_config())
-                    log_debug("5a. Done AukroPortal().sync_listings")
-                except Exception as aukro_sync_err:
-                    log_debug(f"Non-fatal error during Aukro sync: {aukro_sync_err}")
-
-                # 5b. Auto-scrape externích portálů (Sportovní vozy, Ráj veteránů, apod.)
-                try:
-                    from listing_hub.portals.scrapers.universal import scrape_listing_views
-                    external_portals = db.get_active_external_portal_urls()
-                    log_debug(f"5b. Found {len(external_portals)} external portal URLs to check")
-                    for ep in external_portals:
-                        url = ep.get("url")
-                        l_id = ep.get("listing_id")
-                        p_name = ep.get("portal_name")
-                        if url and l_id and p_name:
-                            scraped_val = scrape_listing_views(url)
-                            if scraped_val is not None:
-                                db.update_listing_portal_views(l_id, p_name, scraped_val)
-                                log_debug(f"Auto-scraped views for {p_name} ({l_id}): {scraped_val}")
-                            time.sleep(0.3)
-                except Exception as ext_scrape_err:
-                    log_debug(f"Non-fatal error during external portal scraping: {ext_scrape_err}")
+            # 5c. Auto-scrape externích portálů (Sportovní vozy, Ráj veteránů, apod.)
+            try:
+                from listing_hub.portals.scrapers.universal import scrape_listing_views
+                external_portals = db.get_active_external_portal_urls()
+                log_debug(f"5c. Found {len(external_portals)} external portal URLs to check")
+                for ep in external_portals:
+                    url = ep.get("url")
+                    l_id = ep.get("listing_id")
+                    p_name = ep.get("portal_name")
+                    if url and l_id and p_name:
+                        scraped_val = scrape_listing_views(url)
+                        if scraped_val is not None:
+                            db.update_listing_portal_views(l_id, p_name, scraped_val)
+                            log_debug(f"Auto-scraped views for {p_name} ({l_id}): {scraped_val}")
+                        time.sleep(0.3)
+            except Exception as ext_scrape_err:
+                log_debug(f"Non-fatal error during external portal scraping: {ext_scrape_err}")
                 
                 # Zaznamenáme čas úspěšné aktualizace
                 if CONFIG_PATH.exists():
@@ -1068,6 +1075,15 @@ def get_listings():
                     first_url = ps.get("url")
                     break
 
+        # Spočítáme celková zhlédnutí napříč aktivními portály (Bazoš + Aukro + externí)
+        total_views = 0
+        if bazos_state and bazos_state.get("views") is not None:
+            total_views += int(bazos_state.get("views") or 0)
+        if aukro_state and aukro_state.get("views") is not None:
+            total_views += int(aukro_state.get("views") or 0)
+        if not total_views and portal_states:
+            total_views = sum(int(ps.get("views") or 0) for ps in portal_states.values() if ps.get("views") is not None)
+
         ad_dict = {
             "id": ad.get("id"),
             "title": ad.get("title"),
@@ -1091,13 +1107,13 @@ def get_listings():
             "sold_channel": ad.get("sold_channel"),
             # We map bazos state or fallback for backwards compatibility:
             "url": first_url,
-            "views": bazos_state.get("views", 0),
+            "views": total_views,
             "status": status,
             "date_created": ad.get("created_at") or "",
             "portal_states": portal_states,
             "is_top": ad.get("is_top", False),
-            "top_expires_at": ad.get("top_expires_at") or bazos_state.get("top_expires_at"),
-            "top_info": ad.get("top_info") or bazos_state.get("top_info"),
+            "top_expires_at": ad.get("top_expires_at") or bazos_state.get("top_expires_at") or aukro_state.get("top_expires_at"),
+            "top_info": ad.get("top_info") or bazos_state.get("top_info") or aukro_state.get("top_info"),
             "search_rank": ad.get("search_rank") if ad.get("search_rank") is not None else bazos_state.get("search_rank"),
             "search_rank_page": ad.get("search_rank_page") if ad.get("search_rank_page") is not None else bazos_state.get("search_rank_page"),
             "search_rank_total": ad.get("search_rank_total") if ad.get("search_rank_total") is not None else bazos_state.get("search_rank_total"),
