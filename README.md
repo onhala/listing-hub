@@ -1,6 +1,6 @@
-# 🤖 Listing Hub & AI Editor v3.17.0
+# 🤖 Listing Hub & AI Editor v3.18.0
 
-Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s modulární multi-portál architekturou (`listing_hub.portals`), integrovaným Stagnation Barometrem pro ležáky, Bazoš Search Rank Trackerem, 1-Click SMS Top Helperem, asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů, Prometheus telemetrií a automatickou synchronizací do Google Kalendáře.
+Prémiové interaktivní webové řídicí centrum pro kompletní správu inzerce na portálech Bazoš.cz, Facebook Marketplace, Sbazar.cz, Vinted a Aukro.cz, s modulární multi-portál architekturou (`listing_hub.portals`), Aukro Rich Insights (živé sledování aukcí, příhozů, min. dalších příhozů, časové urgence a shipping metod), integrovaným Stagnation Barometrem pro ležáky, Bazoš Search Rank Trackerem, 1-Click SMS Top Helperem, asistentem pro ruční vystavení a balíčky fotek (ZIP), živým noVNC prohlížečem, pokročilým Multi-Source tržním cenovým radarem (Bazoš + Sbazar + Web), AI Gemini Vision poradcem pro fotky a čisté popisy bez markdownu, plně konfigurovatelným kontextem prodejce (Český Krumlov / České Budějovice), AI Bokeh/SPZ editorem fotografií, exekutivním finančním dashboardem prodaných položek s atribucí kanálů, Prometheus telemetrií a automatickou synchronizací do Google Kalendáře.
 
 ---
 

@@ -711,7 +711,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 // Aukro nastavení
-                if (configAukroUsername) configAukroUsername.value = config.aukro_username || "";
+                if (configAukroUsername) {
+                    configAukroUsername.value = config.aukro_username || "";
+                    const repBadge = document.getElementById("aukro-seller-reputation-badge");
+                    const repText = document.getElementById("aukro-seller-reputation-text");
+                    if (repBadge && repText && config.aukro_username) {
+                        fetch(`/api/portals/aukro/profile?username=${encodeURIComponent(config.aukro_username)}`)
+                            .then(r => r.json())
+                            .then(pData => {
+                                if (pData.status === "success" && pData.data && pData.data.rating !== null) {
+                                    const d = pData.data;
+                                    const pct = d.positive_percentage ? (d.positive_percentage * 100).toFixed(1) : "100";
+                                    repText.innerHTML = `<strong>Aukro ověřený prodejce:</strong> ⭐ ${d.rating} hodnocení &bull; ${pct} % spokojenost (${d.feedback_count || d.rating} recenzí)`;
+                                    repBadge.style.display = "inline-flex";
+                                } else {
+                                    repBadge.style.display = "none";
+                                }
+                            })
+                            .catch(() => {
+                                if (repBadge) repBadge.style.display = "none";
+                            });
+                    }
+                }
 
                 // Google Kalendář & iCal feed
                 if (calendarFeedUrl && config.calendar_token) {
@@ -1180,20 +1201,75 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             let extraInfoHtml = "";
+            let auctionBadgeHtml = "";
+            let countdownBadgeHtml = "";
+
+            if (normKey === "aukro") {
+                const isAuction = (state.item_type === "BIDDING" || (state.bidders_count !== undefined && state.bidders_count !== null && state.item_type !== "BUY_NOW"));
+                const bidders = parseInt(state.bidders_count || 0, 10);
+                
+                if (isAuction) {
+                    auctionBadgeHtml = `
+                        <span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(234, 179, 8, 0.25); color: #facc15; border-radius: 4px; font-size: 0.65rem; font-weight: 700;" title="Aukce (${bidders} příhozů)">
+                            🔨 ${bidders > 0 ? `${bidders} příh.` : 'Aukce'}
+                        </span>
+                    `;
+                } else if (state.item_type === "BUY_NOW") {
+                    auctionBadgeHtml = `
+                        <span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border-radius: 4px; font-size: 0.65rem;" title="Kup teď (pevná cena)">
+                            ⚡ Kup teď
+                        </span>
+                    `;
+                }
+
+                // Odpočet konce aukce / nabídky
+                if (state.top_expires_at) {
+                    try {
+                        const endDt = new Date(state.top_expires_at);
+                        const diffMs = endDt - new Date();
+                        if (!isNaN(diffMs)) {
+                            if (diffMs <= 0) {
+                                countdownBadgeHtml = `<span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(239, 68, 68, 0.25); color: #ef4444; border-radius: 4px; font-size: 0.65rem; font-weight: 700;" title="Aukce již skončila">⏳ Skončilo</span>`;
+                            } else {
+                                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                if (diffHours < 24) {
+                                    countdownBadgeHtml = `<span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(239, 68, 68, 0.25); color: #f87171; border-radius: 4px; font-size: 0.65rem; font-weight: 700; animation: pulse 2s infinite;" title="Končí dnes! (${diffHours}h do konce)">⏳ ${diffHours}h</span>`;
+                                } else {
+                                    const diffDays = Math.ceil(diffHours / 24);
+                                    const timeTxt = state.ending_time_text || `${diffDays} dní`;
+                                    countdownBadgeHtml = `<span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(0, 0, 0, 0.32); border-radius: 4px; font-size: 0.65rem;" title="Konec nabídky za ${timeTxt}">⏳ ${timeTxt}</span>`;
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+            }
+
             if (state.top_info) {
                 const cleanInfo = escapeHtml(state.top_info);
-                extraInfoHtml = `
-                    <span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(0, 0, 0, 0.32); border-radius: 4px; margin-left: 2px; font-size: 0.65rem;" title="${cleanInfo}">
-                        <i class="fa-solid fa-star" style="font-size: 0.6rem; color: #facc15;"></i> ${cleanInfo.replace('Sleduje: ', '')}
-                    </span>
-                `;
+                // Pokud už máme auctionBadgeHtml, extrahujeme pouze sledující
+                const watcherMatch = cleanInfo.match(/sleduje\s*(\d+)/i) || cleanInfo.match(/Sleduje:\s*(\d+)/i);
+                const starVal = watcherMatch ? watcherMatch[1] : (normKey === "aukro" ? null : cleanInfo.replace('Sleduje: ', ''));
+                if (starVal) {
+                    extraInfoHtml = `
+                        <span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(0, 0, 0, 0.32); border-radius: 4px; margin-left: 2px; font-size: 0.65rem;" title="Sleduje ${starVal} uživatelů">
+                            <i class="fa-solid fa-star" style="font-size: 0.6rem; color: #facc15;"></i> ${starVal}
+                        </span>
+                    `;
+                } else if (!auctionBadgeHtml) {
+                    extraInfoHtml = `
+                        <span style="display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; background: rgba(0, 0, 0, 0.32); border-radius: 4px; margin-left: 2px; font-size: 0.65rem;" title="${cleanInfo}">
+                            <i class="fa-solid fa-star" style="font-size: 0.6rem; color: #facc15;"></i> ${cleanInfo}
+                        </span>
+                    `;
+                }
             }
 
             const refreshBtnHtml = url ? `<span class="btn-refresh-portal-status" data-ad-id="${ad.id}" data-portal="${escapeHtml(normKey)}" data-portal-label="${label}" style="cursor: pointer; opacity: 0.7; margin-left: 3px; font-size: 0.65rem;" title="Zkontrolovat stav inzerátu a zhlédnutí na ${label}"><i class="fa-solid fa-arrows-rotate"></i></span>` : "";
 
             badgesHtml += `
                 <span class="portal-badge badge-${escapeHtml(normKey)}" style="font-size: 0.7rem; padding: 2px 8px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; background: ${cfg.bg}; color: ${cfg.color}; border: 1px solid ${cfg.border};">
-                    <i class="${cfg.icon}"></i> ${label} ${statusWarningHtml} ${viewsHtml} ${extraInfoHtml} ${actionHtml} ${refreshBtnHtml}
+                    <i class="${cfg.icon}"></i> ${label} ${statusWarningHtml} ${auctionBadgeHtml} ${viewsHtml} ${extraInfoHtml} ${countdownBadgeHtml} ${actionHtml} ${refreshBtnHtml}
                 </span>
             `;
         });
@@ -2462,6 +2538,101 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Načíst historii publikací
         loadListingHistory(ad.id);
+
+        // Aukro detail widget v modalu
+        const aukroWidget = document.getElementById("info-aukro-widget");
+        const aukroState = (ad.portal_states && ad.portal_states.aukro) || (ad.aukro_item_id ? {
+            item_id: ad.aukro_item_id,
+            item_type: ad.aukro_item_type,
+            bidders_count: ad.aukro_bidders_count,
+            next_bid_min: ad.aukro_next_bid_min,
+            ending_time_text: ad.aukro_ending_time_text,
+            ending_time: ad.aukro_ending_time,
+            views: ad.aukro_views,
+            watchers_count: ad.aukro_watchers_count,
+            shipping_options: ad.aukro_shipping_options
+        } : null);
+
+        if (aukroWidget) {
+            if (aukroState && (aukroState.item_id || aukroState.url)) {
+                aukroWidget.style.display = "block";
+                const typeBadge = document.getElementById("info-aukro-type-badge");
+                const rowBids = document.getElementById("row-aukro-bids");
+                const elBids = document.getElementById("info-aukro-bids");
+                const rowNextBid = document.getElementById("row-aukro-next-bid");
+                const elNextBid = document.getElementById("info-aukro-next-bid");
+                const elEnd = document.getElementById("info-aukro-end");
+                const elViews = document.getElementById("info-aukro-views");
+                const rowShipping = document.getElementById("row-aukro-shipping");
+                const shippingList = document.getElementById("info-aukro-shipping-list");
+
+                const isAuction = aukroState.item_type === "BIDDING" || (aukroState.bidders_count !== undefined && aukroState.bidders_count !== null);
+                if (typeBadge) {
+                    typeBadge.textContent = isAuction ? "Aukce" : "Kup teď";
+                    typeBadge.style.background = isAuction ? "rgba(234, 179, 8, 0.2)" : "rgba(56, 189, 248, 0.2)";
+                    typeBadge.style.color = isAuction ? "#facc15" : "#38bdf8";
+                }
+
+                if (rowBids && elBids) {
+                    if (isAuction) {
+                        rowBids.style.display = "flex";
+                        const count = aukroState.bidders_count || 0;
+                        elBids.textContent = `${count} ${count === 1 ? "příhoz" : (count >= 2 && count <= 4 ? "příhozy" : "příhozů")}`;
+                    } else {
+                        rowBids.style.display = "none";
+                    }
+                }
+
+                if (rowNextBid && elNextBid) {
+                    if (isAuction && aukroState.next_bid_min) {
+                        rowNextBid.style.display = "flex";
+                        elNextBid.textContent = `${aukroState.next_bid_min.toLocaleString("cs-CZ")} Kč`;
+                    } else {
+                        rowNextBid.style.display = "none";
+                    }
+                }
+
+                if (elEnd) {
+                    if (aukroState.ending_time_text) {
+                        elEnd.textContent = aukroState.ending_time_text;
+                    } else if (aukroState.ending_time) {
+                        try {
+                            const d = new Date(aukroState.ending_time);
+                            elEnd.textContent = d.toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+                        } catch (e) {
+                            elEnd.textContent = aukroState.ending_time;
+                        }
+                    } else {
+                        elEnd.textContent = "Neuvedeno";
+                    }
+                }
+
+                if (elViews) {
+                    const views = aukroState.views || 0;
+                    const watchers = aukroState.watchers_count || 0;
+                    elViews.textContent = `${views} ${views === 1 ? "zobrazení" : (views >= 2 && views <= 4 ? "zobrazení" : "zobrazení")} (sleduje ${watchers})`;
+                }
+
+                if (rowShipping && shippingList) {
+                    let shippingOpts = aukroState.shipping_options;
+                    if (typeof shippingOpts === "string") {
+                        try { shippingOpts = JSON.parse(shippingOpts); } catch (e) { shippingOpts = []; }
+                    }
+                    if (Array.isArray(shippingOpts) && shippingOpts.length > 0) {
+                        rowShipping.style.display = "flex";
+                        shippingList.innerHTML = shippingOpts.map(s => {
+                            const name = s.name || s.type || "Doprava";
+                            const price = s.price !== undefined ? `${s.price} Kč` : "Zdarma";
+                            return `<div style="display: flex; justify-content: space-between; color: #cbd5e1;"><span>• ${name}</span><span style="font-weight: 600; color: #facc15;">${price}</span></div>`;
+                        }).join("");
+                    } else {
+                        rowShipping.style.display = "none";
+                    }
+                }
+            } else {
+                aukroWidget.style.display = "none";
+            }
+        }
 
         // Aktualizovat stav tlačítka pro označení/úpravu prodeje
         const isAdSold = ad.status === "Prodané" || ad.status === "Sold" || Boolean(ad.sold_at) || (ad.sale_price !== null && ad.sale_price !== undefined);

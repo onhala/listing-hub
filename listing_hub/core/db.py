@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -118,7 +119,13 @@ def init_db() -> None:
             ("search_rank_page", "INTEGER"),
             ("search_rank_total", "INTEGER"),
             ("search_query", "TEXT"),
-            ("search_rank_checked_at", "TEXT")
+            ("search_rank_checked_at", "TEXT"),
+            ("item_type", "TEXT"),
+            ("bidders_count", "INTEGER DEFAULT 0"),
+            ("next_bid_min", "REAL"),
+            ("ending_time_text", "TEXT"),
+            ("bargaining_available", "INTEGER DEFAULT 0"),
+            ("shipping_options", "TEXT")
         ]:
             try:
                 cursor.execute(f"ALTER TABLE portal_states ADD COLUMN {col} {col_type}")
@@ -217,12 +224,16 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
         
         if portal_states:
             for portal_name, state in portal_states.items():
+                ship_opts = state.get("shipping_options")
+                ship_json = json.dumps(ship_opts) if isinstance(ship_opts, (list, dict)) else ship_opts
+
                 cursor.execute("""
                     INSERT INTO portal_states (
                         listing_id, portal_name, portal_item_id, url, status, views, last_synced,
                         is_top, top_expires_at, top_info, portal_label, published_at,
-                        search_rank, search_rank_page, search_rank_total, search_query, search_rank_checked_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        search_rank, search_rank_page, search_rank_total, search_query, search_rank_checked_at,
+                        item_type, bidders_count, next_bid_min, ending_time_text, bargaining_available, shipping_options
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(listing_id, portal_name) DO UPDATE SET
                         portal_item_id=excluded.portal_item_id,
                         url=excluded.url,
@@ -238,7 +249,13 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                         search_rank_page=COALESCE(excluded.search_rank_page, portal_states.search_rank_page),
                         search_rank_total=COALESCE(excluded.search_rank_total, portal_states.search_rank_total),
                         search_query=COALESCE(excluded.search_query, portal_states.search_query),
-                        search_rank_checked_at=COALESCE(excluded.search_rank_checked_at, portal_states.search_rank_checked_at)
+                        search_rank_checked_at=COALESCE(excluded.search_rank_checked_at, portal_states.search_rank_checked_at),
+                        item_type=COALESCE(excluded.item_type, portal_states.item_type),
+                        bidders_count=COALESCE(excluded.bidders_count, portal_states.bidders_count),
+                        next_bid_min=COALESCE(excluded.next_bid_min, portal_states.next_bid_min),
+                        ending_time_text=COALESCE(excluded.ending_time_text, portal_states.ending_time_text),
+                        bargaining_available=COALESCE(excluded.bargaining_available, portal_states.bargaining_available),
+                        shipping_options=COALESCE(excluded.shipping_options, portal_states.shipping_options)
                 """, (
                     listing_data.get("id"),
                     portal_name,
@@ -256,7 +273,13 @@ def save_listing(listing_data: Dict[str, Any], portal_states: Optional[Dict[str,
                     state.get("search_rank_page"),
                     state.get("search_rank_total"),
                     state.get("search_query"),
-                    state.get("search_rank_checked_at")
+                    state.get("search_rank_checked_at"),
+                    state.get("item_type"),
+                    state.get("bidders_count", 0),
+                    state.get("next_bid_min"),
+                    state.get("ending_time_text"),
+                    1 if state.get("bargaining_available") else 0,
+                    ship_json
                 ))
                 
         conn.commit()
@@ -281,7 +304,16 @@ def get_all_listings() -> List[Dict[str, Any]]:
             # Načtení stavů pro tento inzerát
             cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (listing["id"],))
             states_rows = cursor.fetchall()
-            listing["portal_states"] = {state["portal_name"]: dict(state) for state in states_rows}
+            p_states = {}
+            for state in states_rows:
+                s_dict = dict(state)
+                if s_dict.get("shipping_options") and isinstance(s_dict["shipping_options"], str):
+                    try:
+                        s_dict["shipping_options"] = json.loads(s_dict["shipping_options"])
+                    except Exception:
+                        pass
+                p_states[state["portal_name"]] = s_dict
+            listing["portal_states"] = p_states
 
             # Propagace TOP statusu z Bazoš portal_state
             bazos_state = listing["portal_states"].get("bazos", {})
@@ -335,7 +367,16 @@ def get_listing_by_id(listing_id: str) -> Optional[Dict[str, Any]]:
         actual_id = listing["id"]
         cursor.execute("SELECT * FROM portal_states WHERE listing_id = ?", (actual_id,))
         states_rows = cursor.fetchall()
-        listing["portal_states"] = {state["portal_name"]: dict(state) for state in states_rows}
+        p_states = {}
+        for state in states_rows:
+            s_dict = dict(state)
+            if s_dict.get("shipping_options") and isinstance(s_dict["shipping_options"], str):
+                try:
+                    s_dict["shipping_options"] = json.loads(s_dict["shipping_options"])
+                except Exception:
+                    pass
+            p_states[state["portal_name"]] = s_dict
+        listing["portal_states"] = p_states
 
         # Propagace TOP statusu z Bazoš portal_state
         bazos_state = listing["portal_states"].get("bazos", {})

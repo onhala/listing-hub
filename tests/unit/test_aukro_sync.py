@@ -116,6 +116,53 @@ def test_fetch_offer_detail_mocked(aukro_portal):
         assert detail["images"] == ["https://cdn.aukro.cz/original.jpg"]
 
 
+def test_fetch_offer_detail_rich_metadata(aukro_portal):
+    mock_detail = {
+        "itemType": "BIDDING",
+        "biddersCount": 4,
+        "displayedCount": 78,
+        "watchingUserCount": 9,
+        "endingTime": "2026-10-05T12:00:00+02:00",
+        "endingTimeText": "4 dny",
+        "nextBidMinAmount": {"amount": 550, "currency": "CZK"},
+        "price": {"amount": 500, "currency": "CZK"},
+        "state": "ACTIVE",
+        "descriptionStripped": "Aukční popis",
+        "bargainingAvailable": True,
+        "shippingOptions": [
+            {
+                "aukroShipping": True,
+                "firstPackagePrice": {"amount": 63.0, "currency": "CZK"},
+                "freeOfCharge": False,
+                "iconUrl": "https://f.aukro.cz/balikovna.png"
+            }
+        ],
+        "seller": {
+            "rating": 156,
+            "positiveFeedbackPercentage": 0.9937,
+            "feedbackUniqueUserCount": 157
+        },
+        "itemImages": []
+    }
+
+    with patch("urllib.request.urlopen") as mock_url:
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(mock_detail).encode("utf-8")
+        mock_url.return_value.__enter__.return_value = mock_resp
+
+        detail = aukro_portal.fetch_offer_detail("7099999999")
+        assert detail["item_type"] == "BIDDING"
+        assert detail["bidders"] == 4
+        assert detail["bidders_count"] == 4
+        assert detail["views"] == 78
+        assert detail["ending_time_text"] == "4 dny"
+        assert detail["next_bid_min"] == 550
+        assert detail["bargaining_available"] is True
+        assert len(detail["shipping_options"]) == 1
+        assert detail["shipping_options"][0]["price"] == 63
+
+
+
 def test_sync_listings_empty_config(aukro_portal):
     res = aukro_portal.sync_listings({})
     assert res == []
@@ -210,7 +257,9 @@ def test_sync_listings_flow(tmp_path, monkeypatch, aukro_portal):
     assert matched_ad["target_aukro"] == 1
     assert "aukro" in matched_ad["portal_states"]
     assert matched_ad["portal_states"]["aukro"]["views"] == 25
-    assert matched_ad["portal_states"]["aukro"]["top_info"] == "Sleduje: 5"
+    assert "sleduje 5" in matched_ad["portal_states"]["aukro"]["top_info"]
+    assert matched_ad["portal_states"]["aukro"]["item_type"] == "BUY_NOW"
+    assert matched_ad["portal_states"]["aukro"]["bidders_count"] == 0
 
     # Verify new ad was imported
     new_ad = next(a for a in all_ads if a["id"] != existing_id)
@@ -218,6 +267,7 @@ def test_sync_listings_flow(tmp_path, monkeypatch, aukro_portal):
     assert new_ad["target_aukro"] == 1
     assert new_ad["category"] == "Aukro"
     assert new_ad["portal_states"]["aukro"]["portal_item_id"] == "7088888888"
+    assert "sleduje 5" in new_ad["portal_states"]["aukro"]["top_info"]
 
 
 def test_api_sync_aukro_endpoint(monkeypatch):
@@ -266,4 +316,25 @@ def test_fetch_ad_details(monkeypatch):
     assert res_valid["views"] == 42
     assert res_valid["price"] == 990
     assert res_valid["watchers"] == 3
+
+
+def test_fetch_seller_profile(aukro_portal):
+    mock_html = '''
+    <html><head>
+    <script id="serverApp-state" type="application/json">
+    {"aukCache": {"POST /backend-web/api/offers/searchItemsCommon": {"b": {"seller": {"rating": 156, "positiveFeedbackPercentage": 0.9937, "feedbackUniqueUserCount": 157, "aukroPlus": false}}}}}
+    </script>
+    </head></html>
+    '''
+    with patch("urllib.request.urlopen") as mock_url:
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = mock_html.encode("utf-8")
+        mock_url.return_value.__enter__.return_value = mock_resp
+
+        profile = aukro_portal.fetch_seller_profile("ondrejhala")
+        assert profile["success"] is True
+        assert profile["rating"] == 156
+        assert profile["positive_percentage"] == 0.9937
+        assert profile["feedback_count"] == 157
+
 

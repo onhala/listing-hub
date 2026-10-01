@@ -155,6 +155,13 @@ class AukroPortal(AbstractPortal):
             "views": 0,
             "watchers": 0,
             "bidders": 0,
+            "bidders_count": 0,
+            "item_type": "BUY_NOW",
+            "ending_time_text": "",
+            "next_bid_min": None,
+            "bargaining_available": False,
+            "shipping_options": [],
+            "seller": {},
             "description": "",
             "ending_time": None,
             "images": [],
@@ -170,34 +177,69 @@ class AukroPortal(AbstractPortal):
             "X-Accept-Subbrand": "BAZAAR"
         }
 
+        def _parse_payload(data: dict):
+            result["views"] = int(data.get("displayedCount") or 0)
+            result["watchers"] = int(data.get("watchingUserCount") or 0)
+            bidders = int(data.get("biddersCount") or 0)
+            result["bidders"] = bidders
+            result["bidders_count"] = bidders
+            result["item_type"] = data.get("itemType") or ("BIDDING" if data.get("biddersCount") is not None and not data.get("buyNowActive") else "BUY_NOW")
+            result["ending_time_text"] = (data.get("endingTimeText") or "").strip()
+            result["bargaining_available"] = bool(data.get("bargainingAvailable") or data.get("bestOfferEnabled"))
+
+            if data.get("nextBidMinAmount") and isinstance(data["nextBidMinAmount"], dict):
+                result["next_bid_min"] = data["nextBidMinAmount"].get("amount")
+
+            # Parse shipping
+            shipping_opts = []
+            for opt in data.get("shippingOptions", []):
+                p_amt = 0
+                if opt.get("firstPackagePrice") and isinstance(opt["firstPackagePrice"], dict):
+                    p_amt = opt["firstPackagePrice"].get("amount", 0)
+                elif opt.get("freeOfCharge"):
+                    p_amt = 0
+                shipping_opts.append({
+                    "price": int(p_amt),
+                    "free": bool(opt.get("freeOfCharge")),
+                    "aukro_shipping": bool(opt.get("aukroShipping")),
+                    "icon": opt.get("iconUrl") or ""
+                })
+            result["shipping_options"] = shipping_opts
+
+            if data.get("seller") and isinstance(data["seller"], dict):
+                s = data["seller"]
+                result["seller"] = {
+                    "rating": s.get("rating"),
+                    "positive_percentage": s.get("positiveFeedbackPercentage"),
+                    "feedback_count": s.get("feedbackUniqueUserCount")
+                }
+
+            result["description"] = (data.get("descriptionStripped") or data.get("descriptionInHtml") or "").strip()
+            result["ending_time"] = data.get("endingTime")
+            result["state"] = data.get("state", "ACTIVE")
+
+            p_val = 0
+            if data.get("price") and isinstance(data["price"], dict) and data["price"].get("amount"):
+                p_val = data["price"].get("amount", 0)
+            elif data.get("buyNowPrice") and isinstance(data["buyNowPrice"], dict) and data["buyNowPrice"].get("amount"):
+                p_val = data["buyNowPrice"].get("amount", 0)
+            result["price"] = int(p_val or 0)
+
+            img_urls = []
+            for img_obj in data.get("itemImages", []):
+                sizes = img_obj.get("sizes", {})
+                img_url = (sizes.get("ORIGINAL", {}).get("url") or
+                           sizes.get("LARGE", {}).get("url") or
+                           sizes.get("MEDIUM", {}).get("url"))
+                if img_url:
+                    img_urls.append(img_url)
+            result["images"] = img_urls
+
         try:
             req = urllib.request.Request(api_url, headers=headers)
             with urllib.request.urlopen(req, timeout=12) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-
-                result["views"] = int(data.get("displayedCount") or 0)
-                result["watchers"] = int(data.get("watchingUserCount") or 0)
-                result["bidders"] = int(data.get("biddersCount") or 0)
-                result["description"] = (data.get("descriptionStripped") or data.get("descriptionInHtml") or "").strip()
-                result["ending_time"] = data.get("endingTime")
-                result["state"] = data.get("state", "ACTIVE")
-
-                p_val = 0
-                if data.get("price") and isinstance(data["price"], dict) and data["price"].get("amount"):
-                    p_val = data["price"].get("amount", 0)
-                elif data.get("buyNowPrice") and isinstance(data["buyNowPrice"], dict) and data["buyNowPrice"].get("amount"):
-                    p_val = data["buyNowPrice"].get("amount", 0)
-                result["price"] = int(p_val or 0)
-
-                img_urls = []
-                for img_obj in data.get("itemImages", []):
-                    sizes = img_obj.get("sizes", {})
-                    img_url = (sizes.get("ORIGINAL", {}).get("url") or
-                               sizes.get("LARGE", {}).get("url") or
-                               sizes.get("MEDIUM", {}).get("url"))
-                    if img_url:
-                        img_urls.append(img_url)
-                result["images"] = img_urls
+                _parse_payload(data)
                 return result
         except Exception:
             try:
@@ -213,12 +255,7 @@ class AukroPortal(AbstractPortal):
                         for k, v in data.get("aukCache", {}).items():
                             if "offerDetail" in k and isinstance(v, dict):
                                 body = v.get("b", {})
-                                result["views"] = int(body.get("displayedCount") or 0)
-                                result["watchers"] = int(body.get("watchingUserCount") or 0)
-                                result["bidders"] = int(body.get("biddersCount") or 0)
-                                result["description"] = (body.get("descriptionStripped") or body.get("descriptionInHtml") or "").strip()
-                                result["ending_time"] = body.get("endingTime")
-                                result["state"] = body.get("state", "ACTIVE")
+                                _parse_payload(body)
                                 return result
             except Exception:
                 pass
@@ -252,6 +289,12 @@ class AukroPortal(AbstractPortal):
             result["price"] = detail.get("price")
             result["watchers"] = detail.get("watchers")
             result["ending_time"] = detail.get("ending_time")
+            result["ending_time_text"] = detail.get("ending_time_text")
+            result["item_type"] = detail.get("item_type")
+            result["bidders_count"] = detail.get("bidders_count")
+            result["next_bid_min"] = detail.get("next_bid_min")
+            result["bargaining_available"] = detail.get("bargaining_available")
+            result["shipping_options"] = detail.get("shipping_options")
         return result
 
     def download_photos_if_missing(self, image_urls: List[str], local_photos_dir_str: str) -> None:
@@ -393,6 +436,17 @@ class AukroPortal(AbstractPortal):
                 if not local_ad.get("description") and detail.get("description"):
                     local_ad["description"] = detail["description"]
 
+                bidders_count = detail.get("bidders_count", 0)
+                item_type = detail.get("item_type") or ("BIDDING" if best_match.get("is_auction") else "BUY_NOW")
+                ending_time_text = detail.get("ending_time_text") or ""
+
+                top_info_parts = []
+                if item_type == "BIDDING":
+                    top_info_parts.append(f"{bidders_count} příh.")
+                if watchers_count:
+                    top_info_parts.append(f"sleduje {watchers_count}")
+                top_info_str = " · ".join(top_info_parts)
+
                 aukro_state_data = {
                     "portal_item_id": item_id,
                     "url": best_match["url"],
@@ -400,8 +454,14 @@ class AukroPortal(AbstractPortal):
                     "views": views_count,
                     "last_synced": datetime.now().isoformat(),
                     "top_expires_at": detail.get("ending_time") or best_match.get("ending_time"),
-                    "top_info": f"Sleduje: {watchers_count}" if watchers_count else "",
-                    "portal_label": "Aukro.cz"
+                    "top_info": top_info_str,
+                    "portal_label": "Aukro.cz",
+                    "item_type": item_type,
+                    "bidders_count": bidders_count,
+                    "next_bid_min": detail.get("next_bid_min"),
+                    "ending_time_text": ending_time_text,
+                    "bargaining_available": detail.get("bargaining_available", False),
+                    "shipping_options": detail.get("shipping_options", [])
                 }
 
                 db.save_listing(local_ad, {"aukro": aukro_state_data})
@@ -485,6 +545,17 @@ class AukroPortal(AbstractPortal):
                 "target_aukro": 1
             }
 
+            bidders_count = detail.get("bidders_count", 0)
+            item_type = detail.get("item_type") or ("BIDDING" if sc_item.get("is_auction") else "BUY_NOW")
+            ending_time_text = detail.get("ending_time_text") or ""
+
+            top_info_parts = []
+            if item_type == "BIDDING":
+                top_info_parts.append(f"{bidders_count} příh.")
+            if watchers_count:
+                top_info_parts.append(f"sleduje {watchers_count}")
+            top_info_str = " · ".join(top_info_parts)
+
             aukro_state_data = {
                 "portal_item_id": item_id,
                 "url": sc_item["url"],
@@ -492,8 +563,14 @@ class AukroPortal(AbstractPortal):
                 "views": views_count,
                 "last_synced": datetime.now().isoformat(),
                 "top_expires_at": detail.get("ending_time") or sc_item.get("ending_time"),
-                "top_info": f"Sleduje: {watchers_count}" if watchers_count else "",
-                "portal_label": "Aukro.cz"
+                "top_info": top_info_str,
+                "portal_label": "Aukro.cz",
+                "item_type": item_type,
+                "bidders_count": bidders_count,
+                "next_bid_min": detail.get("next_bid_min"),
+                "ending_time_text": ending_time_text,
+                "bargaining_available": detail.get("bargaining_available", False),
+                "shipping_options": detail.get("shipping_options", [])
             }
 
             db.save_listing(new_listing, {"aukro": aukro_state_data})
@@ -510,3 +587,46 @@ class AukroPortal(AbstractPortal):
             })
 
         return result
+
+    def fetch_seller_profile(self, username: str) -> Dict[str, Any]:
+        """
+        Stáhne reputaci a statistiky prodejce z veřejného profilu Aukra.
+        Vrací např.: {"rating": 156, "positive_percentage": 0.9937, "feedback_count": 157}
+        """
+        res = {
+            "username": username,
+            "rating": None,
+            "positive_percentage": None,
+            "feedback_count": None,
+            "aukro_plus": False,
+            "success": False
+        }
+        if not username:
+            return res
+
+        profile_url = f"https://aukro.cz/uzivatel/{username}/nabidky"
+        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+        try:
+            req = urllib.request.Request(profile_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+
+            for m in re.finditer(r"<script[^>]*>(.*?)</script>", html, re.DOTALL):
+                s = m.group(1).strip()
+                if "aukCache" in s and "seller" in s:
+                    data = json.loads(s)
+                    for k, v in data.get("aukCache", {}).items():
+                        if isinstance(v, dict) and "b" in v and isinstance(v["b"], dict):
+                            b = v["b"]
+                            seller_data = b.get("seller") or (b.get("list") and b["list"][0].get("seller") if b.get("list") else None)
+                            if seller_data and isinstance(seller_data, dict):
+                                res["rating"] = seller_data.get("rating")
+                                res["positive_percentage"] = seller_data.get("positiveFeedbackPercentage")
+                                res["feedback_count"] = seller_data.get("feedbackUniqueUserCount")
+                                res["aukro_plus"] = bool(seller_data.get("aukroPlus"))
+                                res["success"] = True
+                                return res
+        except Exception as e:
+            res["error"] = str(e)
+        return res
+

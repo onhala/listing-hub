@@ -1471,6 +1471,26 @@ def sync_aukro_endpoint():
         app.logger.error(f"Error during Aukro sync: {e}")
         return jsonify({"status": "error", "message": f"Chyba při synchronizaci Aukra: {e}"}), 500
 
+@app.route("/api/portals/aukro/profile", methods=["GET"])
+def get_aukro_profile_endpoint():
+    """Vrátí reputaci a statistiky zadaného Aukro prodejního profilu."""
+    try:
+        from listing_hub.portals.aukro.aukro_portal import AukroPortal
+        from listing_hub.core.config import load_user_config
+        cfg = load_user_config()
+        username = request.args.get("username") or cfg.get("aukro_username", "").strip()
+        if not username:
+            return jsonify({"status": "error", "message": "Uživatelské jméno nebylo zadáno."}), 400
+
+        portal = AukroPortal()
+        profile_data = portal.fetch_seller_profile(username)
+        return jsonify({
+            "status": "success" if profile_data.get("success") else "warning",
+            "data": profile_data
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/refresh/status", methods=["GET"])
 def get_refresh_status():
     _, user_config = load_data()
